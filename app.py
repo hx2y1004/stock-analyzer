@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import numpy as np
 import pandas as pd
@@ -10,6 +11,7 @@ from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-in-production")
 CORS(app)
 
 
