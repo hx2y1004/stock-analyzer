@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>모의투자 — StockAnalyzer</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <!-- 헤더 -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">📈 StockAnalyzer</div>
+      <nav class="nav">
+        <a href="/" class="nav-link">분석</a>
+        <a href="/trading" class="nav-link active">모의투자</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 모의투자 메인 -->
+  <main class="trading-main">
+
+    <!-- 포트폴리오 요약 -->
+    <section class="card portfolio-summary">
+      <h2 class="card-title">내 포트폴리오</h2>
+      <div class="portfolio-grid">
+        <div class="portfolio-item">
+          <div class="portfolio-label">총 자산</div>
+          <div class="portfolio-value" id="totalAsset">—</div>
+        </div>
+        <div class="portfolio-item">
+          <div class="portfolio-label">보유 현금</div>
+          <div class="portfolio-value" id="cashBalance">—</div>
+        </div>
+        <div class="portfolio-item">
+          <div class="portfolio-label">평가 손익</div>
+          <div class="portfolio-value" id="totalPnl">—</div>
+        </div>
+        <div class="portfolio-item">
+          <div class="portfolio-label">수익률</div>
+          <div class="portfolio-value" id="returnRate">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 준비 중 안내 -->
+    <section class="card coming-soon-card">
+      <div class="coming-soon-icon">🚧</div>
+      <h3 class="coming-soon-title">모의투자 기능 준비 중</h3>
+      <p class="coming-soon-desc">
+        주식 분석 기능이 완성된 후 순차적으로 추가될 예정입니다.<br/>
+        아래 기능들이 준비되어 있습니다.
+      </p>
+      <div class="feature-list">
+        <div class="feature-item ready">
+          <span class="feature-icon">✅</span>
+          <span>UI 레이아웃 구성 완료</span>
+        </div>
+        <div class="feature-item ready">
+          <span class="feature-icon">✅</span>
+          <span>포트폴리오 화면 구조</span>
+        </div>
+        <div class="feature-item pending">
+          <span class="feature-icon">🔜</span>
+          <span>매수 / 매도 주문 기능</span>
+        </div>
+        <div class="feature-item pending">
+          <span class="feature-icon">🔜</span>
+          <span>보유 종목 관리</span>
+        </div>
+        <div class="feature-item pending">
+          <span class="feature-icon">🔜</span>
+          <span>거래 내역 및 수익률 추적</span>
+        </div>
+        <div class="feature-item pending">
+          <span class="feature-icon">🔜</span>
+          <span>수익률 차트</span>
+        </div>
+      </div>
+      <a href="/" class="goto-analysis-btn">분석 화면으로 →</a>
+    </section>
+
+    <!-- 거래 패널 (UI 미리 배치 — 기능은 추후 활성화) -->
+    <div class="trading-panels">
+
+      <!-- 매수 패널 -->
+      <section class="card trade-panel">
+        <h3 class="card-title buy-title">매수</h3>
+        <div class="trade-form">
+          <div class="trade-field">
+            <label>종목</label>
+            <input type="text" class="trade-input" placeholder="티커 입력" disabled />
+          </div>
+          <div class="trade-field">
+            <label>현재가</label>
+            <input type="text" class="trade-input" placeholder="—" disabled />
+          </div>
+          <div class="trade-field">
+            <label>매수 수량</label>
+            <input type="number" class="trade-input" placeholder="0" disabled />
+          </div>
+          <div class="trade-field">
+            <label>매수 금액</label>
+            <input type="text" class="trade-input" placeholder="—" disabled />
+          </div>
+          <button class="trade-btn buy-btn" disabled>매수 (준비 중)</button>
+        </div>
+      </section>
+
+      <!-- 매도 패널 -->
+      <section class="card trade-panel">
+        <h3 class="card-title sell-title">매도</h3>
+        <div class="trade-form">
+          <div class="trade-field">
+            <label>종목</label>
+            <input type="text" class="trade-input" placeholder="티커 입력" disabled />
+          </div>
+          <div class="trade-field">
+            <label>현재가</label>
+            <input type="text" class="trade-input" placeholder="—" disabled />
+          </div>
+          <div class="trade-field">
+            <label>매도 수량</label>
+            <input type="number" class="trade-input" placeholder="0" disabled />
+          </div>
+          <div class="trade-field">
+            <label>매도 금액</label>
+            <input type="text" class="trade-input" placeholder="—" disabled />
+          </div>
+          <button class="trade-btn sell-btn" disabled>매도 (준비 중)</button>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- 보유 종목 테이블 -->
+    <section class="card">
+      <h3 class="card-title">보유 종목</h3>
+      <div class="holdings-table-wrap">
+        <table class="holdings-table">
+          <thead>
+            <tr>
+              <th>종목</th>
+              <th>보유수량</th>
+              <th>평균단가</th>
+              <th>현재가</th>
+              <th>평가손익</th>
+              <th>수익률</th>
+              <th>관리</th>
+            </tr>
+          </thead>
+          <tbody id="holdingsBody">
+            <tr>
+              <td colspan="7" class="empty-row">보유 종목이 없습니다 (기능 준비 중)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</body>
+</html>
