@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>주식 분석기</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <!-- 헤더 -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">📈 StockAnalyzer</div>
+      <nav class="nav">
+        <a href="/" class="nav-link active">분석</a>
+        <a href="/trading" class="nav-link">모의투자</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 검색 영역 -->
+  <section class="search-section">
+    <div class="search-box">
+      <h1 class="search-title">주식 분석</h1>
+      <p class="search-desc">티커 또는 종목명을 입력하세요 (예: AAPL, 삼성전자, Tesla)</p>
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <input id="tickerInput" class="search-input" type="text" placeholder="종목명 또는 티커 검색..." autocomplete="off" />
+          <div id="autocompleteList" class="autocomplete-list hidden"></div>
+        </div>
+<button id="analyzeBtn" class="search-btn" onclick="analyze()">분석하기</button>
+      </div>
+      <div class="quick-tickers">
+        <span class="quick-label">빠른 선택:</span>
+        <button class="quick-btn" onclick="quickSearch('AAPL')">AAPL</button>
+        <button class="quick-btn" onclick="quickSearch('TSLA')">TSLA</button>
+        <button class="quick-btn" onclick="quickSearch('NVDA')">NVDA</button>
+        <button class="quick-btn" onclick="quickSearch('MSFT')">MSFT</button>
+        <button class="quick-btn" onclick="quickSearch('005930.KS')">삼성전자</button>
+        <button class="quick-btn" onclick="quickSearch('000660.KS')">SK하이닉스</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 로딩 -->
+  <div id="loading" class="loading hidden">
+    <div class="spinner"></div>
+    <p>데이터 분석 중...</p>
+  </div>
+
+  <!-- 에러 -->
+  <div id="errorBox" class="error-box hidden"></div>
+
+  <!-- 결과 영역 -->
+  <main id="result" class="result hidden">
+
+    <!-- 종목 기본 정보 (전체 너비) -->
+    <section class="card stock-header">
+      <div class="stock-info-left">
+        <div class="stock-name-row">
+          <h2 id="stockName" class="stock-name"></h2>
+          <span id="stockTicker" class="stock-ticker-badge"></span>
+        </div>
+        <div class="stock-meta">
+          <span id="stockSector"></span>
+          <span id="stockExchange"></span>
+        </div>
+      </div>
+      <div class="stock-price-block">
+        <div id="currentPrice" class="current-price"></div>
+        <div id="priceChange" class="price-change"></div>
+      </div>
+    </section>
+
+    <!-- 메인 그리드: 차트(좌) + 판단/지표(우) -->
+    <div class="main-grid">
+
+      <!-- 좌: 차트 -->
+      <div class="col-chart">
+        <section class="card chart-card">
+          <div class="chart-card-header">
+            <h3 class="card-title">기술적 분석 차트 <span id="intervalBadge" class="interval-badge">일봉</span></h3>
+          </div>
+          <div class="chart-controls">
+            <div class="ctrl-group">
+              <button class="chart-btn active" onclick="setChartType('candlestick')">캔들</button>
+              <button class="chart-btn" onclick="setChartType('line')">라인</button>
+            </div>
+            <div class="ctrl-group interval-group">
+              <button class="interval-btn active" data-interval="1d" onclick="setInterval('1d')">일봉</button>
+              <button class="interval-btn" data-interval="1wk" onclick="setInterval('1wk')">주봉</button>
+              <button class="interval-btn" data-interval="1mo" onclick="setInterval('1mo')">월봉</button>
+            </div>
+            <div class="indicator-toggles">
+              <label><input type="checkbox" id="toggleMA" checked onchange="toggleIndicator('ma')"> 이동평균</label>
+              <label><input type="checkbox" id="toggleBB" checked onchange="toggleIndicator('bb')"> 볼린저밴드</label>
+              <label><input type="checkbox" id="toggleIchimoku" checked onchange="toggleIndicator('ichimoku')"> 일목균형표</label>
+            </div>
+          </div>
+          <div id="mainChart" class="main-chart"></div>
+          <div id="rsiChart" class="sub-chart"></div>
+          <div id="macdChart" class="sub-chart"></div>
+        </section>
+      </div>
+
+      <!-- 우: 종합판단 + 주요지표 + 이동평균선 -->
+      <div class="col-side">
+
+        <section class="card verdict-card">
+          <h3 class="card-title">종합 분석 판단</h3>
+          <div id="verdictBadge" class="verdict-badge"></div>
+          <div class="score-bar-wrap">
+            <div class="score-bar-label"><span>매도</span><span>중립</span><span>매수</span></div>
+            <div class="score-bar-bg">
+              <div id="scoreBar" class="score-bar-fill"></div>
+              <div id="scoreMarker" class="score-marker"></div>
+            </div>
+          </div>
+          <div class="price-targets">
+            <div class="target-item"><div class="target-label">진입 추천가</div><div id="entryPrice" class="target-value entry"></div></div>
+            <div class="target-item"><div class="target-label">목표가</div><div id="targetPrice" class="target-value target"></div></div>
+            <div class="target-item"><div class="target-label">손절가</div><div id="stopLoss" class="target-value stop"></div></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">주요 지표</h3>
+          <div class="metrics-grid">
+            <div class="metric-item"><div class="metric-label">52주 최고가</div><div id="yearHigh" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">52주 최저가</div><div id="yearLow" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">RSI (14)</div><div id="rsiValue" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">볼린저밴드 위치</div><div id="bbPosition" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">PER</div><div id="peRatio" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">EPS</div><div id="epsValue" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">배당수익률</div><div id="dividendYield" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">거래량 (평균 대비)</div><div id="volumeRatio" class="metric-value"></div></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3 class="card-title">수익률 현황</h3>
+          <div id="returnTracker" class="return-tracker"></div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- 상세 분석 (전체 너비, 펼치면 아래 자동 밀림) -->
+    <section class="card analysis-full-card">
+      <div class="analysis-tabs">
+        <button class="analysis-tab active" data-tab="technical" onclick="switchDetailTab('technical')">📊 기술적 분석</button>
+        <button class="analysis-tab" data-tab="fundamental" onclick="switchDetailTab('fundamental')">📈 투자 판단</button>
+      </div>
+      <div id="detailList" class="detail-list detail-grid"></div>
+      <div id="fundamentalList" class="detail-list detail-grid hidden"></div>
+    </section>
+
+    <!-- 하단 그리드: 애널리스트(좌) + 뉴스(우) -->
+    <div class="bottom-grid">
+      <section class="card">
+        <h3 class="card-title">월가 애널리스트 의견</h3>
+        <div id="analystSection">
+          <div id="analystConsensus" class="analyst-consensus"></div>
+          <div id="analystTargets" class="analyst-targets"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3 class="card-title">최근 관련 뉴스</h3>
+        <div id="newsList" class="news-list"></div>
+      </section>
+    </div>
+
+  </main>
+
+  <script src="/static/js/chart.js"></script>
+  <script src="/static/js/main.js"></script>
+</body>
+</html>

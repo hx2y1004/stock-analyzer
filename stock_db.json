@@ -1,0 +1,6211 @@
+[
+  {
+    "symbol": "005930.KS",
+    "name": "삼성전자",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000660.KS",
+    "name": "SK하이닉스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005935.KS",
+    "name": "삼성전자우",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "402340.KS",
+    "name": "SK스퀘어",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005380.KS",
+    "name": "현대차",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "373220.KS",
+    "name": "LG에너지솔루션",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "034020.KS",
+    "name": "두산에너빌리티",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "329180.KS",
+    "name": "HD현대중공업",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "009150.KS",
+    "name": "삼성전기",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "207940.KS",
+    "name": "삼성바이오로직스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "012450.KS",
+    "name": "한화에어로스페이스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "028260.KS",
+    "name": "삼성물산",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000270.KS",
+    "name": "기아",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "105560.KS",
+    "name": "KB금융",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "032830.KS",
+    "name": "삼성생명",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "006400.KS",
+    "name": "삼성SDI",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "267260.KS",
+    "name": "HD현대일렉트릭",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "010120.KS",
+    "name": "LS ELECTRIC",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "055550.KS",
+    "name": "신한지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "068270.KS",
+    "name": "셀트리온",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "006800.KS",
+    "name": "미래에셋증권",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "298040.KS",
+    "name": "효성중공업",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005490.KS",
+    "name": "POSCO홀딩스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "012330.KS",
+    "name": "현대모비스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "042660.KS",
+    "name": "한화오션",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "034730.KS",
+    "name": "SK",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "042700.KS",
+    "name": "한미반도체",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "086790.KS",
+    "name": "하나금융지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "009540.KS",
+    "name": "HD한국조선해양",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "010130.KS",
+    "name": "고려아연",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "035420.KS",
+    "name": "NAVER",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "051910.KS",
+    "name": "LG화학",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "010140.KS",
+    "name": "삼성중공업",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000150.KS",
+    "name": "두산",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "015760.KS",
+    "name": "한국전력",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003670.KS",
+    "name": "포스코퓨처엠",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "064350.KS",
+    "name": "현대로템",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "316140.KS",
+    "name": "우리금융지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "066570.KS",
+    "name": "LG전자",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "096770.KS",
+    "name": "SK이노베이션",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "267250.KS",
+    "name": "HD현대",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "272210.KS",
+    "name": "한화시스템",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000810.KS",
+    "name": "삼성화재",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "033780.KS",
+    "name": "KT&G",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "035720.KS",
+    "name": "카카오",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "017670.KS",
+    "name": "SK텔레콤",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "011200.KS",
+    "name": "HMM",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "079550.KS",
+    "name": "LIG디펜스앤에어로스페이스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "138040.KS",
+    "name": "메리츠금융지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000720.KS",
+    "name": "현대건설",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "024110.KS",
+    "name": "기업은행",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "086280.KS",
+    "name": "현대글로비스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "047810.KS",
+    "name": "한국항공우주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003550.KS",
+    "name": "LG",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "006260.KS",
+    "name": "LS",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "071050.KS",
+    "name": "한국금융지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "011070.KS",
+    "name": "LG이노텍",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "278470.KS",
+    "name": "에이피알",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "030200.KS",
+    "name": "KT",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "047050.KS",
+    "name": "포스코인터내셔널",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "018260.KS",
+    "name": "삼성에스디에스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "047040.KS",
+    "name": "대우건설",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005940.KS",
+    "name": "NH투자증권",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "010950.KS",
+    "name": "S-Oil",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "0126Z0.KS",
+    "name": "삼성에피스홀딩스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "016360.KS",
+    "name": "삼성증권",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "259960.KS",
+    "name": "크래프톤",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "028050.KS",
+    "name": "삼성E&A",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "307950.KS",
+    "name": "현대오토에버",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "039490.KS",
+    "name": "키움증권",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "443060.KS",
+    "name": "HD현대마린솔루션",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "001440.KS",
+    "name": "대한전선",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "323410.KS",
+    "name": "카카오뱅크",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "007660.KS",
+    "name": "이수페타시스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005830.KS",
+    "name": "DB손해보험",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "352820.KS",
+    "name": "하이브",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "062040.KS",
+    "name": "산일전기",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000880.KS",
+    "name": "한화",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003490.KS",
+    "name": "대한항공",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003230.KS",
+    "name": "삼양식품",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "267270.KS",
+    "name": "HD건설기계",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005387.KS",
+    "name": "현대차2우B",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "066970.KS",
+    "name": "엘앤에프",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "009830.KS",
+    "name": "한화솔루션",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "161390.KS",
+    "name": "한국타이어앤테크놀로지",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "377300.KS",
+    "name": "카카오페이",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "326030.KS",
+    "name": "SK바이오팜",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "090430.KS",
+    "name": "아모레퍼시픽",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "180640.KS",
+    "name": "한진칼",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "241560.KS",
+    "name": "두산밥캣",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "078930.KS",
+    "name": "GS",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "082740.KS",
+    "name": "한화엔진",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "052690.KS",
+    "name": "한전기술",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000100.KS",
+    "name": "유한양행",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000990.KS",
+    "name": "DB하이텍",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "103590.KS",
+    "name": "일진전기",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "032640.KS",
+    "name": "LG유플러스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "011790.KS",
+    "name": "SKC",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "064400.KS",
+    "name": "LG씨엔에스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "454910.KS",
+    "name": "두산로보틱스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "001040.KS",
+    "name": "CJ",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "034220.KS",
+    "name": "LG디스플레이",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "021240.KS",
+    "name": "코웨이",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "010060.KS",
+    "name": "OCI홀딩스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000500.KS",
+    "name": "가온전선",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005385.KS",
+    "name": "현대차우",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "029780.KS",
+    "name": "삼성카드",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "353200.KS",
+    "name": "대덕전자",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "004020.KS",
+    "name": "현대제철",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "450080.KS",
+    "name": "에코프로머티",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "138930.KS",
+    "name": "BNK금융지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "271560.KS",
+    "name": "오리온",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "128940.KS",
+    "name": "한미약품",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "036570.KS",
+    "name": "NC",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "088980.KS",
+    "name": "맥쿼리인프라",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "022100.KS",
+    "name": "포스코DX",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "002380.KS",
+    "name": "KCC",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "018880.KS",
+    "name": "한온시스템",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "336260.KS",
+    "name": "두산퓨얼셀",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "175330.KS",
+    "name": "JB금융지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "004800.KS",
+    "name": "효성",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "011170.KS",
+    "name": "롯데케미칼",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "088350.KS",
+    "name": "한화생명",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "051900.KS",
+    "name": "LG생활건강",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "489790.KS",
+    "name": "한화비전",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "004170.KS",
+    "name": "신세계",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "375500.KS",
+    "name": "DL이앤씨",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "020150.KS",
+    "name": "롯데에너지머티리얼즈",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "251270.KS",
+    "name": "넷마블",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "017800.KS",
+    "name": "현대엘리베이터",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "023530.KS",
+    "name": "롯데쇼핑",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "012510.KS",
+    "name": "더존비즈온",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "111770.KS",
+    "name": "영원무역",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "457190.KS",
+    "name": "이수스페셜티케미컬",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "036460.KS",
+    "name": "한국가스공사",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "035250.KS",
+    "name": "강원랜드",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "097950.KS",
+    "name": "CJ제일제당",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "071970.KS",
+    "name": "HD현대마린엔진",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "001720.KS",
+    "name": "신영증권",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "006360.KS",
+    "name": "GS건설",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "011780.KS",
+    "name": "금호석유화학",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "302440.KS",
+    "name": "SK바이오사이언스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "014680.KS",
+    "name": "한솔케미칼",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "439260.KS",
+    "name": "대한조선",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "031210.KS",
+    "name": "서울보증보험",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "028670.KS",
+    "name": "팬오션",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "00680K.KS",
+    "name": "미래에셋증권2우B",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "139130.KS",
+    "name": "iM금융지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "383220.KS",
+    "name": "F&F",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "007340.KS",
+    "name": "DN오토모티브",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "139480.KS",
+    "name": "이마트",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005850.KS",
+    "name": "에스엘",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "004990.KS",
+    "name": "롯데지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "009970.KS",
+    "name": "영원무역홀딩스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "120110.KS",
+    "name": "코오롱인더",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000155.KS",
+    "name": "두산우",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "012750.KS",
+    "name": "에스원",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "204320.KS",
+    "name": "HL만도",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "103140.KS",
+    "name": "풍산",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "051600.KS",
+    "name": "한전KPS",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "483650.KS",
+    "name": "달바글로벌",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "001450.KS",
+    "name": "현대해상",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "112610.KS",
+    "name": "씨에스윈드",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "008770.KS",
+    "name": "호텔신라",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "069960.KS",
+    "name": "현대백화점",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "229640.KS",
+    "name": "LS에코에너지",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "026960.KS",
+    "name": "동서",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "008930.KS",
+    "name": "한미사이언스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "001430.KS",
+    "name": "세아베스틸지주",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "017960.KS",
+    "name": "한국카본",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "097230.KS",
+    "name": "HJ중공업",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "007810.KS",
+    "name": "코리아써키트",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "279570.KS",
+    "name": "케이뱅크",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "018670.KS",
+    "name": "SK가스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000240.KS",
+    "name": "한국앤컴퍼니",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "192820.KS",
+    "name": "코스맥스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "077970.KS",
+    "name": "STX엔진",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "009420.KS",
+    "name": "한올바이오파마",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "282330.KS",
+    "name": "BGF리테일",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005440.KS",
+    "name": "현대지에프홀딩스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000120.KS",
+    "name": "CJ대한통운",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "004370.KS",
+    "name": "농심",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "011210.KS",
+    "name": "현대위아",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "322000.KS",
+    "name": "HD현대에너지솔루션",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "361610.KS",
+    "name": "SK아이이테크놀로지",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "030000.KS",
+    "name": "제일기획",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003690.KS",
+    "name": "코리안리",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "085620.KS",
+    "name": "미래에셋생명",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "023590.KS",
+    "name": "다우기술",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005070.KS",
+    "name": "코스모신소재",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "298020.KS",
+    "name": "효성티앤씨",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "002790.KS",
+    "name": "아모레퍼시픽홀딩스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "161890.KS",
+    "name": "한국콜마",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "081660.KS",
+    "name": "미스토홀딩스",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "007070.KS",
+    "name": "GS리테일",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003540.KS",
+    "name": "대신증권",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "001120.KS",
+    "name": "LX인터내셔널",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "462870.KS",
+    "name": "시프트업",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "395400.KS",
+    "name": "SK리츠",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003530.KS",
+    "name": "한화투자증권",
+    "exchange": "KSC",
+    "market": "KOSPI",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "247540.KQ",
+    "name": "에코프로비엠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "086520.KQ",
+    "name": "에코프로",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "196170.KQ",
+    "name": "알테오젠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "277810.KQ",
+    "name": "레인보우로보틱스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "950160.KQ",
+    "name": "코오롱티슈진",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "000250.KQ",
+    "name": "삼천당제약",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "058470.KQ",
+    "name": "리노공업",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "028300.KQ",
+    "name": "HLB",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "298380.KQ",
+    "name": "에이비엘바이오",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "141080.KQ",
+    "name": "리가켐바이오",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "240810.KQ",
+    "name": "원익IPS",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "036930.KQ",
+    "name": "주성엔지니어링",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "087010.KQ",
+    "name": "펩트론",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "039030.KQ",
+    "name": "이오테크닉스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "310210.KQ",
+    "name": "보로노이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "214370.KQ",
+    "name": "케어젠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "095340.KQ",
+    "name": "ISC",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "403870.KQ",
+    "name": "HPSP",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "108490.KQ",
+    "name": "로보티즈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "440110.KQ",
+    "name": "파두",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "178320.KQ",
+    "name": "서진시스템",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "222800.KQ",
+    "name": "심텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "357780.KQ",
+    "name": "솔브레인",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "032820.KQ",
+    "name": "우리기술",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "214150.KQ",
+    "name": "클래시스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "214450.KQ",
+    "name": "파마리서치",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "319400.KQ",
+    "name": "현대무벡스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "226950.KQ",
+    "name": "올릭스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "010170.KQ",
+    "name": "대한광통신",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "263750.KQ",
+    "name": "펄어비스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "084370.KQ",
+    "name": "유진테크",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "064760.KQ",
+    "name": "티씨케이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "237690.KQ",
+    "name": "에스티팜",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "145020.KQ",
+    "name": "휴젤",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "005290.KQ",
+    "name": "동진쎄미켐",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "083650.KQ",
+    "name": "비에이치아이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "319660.KQ",
+    "name": "피에스케이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "347850.KQ",
+    "name": "디앤디파마텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "043260.KQ",
+    "name": "성호전자",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "0009K0.KQ",
+    "name": "에임드바이오",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "100790.KQ",
+    "name": "미래에셋벤처투자",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "067310.KQ",
+    "name": "하나마이크론",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "098460.KQ",
+    "name": "고영",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "058610.KQ",
+    "name": "에스피지",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "257720.KQ",
+    "name": "실리콘투",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "031980.KQ",
+    "name": "피에스케이홀딩스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "218410.KQ",
+    "name": "RFHIC",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "082920.KQ",
+    "name": "비츠로셀",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "140410.KQ",
+    "name": "메지온",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "131970.KQ",
+    "name": "두산테스나",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "030530.KQ",
+    "name": "원익홀딩스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "060370.KQ",
+    "name": "LS마린솔루션",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "068760.KQ",
+    "name": "셀트리온제약",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "323280.KQ",
+    "name": "태성",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "078600.KQ",
+    "name": "대주전자재료",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "476830.KQ",
+    "name": "알지노믹스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "089030.KQ",
+    "name": "테크윙",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "140860.KQ",
+    "name": "파크시스템스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "035900.KQ",
+    "name": "JYP Ent.",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "041510.KQ",
+    "name": "에스엠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "347700.KQ",
+    "name": "스피어",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "101490.KQ",
+    "name": "에스앤에스텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "080220.KQ",
+    "name": "제주반도체",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "131290.KQ",
+    "name": "티에스이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "039200.KQ",
+    "name": "오스코텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "027360.KQ",
+    "name": "아주IB투자",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "099320.KQ",
+    "name": "쎄트렉아이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "475830.KQ",
+    "name": "오름테라퓨틱",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "417200.KQ",
+    "name": "LS머트리얼즈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "232140.KQ",
+    "name": "와이씨",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "095610.KQ",
+    "name": "테스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "458870.KQ",
+    "name": "씨어스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "437730.KQ",
+    "name": "삼현",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "189300.KQ",
+    "name": "인텔리안테크",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "038500.KQ",
+    "name": "삼표시멘트",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "491000.KQ",
+    "name": "리브스메드",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "166090.KQ",
+    "name": "하나머티리얼즈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "445680.KQ",
+    "name": "큐리옥스바이오시스템즈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "183300.KQ",
+    "name": "코미코",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "065350.KQ",
+    "name": "신성델타테크",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "085660.KQ",
+    "name": "차바이오텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "290650.KQ",
+    "name": "엘앤씨바이오",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "281740.KQ",
+    "name": "레이크머티리얼즈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "089970.KQ",
+    "name": "브이엠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "490470.KQ",
+    "name": "세미파이브",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "195940.KQ",
+    "name": "HK이노엔",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "033790.KQ",
+    "name": "피노",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "090710.KQ",
+    "name": "휴림로봇",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "003380.KQ",
+    "name": "하림지주",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "127120.KQ",
+    "name": "제이에스링크",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "036830.KQ",
+    "name": "솔브레인홀딩스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "033100.KQ",
+    "name": "제룡전기",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "032500.KQ",
+    "name": "케이엠더블유",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "397030.KQ",
+    "name": "에이프릴바이오",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "036540.KQ",
+    "name": "SFA반도체",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "161580.KQ",
+    "name": "필옵틱스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "126340.KQ",
+    "name": "비나텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "137400.KQ",
+    "name": "피엔티",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "124500.KQ",
+    "name": "아이티센글로벌",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "420770.KQ",
+    "name": "기가비스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "048410.KQ",
+    "name": "현대바이오",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "456160.KQ",
+    "name": "지투지바이오",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "052020.KQ",
+    "name": "에스티큐브",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "160190.KQ",
+    "name": "하이젠알앤엠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "213420.KQ",
+    "name": "덕산네오룩스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "222080.KQ",
+    "name": "씨아이에스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "388210.KQ",
+    "name": "씨엠티엑스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "096530.KQ",
+    "name": "씨젠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "014620.KQ",
+    "name": "성광벤드",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "466100.KQ",
+    "name": "클로봇",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "007390.KQ",
+    "name": "네이처셀",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "204270.KQ",
+    "name": "제이앤티씨",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "115180.KQ",
+    "name": "큐리언트",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "023160.KQ",
+    "name": "태광",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "388720.KQ",
+    "name": "유일로보틱스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "050890.KQ",
+    "name": "쏠리드",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "056190.KQ",
+    "name": "에스에프에이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "035760.KQ",
+    "name": "CJ ENM",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "376900.KQ",
+    "name": "로킷헬스케어",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "044490.KQ",
+    "name": "태웅",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "083450.KQ",
+    "name": "GST",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "199800.KQ",
+    "name": "툴젠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "086450.KQ",
+    "name": "동국제약",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "074600.KQ",
+    "name": "원익QnC",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "078160.KQ",
+    "name": "메디포스트",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "293490.KQ",
+    "name": "카카오게임즈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "094170.KQ",
+    "name": "동운아나텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "253450.KQ",
+    "name": "스튜디오드래곤",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "327260.KQ",
+    "name": "RF머트리얼즈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "121600.KQ",
+    "name": "나노신소재",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "295310.KQ",
+    "name": "에이치브이엠",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "046890.KQ",
+    "name": "서울반도체",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "056080.KQ",
+    "name": "유진로봇",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "365340.KQ",
+    "name": "성일하이텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "358570.KQ",
+    "name": "지아이이노베이션",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "348370.KQ",
+    "name": "엔켐",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "122870.KQ",
+    "name": "와이지엔터테인먼트",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "082270.KQ",
+    "name": "젬백스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "356860.KQ",
+    "name": "티엘비",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "476060.KQ",
+    "name": "온코닉테라퓨틱스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "006730.KQ",
+    "name": "서부T&D",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "036810.KQ",
+    "name": "에프에스티",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "171090.KQ",
+    "name": "선익시스템",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "032190.KQ",
+    "name": "다우데이타",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "174900.KQ",
+    "name": "앱클론",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "053610.KQ",
+    "name": "프로텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "009520.KQ",
+    "name": "포스코엠텍",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "077360.KQ",
+    "name": "덕산하이메탈",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "052400.KQ",
+    "name": "코나아이",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "252990.KQ",
+    "name": "샘씨엔에스",
+    "exchange": "KOE",
+    "market": "KOSDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MMM",
+    "name": "3M",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AOS",
+    "name": "A. O. Smith",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ABT",
+    "name": "Abbott Laboratories",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ABBV",
+    "name": "AbbVie",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ACN",
+    "name": "Accenture",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ADBE",
+    "name": "Adobe Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AMD",
+    "name": "Advanced Micro Devices",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AES",
+    "name": "AES Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AFL",
+    "name": "Aflac",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "A",
+    "name": "Agilent Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "APD",
+    "name": "Air Products",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ABNB",
+    "name": "Airbnb",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AKAM",
+    "name": "Akamai Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ALB",
+    "name": "Albemarle Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ARE",
+    "name": "Alexandria Real Estate Equities",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ALGN",
+    "name": "Align Technology",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ALLE",
+    "name": "Allegion",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LNT",
+    "name": "Alliant Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ALL",
+    "name": "Allstate",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GOOGL",
+    "name": "Alphabet Inc. (Class A)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GOOG",
+    "name": "Alphabet Inc. (Class C)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MO",
+    "name": "Altria",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AMZN",
+    "name": "Amazon",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AMCR",
+    "name": "Amcor",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AEE",
+    "name": "Ameren",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AEP",
+    "name": "American Electric Power",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AXP",
+    "name": "American Express",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AIG",
+    "name": "American International Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AMT",
+    "name": "American Tower",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AWK",
+    "name": "American Water Works",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AMP",
+    "name": "Ameriprise Financial",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AME",
+    "name": "Ametek",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AMGN",
+    "name": "Amgen",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "APH",
+    "name": "Amphenol",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ADI",
+    "name": "Analog Devices",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AON",
+    "name": "Aon plc",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "APA",
+    "name": "APA Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "APO",
+    "name": "Apollo Global Management",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AAPL",
+    "name": "Apple Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AMAT",
+    "name": "Applied Materials",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "APP",
+    "name": "AppLovin",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "APTV",
+    "name": "Aptiv",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ACGL",
+    "name": "Arch Capital Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ADM",
+    "name": "Archer Daniels Midland",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ARES",
+    "name": "Ares Management",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ANET",
+    "name": "Arista Networks",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AJG",
+    "name": "Arthur J. Gallagher & Co.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AIZ",
+    "name": "Assurant",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "T",
+    "name": "AT&T",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ATO",
+    "name": "Atmos Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ADSK",
+    "name": "Autodesk",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ADP",
+    "name": "Automatic Data Processing",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AZO",
+    "name": "AutoZone",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AVB",
+    "name": "AvalonBay Communities",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AVY",
+    "name": "Avery Dennison",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AXON",
+    "name": "Axon Enterprise",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BKR",
+    "name": "Baker Hughes",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BALL",
+    "name": "Ball Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BAC",
+    "name": "Bank of America",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BAX",
+    "name": "Baxter International",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BDX",
+    "name": "Becton Dickinson",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BRK-B",
+    "name": "Berkshire Hathaway",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BBY",
+    "name": "Best Buy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TECH",
+    "name": "Bio-Techne",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BIIB",
+    "name": "Biogen",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BLK",
+    "name": "BlackRock",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BX",
+    "name": "Blackstone Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "XYZ",
+    "name": "Block, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BK",
+    "name": "BNY Mellon",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BA",
+    "name": "Boeing",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BKNG",
+    "name": "Booking Holdings",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BSX",
+    "name": "Boston Scientific",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BMY",
+    "name": "Bristol Myers Squibb",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "AVGO",
+    "name": "Broadcom",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BR",
+    "name": "Broadridge Financial Solutions",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BRO",
+    "name": "Brown & Brown",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BF-B",
+    "name": "Brown–Forman",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BLDR",
+    "name": "Builders FirstSource",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BG",
+    "name": "Bunge Global",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BXP",
+    "name": "BXP, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CHRW",
+    "name": "C.H. Robinson",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CDNS",
+    "name": "Cadence Design Systems",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CPT",
+    "name": "Camden Property Trust",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CPB",
+    "name": "Campbell's Company (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "COF",
+    "name": "Capital One",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CAH",
+    "name": "Cardinal Health",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CCL",
+    "name": "Carnival",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CARR",
+    "name": "Carrier Global",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CVNA",
+    "name": "Carvana",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CASY",
+    "name": "Casey's",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CAT",
+    "name": "Caterpillar Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CBOE",
+    "name": "Cboe Global Markets",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CBRE",
+    "name": "CBRE Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CDW",
+    "name": "CDW Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "COR",
+    "name": "Cencora",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CNC",
+    "name": "Centene Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CNP",
+    "name": "CenterPoint Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CF",
+    "name": "CF Industries",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CRL",
+    "name": "Charles River Laboratories",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SCHW",
+    "name": "Charles Schwab Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CHTR",
+    "name": "Charter Communications",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CVX",
+    "name": "Chevron Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CMG",
+    "name": "Chipotle Mexican Grill",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CB",
+    "name": "Chubb Limited",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CHD",
+    "name": "Church & Dwight",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CIEN",
+    "name": "Ciena",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CI",
+    "name": "Cigna",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CINF",
+    "name": "Cincinnati Financial",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CTAS",
+    "name": "Cintas",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CSCO",
+    "name": "Cisco",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "C",
+    "name": "Citigroup",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CFG",
+    "name": "Citizens Financial Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CLX",
+    "name": "Clorox",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CME",
+    "name": "CME Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CMS",
+    "name": "CMS Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KO",
+    "name": "Coca-Cola Company (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CTSH",
+    "name": "Cognizant",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "COHR",
+    "name": "Coherent Corp.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "COIN",
+    "name": "Coinbase",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CL",
+    "name": "Colgate-Palmolive",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CMCSA",
+    "name": "Comcast",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FIX",
+    "name": "Comfort Systems USA",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CAG",
+    "name": "Conagra Brands",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "COP",
+    "name": "ConocoPhillips",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ED",
+    "name": "Consolidated Edison",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "STZ",
+    "name": "Constellation Brands",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CEG",
+    "name": "Constellation Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "COO",
+    "name": "Cooper Companies (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CPRT",
+    "name": "Copart",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GLW",
+    "name": "Corning Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CPAY",
+    "name": "Corpay",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CTVA",
+    "name": "Corteva",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CSGP",
+    "name": "CoStar Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "COST",
+    "name": "Costco",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CRH",
+    "name": "CRH plc",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CRWD",
+    "name": "CrowdStrike",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CCI",
+    "name": "Crown Castle",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CSX",
+    "name": "CSX Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CMI",
+    "name": "Cummins",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CVS",
+    "name": "CVS Health",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DHR",
+    "name": "Danaher Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DRI",
+    "name": "Darden Restaurants",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DDOG",
+    "name": "Datadog",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DVA",
+    "name": "DaVita",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DECK",
+    "name": "Deckers Brands",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DE",
+    "name": "Deere & Company",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DELL",
+    "name": "Dell Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DAL",
+    "name": "Delta Air Lines",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DVN",
+    "name": "Devon Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DXCM",
+    "name": "Dexcom",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FANG",
+    "name": "Diamondback Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DLR",
+    "name": "Digital Realty",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DG",
+    "name": "Dollar General",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DLTR",
+    "name": "Dollar Tree",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "D",
+    "name": "Dominion Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DPZ",
+    "name": "Domino's",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DASH",
+    "name": "DoorDash",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DOV",
+    "name": "Dover Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DOW",
+    "name": "Dow Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DHI",
+    "name": "D. R. Horton",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DTE",
+    "name": "DTE Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DUK",
+    "name": "Duke Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DD",
+    "name": "DuPont",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ETN",
+    "name": "Eaton Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EBAY",
+    "name": "eBay Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SATS",
+    "name": "EchoStar",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ECL",
+    "name": "Ecolab",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EIX",
+    "name": "Edison International",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EW",
+    "name": "Edwards Lifesciences",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EA",
+    "name": "Electronic Arts",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ELV",
+    "name": "Elevance Health",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EME",
+    "name": "Emcor",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EMR",
+    "name": "Emerson Electric",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ETR",
+    "name": "Entergy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EOG",
+    "name": "EOG Resources",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EPAM",
+    "name": "EPAM Systems",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EQT",
+    "name": "EQT Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EFX",
+    "name": "Equifax",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EQIX",
+    "name": "Equinix",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EQR",
+    "name": "Equity Residential",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ERIE",
+    "name": "Erie Indemnity",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ESS",
+    "name": "Essex Property Trust",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EL",
+    "name": "Estée Lauder Companies (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EG",
+    "name": "Everest Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EVRG",
+    "name": "Evergy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ES",
+    "name": "Eversource Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EXC",
+    "name": "Exelon",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EXE",
+    "name": "Expand Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EXPE",
+    "name": "Expedia Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EXPD",
+    "name": "Expeditors International",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "EXR",
+    "name": "Extra Space Storage",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "XOM",
+    "name": "ExxonMobil",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FFIV",
+    "name": "F5, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FDS",
+    "name": "FactSet",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FICO",
+    "name": "Fair Isaac",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FAST",
+    "name": "Fastenal",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FRT",
+    "name": "Federal Realty Investment Trust",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FDX",
+    "name": "FedEx",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FIS",
+    "name": "Fidelity National Information Services",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FITB",
+    "name": "Fifth Third Bancorp",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FSLR",
+    "name": "First Solar",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FE",
+    "name": "FirstEnergy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FISV",
+    "name": "Fiserv",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "F",
+    "name": "Ford Motor Company",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FTNT",
+    "name": "Fortinet",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FTV",
+    "name": "Fortive",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FOXA",
+    "name": "Fox Corporation (Class A)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FOX",
+    "name": "Fox Corporation (Class B)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BEN",
+    "name": "Franklin Resources",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FCX",
+    "name": "Freeport-McMoRan",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GRMN",
+    "name": "Garmin",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IT",
+    "name": "Gartner",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GE",
+    "name": "GE Aerospace",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GEHC",
+    "name": "GE HealthCare",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GEV",
+    "name": "GE Vernova",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GEN",
+    "name": "Gen Digital",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GNRC",
+    "name": "Generac",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GD",
+    "name": "General Dynamics",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GIS",
+    "name": "General Mills",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GM",
+    "name": "General Motors",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GPC",
+    "name": "Genuine Parts Company",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GILD",
+    "name": "Gilead Sciences",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GPN",
+    "name": "Global Payments",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GL",
+    "name": "Globe Life",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GDDY",
+    "name": "GoDaddy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GS",
+    "name": "Goldman Sachs",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HAL",
+    "name": "Halliburton",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HIG",
+    "name": "Hartford (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HAS",
+    "name": "Hasbro",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HCA",
+    "name": "HCA Healthcare",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DOC",
+    "name": "Healthpeak Properties",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HSIC",
+    "name": "Henry Schein",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HSY",
+    "name": "Hershey Company (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HPE",
+    "name": "Hewlett Packard Enterprise",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HLT",
+    "name": "Hilton Worldwide",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HD",
+    "name": "Home Depot (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HON",
+    "name": "Honeywell",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HRL",
+    "name": "Hormel Foods",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HST",
+    "name": "Host Hotels & Resorts",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HWM",
+    "name": "Howmet Aerospace",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HPQ",
+    "name": "HP Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HUBB",
+    "name": "Hubbell Incorporated",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HUM",
+    "name": "Humana",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HBAN",
+    "name": "Huntington Bancshares",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HII",
+    "name": "Huntington Ingalls Industries",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IBM",
+    "name": "IBM",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IEX",
+    "name": "IDEX Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IDXX",
+    "name": "Idexx Laboratories",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ITW",
+    "name": "Illinois Tool Works",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "INCY",
+    "name": "Incyte",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IR",
+    "name": "Ingersoll Rand",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PODD",
+    "name": "Insulet Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "INTC",
+    "name": "Intel",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IBKR",
+    "name": "Interactive Brokers",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ICE",
+    "name": "Intercontinental Exchange",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IFF",
+    "name": "International Flavors & Fragrances",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IP",
+    "name": "International Paper",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "INTU",
+    "name": "Intuit",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ISRG",
+    "name": "Intuitive Surgical",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IVZ",
+    "name": "Invesco",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "INVH",
+    "name": "Invitation Homes",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IQV",
+    "name": "IQVIA",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "IRM",
+    "name": "Iron Mountain",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "JBHT",
+    "name": "J.B. Hunt",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "JBL",
+    "name": "Jabil",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "JKHY",
+    "name": "Jack Henry & Associates",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "J",
+    "name": "Jacobs Solutions",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "JNJ",
+    "name": "Johnson & Johnson",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "JCI",
+    "name": "Johnson Controls",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "JPM",
+    "name": "JPMorgan Chase",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KVUE",
+    "name": "Kenvue",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KDP",
+    "name": "Keurig Dr Pepper",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KEY",
+    "name": "KeyCorp",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KEYS",
+    "name": "Keysight Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KMB",
+    "name": "Kimberly-Clark",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KIM",
+    "name": "Kimco Realty",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KMI",
+    "name": "Kinder Morgan",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KKR",
+    "name": "KKR & Co.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KLAC",
+    "name": "KLA Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KHC",
+    "name": "Kraft Heinz",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "KR",
+    "name": "Kroger",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LHX",
+    "name": "L3Harris",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LH",
+    "name": "Labcorp",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LRCX",
+    "name": "Lam Research",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LVS",
+    "name": "Las Vegas Sands",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LDOS",
+    "name": "Leidos",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LEN",
+    "name": "Lennar",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LII",
+    "name": "Lennox International",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LLY",
+    "name": "Lilly (Eli)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LIN",
+    "name": "Linde plc",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LYV",
+    "name": "Live Nation Entertainment",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LMT",
+    "name": "Lockheed Martin",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "L",
+    "name": "Loews Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LOW",
+    "name": "Lowe's",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LULU",
+    "name": "Lululemon Athletica",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LITE",
+    "name": "Lumentum",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LYB",
+    "name": "LyondellBasell",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MTB",
+    "name": "M&T Bank",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MPC",
+    "name": "Marathon Petroleum",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MAR",
+    "name": "Marriott International",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MRSH",
+    "name": "Marsh McLennan",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MLM",
+    "name": "Martin Marietta Materials",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MAS",
+    "name": "Masco",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MA",
+    "name": "Mastercard",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MKC",
+    "name": "McCormick & Company",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MCD",
+    "name": "McDonald's",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MCK",
+    "name": "McKesson Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MDT",
+    "name": "Medtronic",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MRK",
+    "name": "Merck & Co.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "META",
+    "name": "Meta Platforms",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MET",
+    "name": "MetLife",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MTD",
+    "name": "Mettler Toledo",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MGM",
+    "name": "MGM Resorts",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MCHP",
+    "name": "Microchip Technology",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MU",
+    "name": "Micron Technology",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MSFT",
+    "name": "Microsoft",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MAA",
+    "name": "Mid-America Apartment Communities",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MRNA",
+    "name": "Moderna",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TAP",
+    "name": "Molson Coors Beverage Company",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MDLZ",
+    "name": "Mondelez International",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MPWR",
+    "name": "Monolithic Power Systems",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MNST",
+    "name": "Monster Beverage",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MCO",
+    "name": "Moody's Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MS",
+    "name": "Morgan Stanley",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MOS",
+    "name": "Mosaic Company (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MSI",
+    "name": "Motorola Solutions",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MSCI",
+    "name": "MSCI Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NDAQ",
+    "name": "Nasdaq, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NTAP",
+    "name": "NetApp",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NFLX",
+    "name": "Netflix",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NEM",
+    "name": "Newmont",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NWSA",
+    "name": "News Corp (Class A)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NWS",
+    "name": "News Corp (Class B)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NEE",
+    "name": "NextEra Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NKE",
+    "name": "Nike, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NI",
+    "name": "NiSource",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NDSN",
+    "name": "Nordson Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NSC",
+    "name": "Norfolk Southern",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NTRS",
+    "name": "Northern Trust",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NOC",
+    "name": "Northrop Grumman",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NCLH",
+    "name": "Norwegian Cruise Line Holdings",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NRG",
+    "name": "NRG Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NUE",
+    "name": "Nucor",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NVDA",
+    "name": "Nvidia",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NVR",
+    "name": "NVR, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NXPI",
+    "name": "NXP Semiconductors",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ORLY",
+    "name": "O’Reilly Automotive",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "OXY",
+    "name": "Occidental Petroleum",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ODFL",
+    "name": "Old Dominion",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "OMC",
+    "name": "Omnicom Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ON",
+    "name": "ON Semiconductor",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "OKE",
+    "name": "Oneok",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ORCL",
+    "name": "Oracle Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "OTIS",
+    "name": "Otis Worldwide",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PCAR",
+    "name": "Paccar",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PKG",
+    "name": "Packaging Corporation of America",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PLTR",
+    "name": "Palantir Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PANW",
+    "name": "Palo Alto Networks",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PSKY",
+    "name": "Paramount Skydance Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PH",
+    "name": "Parker Hannifin",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PAYX",
+    "name": "Paychex",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PYPL",
+    "name": "PayPal",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PNR",
+    "name": "Pentair",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PEP",
+    "name": "PepsiCo",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PFE",
+    "name": "Pfizer",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PCG",
+    "name": "PG&E Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PM",
+    "name": "Philip Morris International",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PSX",
+    "name": "Phillips 66",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PNW",
+    "name": "Pinnacle West Capital",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PNC",
+    "name": "PNC Financial Services",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "POOL",
+    "name": "Pool Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PPG",
+    "name": "PPG Industries",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PPL",
+    "name": "PPL Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PFG",
+    "name": "Principal Financial Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PG",
+    "name": "Procter & Gamble",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PGR",
+    "name": "Progressive Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PLD",
+    "name": "Prologis",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PRU",
+    "name": "Prudential Financial",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PEG",
+    "name": "Public Service Enterprise Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PTC",
+    "name": "PTC Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PSA",
+    "name": "Public Storage",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PHM",
+    "name": "PulteGroup",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PWR",
+    "name": "Quanta Services",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "QCOM",
+    "name": "Qualcomm",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DGX",
+    "name": "Quest Diagnostics",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "Q",
+    "name": "Qnity Electronics",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RL",
+    "name": "Ralph Lauren Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RJF",
+    "name": "Raymond James Financial",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RTX",
+    "name": "RTX Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "O",
+    "name": "Realty Income",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "REG",
+    "name": "Regency Centers",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "REGN",
+    "name": "Regeneron Pharmaceuticals",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RF",
+    "name": "Regions Financial Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RSG",
+    "name": "Republic Services",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RMD",
+    "name": "ResMed",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RVTY",
+    "name": "Revvity",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "HOOD",
+    "name": "Robinhood Markets",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ROK",
+    "name": "Rockwell Automation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ROL",
+    "name": "Rollins, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ROP",
+    "name": "Roper Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ROST",
+    "name": "Ross Stores",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RCL",
+    "name": "Royal Caribbean Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SPGI",
+    "name": "S&P Global",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CRM",
+    "name": "Salesforce",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SNDK",
+    "name": "Sandisk",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SBAC",
+    "name": "SBA Communications",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SLB",
+    "name": "Schlumberger",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "STX",
+    "name": "Seagate Technology",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SRE",
+    "name": "Sempra",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NOW",
+    "name": "ServiceNow",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SHW",
+    "name": "Sherwin-Williams",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SPG",
+    "name": "Simon Property Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SWKS",
+    "name": "Skyworks Solutions",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SJM",
+    "name": "J.M. Smucker Company (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SW",
+    "name": "Smurfit Westrock",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SNA",
+    "name": "Snap-on",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SOLV",
+    "name": "Solventum",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SO",
+    "name": "Southern Company",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LUV",
+    "name": "Southwest Airlines",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SWK",
+    "name": "Stanley Black & Decker",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SBUX",
+    "name": "Starbucks",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "STT",
+    "name": "State Street Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "STLD",
+    "name": "Steel Dynamics",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "STE",
+    "name": "Steris",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SYK",
+    "name": "Stryker Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SMCI",
+    "name": "Supermicro",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SYF",
+    "name": "Synchrony Financial",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SNPS",
+    "name": "Synopsys",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SYY",
+    "name": "Sysco",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TMUS",
+    "name": "T-Mobile US",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TROW",
+    "name": "T. Rowe Price",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TTWO",
+    "name": "Take-Two Interactive",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TPR",
+    "name": "Tapestry, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TRGP",
+    "name": "Targa Resources",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TGT",
+    "name": "Target Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TEL",
+    "name": "TE Connectivity",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TDY",
+    "name": "Teledyne Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TER",
+    "name": "Teradyne",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TSLA",
+    "name": "Tesla, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TXN",
+    "name": "Texas Instruments",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TPL",
+    "name": "Texas Pacific Land Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TXT",
+    "name": "Textron",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TMO",
+    "name": "Thermo Fisher Scientific",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TJX",
+    "name": "TJX Companies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TKO",
+    "name": "TKO Group Holdings",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TTD",
+    "name": "Trade Desk (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TSCO",
+    "name": "Tractor Supply",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TT",
+    "name": "Trane Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TDG",
+    "name": "TransDigm Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TRV",
+    "name": "Travelers Companies (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TRMB",
+    "name": "Trimble Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TFC",
+    "name": "Truist Financial",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TYL",
+    "name": "Tyler Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TSN",
+    "name": "Tyson Foods",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "USB",
+    "name": "U.S. Bancorp",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "UBER",
+    "name": "Uber",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "UDR",
+    "name": "UDR, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ULTA",
+    "name": "Ulta Beauty",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "UNP",
+    "name": "Union Pacific Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "UAL",
+    "name": "United Airlines Holdings",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "UPS",
+    "name": "United Parcel Service",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "URI",
+    "name": "United Rentals",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "UNH",
+    "name": "UnitedHealth Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "UHS",
+    "name": "Universal Health Services",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VLO",
+    "name": "Valero Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VEEV",
+    "name": "Veeva Systems",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VTR",
+    "name": "Ventas",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VLTO",
+    "name": "Veralto",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VRSN",
+    "name": "Verisign",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VRSK",
+    "name": "Verisk Analytics",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VZ",
+    "name": "Verizon",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VRTX",
+    "name": "Vertex Pharmaceuticals",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VRT",
+    "name": "Vertiv",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VTRS",
+    "name": "Viatris",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VICI",
+    "name": "Vici Properties",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "V",
+    "name": "Visa Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VST",
+    "name": "Vistra Corp.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "VMC",
+    "name": "Vulcan Materials Company",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WRB",
+    "name": "W. R. Berkley Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GWW",
+    "name": "W. W. Grainger",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WAB",
+    "name": "Wabtec",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WMT",
+    "name": "Walmart",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "DIS",
+    "name": "Walt Disney Company (The)",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WBD",
+    "name": "Warner Bros. Discovery",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WM",
+    "name": "Waste Management",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WAT",
+    "name": "Waters Corporation",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WEC",
+    "name": "WEC Energy Group",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WFC",
+    "name": "Wells Fargo",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WELL",
+    "name": "Welltower",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WST",
+    "name": "West Pharmaceutical Services",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WDC",
+    "name": "Western Digital",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WY",
+    "name": "Weyerhaeuser",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WSM",
+    "name": "Williams-Sonoma, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WMB",
+    "name": "Williams Companies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WTW",
+    "name": "Willis Towers Watson",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WDAY",
+    "name": "Workday, Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "WYNN",
+    "name": "Wynn Resorts",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "XEL",
+    "name": "Xcel Energy",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "XYL",
+    "name": "Xylem Inc.",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "YUM",
+    "name": "Yum! Brands",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ZBRA",
+    "name": "Zebra Technologies",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ZBH",
+    "name": "Zimmer Biomet",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ZTS",
+    "name": "Zoetis",
+    "exchange": "NYSE/NASDAQ",
+    "market": "S&P500",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ALNY",
+    "name": "Alnylam Pharmaceuticals",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ARM",
+    "name": "Arm Holdings",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ASML",
+    "name": "ASML Holding",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "CCEP",
+    "name": "Coca-Cola Europacific Partners",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "FER",
+    "name": "Ferrovial",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "INSM",
+    "name": "Insmed Incorporated",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MRVL",
+    "name": "Marvell Technology",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MELI",
+    "name": "Mercado Libre",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "MSTR",
+    "name": "MicroStrategy",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PDD",
+    "name": "PDD Holdings",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SHOP",
+    "name": "Shopify",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "TRI",
+    "name": "Thomson Reuters",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "ZS",
+    "name": "Zscaler",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ100",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "OKTA",
+    "name": "Okta",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NET",
+    "name": "Cloudflare",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SNOW",
+    "name": "Snowflake",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RBLX",
+    "name": "Roblox",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LYFT",
+    "name": "Lyft",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "PINS",
+    "name": "Pinterest",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SNAP",
+    "name": "Snap",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SPOT",
+    "name": "Spotify",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SOFI",
+    "name": "SoFi",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "RIVN",
+    "name": "Rivian",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "LCID",
+    "name": "Lucid Motors",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NIO",
+    "name": "NIO",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "XPEV",
+    "name": "XPeng",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BIDU",
+    "name": "Baidu",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "JD",
+    "name": "JD.com",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BILI",
+    "name": "Bilibili",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "NTES",
+    "name": "NetEase",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "BABA",
+    "name": "Alibaba",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "SE",
+    "name": "Sea Limited",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GRAB",
+    "name": "Grab",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  },
+  {
+    "symbol": "GOTO",
+    "name": "GoTo",
+    "exchange": "NASDAQ",
+    "market": "NASDAQ",
+    "type": "EQUITY"
+  }
+]
