@@ -614,20 +614,21 @@ function renderZones(analysis, stock) {
       : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
   };
 
-  const verdictColor = analysis.verdict_color || 'neutral';
+  // 1개월 범위 기반 현재 위치 판단
+  const entryLow  = analysis.entry_low  || entry;
+  const entryHigh = analysis.entry_high || entry * 1.02;
+  const targetLow = analysis.target_low || target * 0.97;
+  const targetHigh = analysis.target_high || target;
+  const monthHigh = analysis.month_high || target;
+  const monthLow  = analysis.month_low  || stop;
+
   let priceZone = '관망 구간', priceColor = 'neutral';
   if (price <= stop) {
     priceZone = '손절 구간'; priceColor = 'bearish';
-  } else if (price >= target * 0.97) {
-    priceZone = '매도 추천 구간'; priceColor = 'bearish';
-  } else if (verdictColor === 'strong-buy') {
-    priceZone = '강한 매수 구간'; priceColor = 'bullish';
-  } else if (verdictColor === 'buy') {
+  } else if (price <= entryHigh) {
     priceZone = '매수 추천 구간'; priceColor = 'bullish';
-  } else if (verdictColor === 'sell') {
-    priceZone = '매도 주의 구간'; priceColor = 'bearish';
-  } else if (verdictColor === 'strong-sell') {
-    priceZone = '강한 매도 구간'; priceColor = 'bearish';
+  } else if (price >= targetLow) {
+    priceZone = '매도 추천 구간'; priceColor = 'bearish';
   }
 
   let rsiMsg = '';
@@ -660,9 +661,9 @@ function renderZones(analysis, stock) {
         <div class="zone-content">
           <div class="zone-title-row">
             <span class="zone-name">매수 추천 구간</span>
-            <span class="zone-price-range">${fmt(entry * 0.98)} ~ ${fmt(entry * 1.02)}</span>
+            <span class="zone-price-range">${fmt(entryLow)} ~ ${fmt(entryHigh)}</span>
           </div>
-          <div class="zone-explanation">이 구간으로 주가가 내려오면 분할 매수를 고려해보세요. 한 번에 전액 투자하기보다 2~3번에 나눠 사면 리스크를 줄일 수 있어요.</div>
+          <div class="zone-explanation">최근 한 달 저점 부근이에요. 이 구간으로 주가가 내려오면 분할 매수를 고려해보세요. 한 번에 전액 투자하기보다 2~3번에 나눠 사면 리스크를 줄일 수 있어요.</div>
         </div>
       </div>
 
@@ -682,7 +683,7 @@ function renderZones(analysis, stock) {
         <div class="zone-content">
           <div class="zone-title-row">
             <span class="zone-name">매도 추천 구간 (목표가)</span>
-            <span class="zone-price-range">${fmt(target * 0.97)} ~ ${fmt(target)}</span>
+            <span class="zone-price-range">${fmt(targetLow)} ~ ${fmt(targetHigh)}</span>
           </div>
           <div class="zone-explanation">목표가 근처에서 보유 물량의 절반씩 나눠 파는 것을 추천해요. 한 번에 전량 매도하면 추가 상승을 놓칠 수 있어요.</div>
         </div>
@@ -694,15 +695,15 @@ function renderZones(analysis, stock) {
       <div class="zones-guide-grid">
         <div class="guide-card buy-guide">
           <div class="guide-card-title">✅ 언제 살까요?</div>
-          <div class="guide-card-body">현재가가 <strong>${fmt(entry * 0.98)} ~ ${fmt(entry * 1.02)}</strong> 구간에 오거나, RSI가 40 이하로 내려오면 분할 매수를 고려하세요. 급등하는 종목을 쫓아가며 사는 건 위험해요.</div>
+          <div class="guide-card-body">현재가가 <strong>${fmt(entryLow)} ~ ${fmt(entryHigh)}</strong> 구간(최근 1개월 저점 부근)에 오거나 RSI가 40 이하로 내려오면 분할 매수를 고려하세요. 급등하는 종목을 쫓아가며 사는 건 위험해요.</div>
         </div>
         <div class="guide-card sell-guide">
           <div class="guide-card-title">💰 언제 팔까요?</div>
-          <div class="guide-card-body">목표가 <strong>${fmt(target)}</strong> 근처에서 절반씩 분할 매도를 추천해요. RSI가 70을 넘으면 추가 상승보다 조정 가능성을 고려하세요.</div>
+          <div class="guide-card-body">현재가가 <strong>${fmt(targetLow)} ~ ${fmt(targetHigh)}</strong> 구간(최근 1개월 고점 부근)에 오면 절반씩 분할 매도를 추천해요. RSI가 70을 넘으면 추가 상승보다 조정 가능성을 고려하세요.</div>
         </div>
         <div class="guide-card stop-guide">
           <div class="guide-card-title">🛑 손절 기준은?</div>
-          <div class="guide-card-body"><strong>${fmt(stop)}</strong> 아래로 떨어지면 추가 하락 가능성이 높아요. 손실이 커지기 전에 매도하는 게 현명해요. "언젠가 오르겠지"는 금물이에요.</div>
+          <div class="guide-card-body"><strong>${fmt(stop)}</strong>(최근 1개월 최저가 아래) 로 떨어지면 지지선이 무너진 신호예요. 추가 하락 가능성이 높으니 손실이 커지기 전에 매도하는 게 현명해요.</div>
         </div>
         <div class="guide-card split-guide">
           <div class="guide-card-title">⚖️ 분할 매매란?</div>

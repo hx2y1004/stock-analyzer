@@ -602,11 +602,27 @@ def analyze_signals(df, info):
     # ── 종합 판단 (기술 + 펀더멘털 통합) ──────────────
     combined_score = max(-100, min(100, score + fund_score))
 
-    atr_series = (df["High"] - df["Low"]).rolling(14).mean()
-    atr_val    = _f(atr_series.iloc[-1])
-    entry_price  = round(close * 0.98, 2)
-    stop_loss    = round(close - (atr_val or close * 0.03) * 1.5, 2)
-    target_price = round(close * (1.10 if combined_score > 50 else 1.06 if combined_score > 20 else 1.03 if combined_score > 0 else 0.97), 2)
+    # ── 1개월 기반 구간 계산 ────────────────────────────
+    atr_series  = (df["High"] - df["Low"]).rolling(14).mean()
+    atr_val     = _f(atr_series.iloc[-1])
+
+    month       = df.tail(21)                          # 최근 21거래일 ≈ 1개월
+    month_high  = float(month["High"].max())
+    month_low   = float(month["Low"].min())
+    month_range = month_high - month_low if month_high > month_low else close * 0.1
+
+    # 손절: 1개월 최저가 - ATR (지지선 완전 이탈 기준)
+    stop_loss   = round(month_low - (atr_val or month_range * 0.1), 2)
+
+    # 매수 추천 구간: 1개월 범위 하위 30%
+    entry_low   = round(month_low, 2)
+    entry_high  = round(month_low + month_range * 0.30, 2)
+    entry_price = round((entry_low + entry_high) / 2, 2)
+
+    # 매도 추천 구간: 1개월 범위 상위 30%
+    target_low  = round(month_low + month_range * 0.70, 2)
+    target_high = round(month_high, 2)
+    target_price = target_low   # 기존 호환용 (매도 시작점)
 
     if combined_score >= 50:   verdict, verdict_color = "강한 매수", "strong-buy"
     elif combined_score >= 20: verdict, verdict_color = "매수",       "buy"
@@ -622,8 +638,14 @@ def analyze_signals(df, info):
         "details": details,
         "fundamental_details": fund_details,
         "entry_price": entry_price,
+        "entry_low":   entry_low,
+        "entry_high":  entry_high,
         "target_price": target_price,
+        "target_low":  target_low,
+        "target_high": target_high,
         "stop_loss": stop_loss,
+        "month_high": round(month_high, 2),
+        "month_low":  round(month_low, 2),
         "rsi":         round(rsi, 2)          if not np.isnan(rsi)  else None,
         "macd":        round(macd, 4)          if not np.isnan(macd) else None,
         "bb_position": round(bb_position, 1)   if bb_position is not None else None,
