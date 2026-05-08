@@ -413,7 +413,7 @@ body {
 /* ── 매수/매도 구간 탭 ── */
 .zones-wrap { display: flex; flex-direction: column; gap: 20px; }
 .zones-header {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
@@ -1354,6 +1354,21 @@ body {
 .badge-52w.high      { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
 .badge-52w.near-high { background: rgba(63,185,80,0.08); color: var(--green); border: 1px solid rgba(63,185,80,0.25); }
 .badge-52w.low       { background: rgba(248,81,73,0.12); color: var(--red);   border: 1px solid rgba(248,81,73,0.35); }
+
+.badge-trend {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-trend.golden  { background: rgba(240,165,0,0.15);  color: #f0a500; border: 1px solid rgba(240,165,0,0.4); }
+.badge-trend.dead    { background: rgba(248,81,73,0.12);  color: var(--red); border: 1px solid rgba(248,81,73,0.35); }
+.badge-trend.bb-exp  { background: rgba(88,166,255,0.12); color: var(--accent); border: 1px solid rgba(88,166,255,0.3); }
+.badge-trend.bb-con  { background: rgba(188,140,255,0.12);color: var(--purple); border: 1px solid rgba(188,140,255,0.3); }
+.badge-trend.vol-up  { background: rgba(63,185,80,0.10);  color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+.badge-trend.vol-down{ background: rgba(248,81,73,0.10);  color: var(--red);   border: 1px solid rgba(248,81,73,0.3); }
 
 /* ── 신규 매수자 관점 박스 ── */
 .new-buyer-advice {
