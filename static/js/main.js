@@ -62,8 +62,8 @@ function _pfCardHTML(h) {
   const retClass = retPct == null ? 'neutral' : retPct > 0 ? 'up' : retPct < 0 ? 'down' : 'neutral';
   const retIcon  = retPct > 0 ? '▲' : retPct < 0 ? '▼' : '';
   const cur      = h.currency || 'USD';
-  const fmtPrice = (v) => v == null ? '—' : cur === 'KRW'
-    ? Number(v).toLocaleString('ko-KR') + '원'
+  const fmtPrice = (v, noRound = false) => v == null ? '—' : cur === 'KRW'
+    ? (noRound ? Number(v) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
     : '$' + Number(v).toLocaleString();
   return `
   <div class="pf-card" onclick="quickSearch('${h.ticker}')">
@@ -77,7 +77,7 @@ function _pfCardHTML(h) {
     <div class="pf-prices">
       <div class="pf-price-item">
         <div>매입가</div>
-        <div class="pf-price-val">${fmtPrice(h.purchase_price)}</div>
+        <div class="pf-price-val">${fmtPrice(h.purchase_price, true)}</div>
       </div>
       <div class="pf-price-item" style="text-align:right">
         <div>현재가</div>
@@ -253,7 +253,9 @@ function renderPositionCard(position, stock) {
 
   // 보유 중
   const cur = position.currency || 'USD';
-  const fmtP = (v) => v == null ? '—' : (cur === 'KRW' ? '' : '$') + Number(v).toLocaleString() + (cur === 'KRW' ? '원' : '');
+  const fmtP = (v, noRound = false) => v == null ? '—' : cur === 'KRW'
+    ? (noRound ? Number(v) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
+    : '$' + Number(v).toLocaleString();
   const rec  = position.recommendation;
   const pct  = rec ? rec.return_pct : null;
   const pctStr   = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—';
@@ -267,7 +269,7 @@ function renderPositionCard(position, stock) {
       </div>
       <div class="position-row">
         <span class="position-label">매입 평균가</span>
-        <span class="position-value">${fmtP(position.purchase_price)}</span>
+        <span class="position-value">${fmtP(position.purchase_price, true)}</span>
       </div>
       <div class="position-row">
         <span class="position-label">현재가</span>
@@ -429,9 +431,12 @@ function showError(msg) {
   document.getElementById('loading').classList.add('hidden');
 }
 
-function fmt(num, currency = 'USD') {
+function fmt(num, currency = 'USD', noRound = false) {
   if (num == null) return '—';
-  if (currency === 'KRW') return num.toLocaleString('ko-KR') + '원';
+  if (currency === 'KRW') {
+    const v = noRound ? num : Math.round(num / 10) * 10;
+    return v.toLocaleString('ko-KR') + '원';
+  }
   return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -491,7 +496,7 @@ function renderMetrics(stock, analysis) {
     stock.pb_ratio != null ? stock.pb_ratio.toFixed(2) + 'x' : '—';
 
   document.getElementById('epsValue').textContent =
-    stock.eps != null ? fmt(stock.eps, cur) : '—';
+    stock.eps != null ? fmt(stock.eps, cur, true) : '—';  // EPS는 소수점 유지
 
   document.getElementById('dividendYield').textContent =
     stock.dividend_yield != null ? (stock.dividend_yield * 100).toFixed(2) + '%' : '—';
@@ -674,7 +679,7 @@ function renderZones(analysis, stock) {
   const fmt = (v) => {
     if (v == null) return '—';
     return isKRW
-      ? Number(Math.round(v)).toLocaleString() + '원'
+      ? (Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
       : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
   };
 
