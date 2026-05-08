@@ -338,6 +338,7 @@ async function analyze() {
     renderFundamental(data.analysis.fundamental_details || []);
     renderMetrics(data.stock, data.analysis);
     renderPositionCard(data.position || null, data.stock);
+    renderZones(data.analysis, data.stock);
     renderAnalysts(data.analysts, data.stock.currency);
     renderNews(data.news);
 
@@ -455,6 +456,55 @@ function renderMATable(maAnalysis, currentPrice) {
   `).join('');
 }
 
+// ── 지표별 초보자 팁 ──────────────────────────────────────
+const INDICATOR_TIPS = {
+  '이동평균선 (MA)': {
+    bullish: '📈 단기→중기→장기 순서로 정렬된 "정배열" 상태예요. 주가가 꾸준히 오르는 좋은 흐름이에요.',
+    bearish: '📉 장기→중기→단기로 역전된 "역배열" 상태예요. 하락 추세가 이어질 수 있어 신중하게 접근하세요.',
+    neutral: '↔️ 이동평균선들이 뒤섞여 있어요. 방향이 불분명해 추세가 확실해질 때까지 기다리는 것도 방법이에요.'
+  },
+  '볼린저밴드 (BB)': {
+    bullish: '📈 주가가 밴드 아래쪽에 가까워요. 평소보다 많이 떨어진 상태로 반등 가능성을 의미해요.',
+    bearish: '⚠️ 주가가 밴드 위쪽에 가까워요. 단기 과열 상태로 조정(하락)이 올 수 있어요.',
+    neutral: '↔️ 주가가 밴드 중간에 있어요. 특별한 과매수·과매도 신호는 없어요.'
+  },
+  '일목균형표': {
+    bullish: '☁️ 주가가 구름대 위에 있어요. 상승 추세가 강하며 구름대가 지지선 역할을 해줘요.',
+    bearish: '☁️ 주가가 구름대 아래에 있어요. 하락 추세가 강하며 구름대가 저항선 역할을 해요.',
+    neutral: '☁️ 주가가 구름대 안에 있어요. 상승·하락 방향이 결정되지 않은 과도기 상태예요.'
+  },
+  'RSI (상대강도지수)': {
+    bullish: '💚 RSI 30 이하 "과매도" 구간이에요. 너무 많이 떨어진 상태로 반등 가능성이 높아요.',
+    bearish: '🔴 RSI 70 이상 "과매수" 구간이에요. 너무 많이 오른 상태로 조정이 올 수 있어요.',
+    neutral: '✅ RSI가 적정 범위(30~70)에 있어요. 과열도 과냉도 아닌 안정적인 상태예요.'
+  },
+  'MACD': {
+    bullish: '📈 MACD가 시그널선 위로 올라왔어요. 상승 모멘텀이 생기는 신호로 매수 타이밍일 수 있어요.',
+    bearish: '📉 MACD가 시그널선 아래로 내려갔어요. 하락 압력이 생기는 신호로 매도를 고려할 수 있어요.',
+    neutral: '↔️ MACD와 시그널선이 비슷한 수준이에요. 방향 전환을 앞두고 있을 수 있어요.'
+  },
+  '밸류에이션': {
+    bullish: '💚 PER·PBR이 낮아요. 현재 주가가 기업 가치 대비 저렴해 투자 매력이 있어요.',
+    bearish: '🔴 PER·PBR이 높아요. 현재 주가가 기업 가치 대비 비싸 가격 부담이 있어요.',
+    neutral: '↔️ PER·PBR이 업종 평균 수준이에요. 특별히 싸거나 비싸지 않아요.'
+  },
+  '수급 & 거래량': {
+    bullish: '📊 거래량이 평소보다 많아요. 많은 투자자들이 적극적으로 매수하고 있다는 신호예요.',
+    bearish: '📊 거래량이 하락 시 많아요. 매도 압력이 강하다는 신호일 수 있어요.',
+    neutral: '📊 거래량이 평균 수준이에요. 특별한 수급 신호는 없어요.'
+  },
+  '시장 위치 & 모멘텀': {
+    bullish: '🚀 최근 상승세가 강해요. 52주 고가 근처에 있어 상승 모멘텀이 살아있어요.',
+    bearish: '📉 최근 하락세가 강해요. 52주 저가 근처에 있어 모멘텀이 약해요.',
+    neutral: '↔️ 52주 범위 중간 정도에 있어요. 특별한 방향성은 없어요.'
+  },
+  '재무 건전성': {
+    bullish: '💪 ROE가 높고 부채가 적어요. 돈을 잘 버는 재무 건강한 기업이에요.',
+    bearish: '⚠️ 부채가 많거나 수익성이 낮아요. 재무 리스크에 주의가 필요해요.',
+    neutral: '↔️ 재무 지표가 평균 수준이에요. 특별한 문제나 장점은 없어요.'
+  }
+};
+
 // ── 분석 탭 전환 ────────────────────────────────────────
 function switchDetailTab(tab) {
   document.querySelectorAll('.analysis-tab').forEach(btn => {
@@ -462,11 +512,15 @@ function switchDetailTab(tab) {
   });
   document.getElementById('detailList').classList.toggle('hidden', tab !== 'technical');
   document.getElementById('fundamentalList').classList.toggle('hidden', tab !== 'fundamental');
+  document.getElementById('zonesList').classList.toggle('hidden', tab !== 'zones');
 }
 
 function _buildCards(details) {
   if (!details || !details.length) return '<p class="no-data">분석 데이터가 없습니다.</p>';
-  return details.map(d => `
+  return details.map(d => {
+    const tipObj = INDICATOR_TIPS[d.indicator];
+    const tip = tipObj ? (tipObj[d.color] || tipObj['neutral'] || '') : '';
+    return `
     <div class="detail-item open">
       <div class="detail-header" style="cursor:default">
         <span class="detail-indicator">${d.indicator}</span>
@@ -481,9 +535,10 @@ function _buildCards(details) {
           `).join('')}
         </div>
         <div class="detail-desc">${d.desc}</div>
+        ${tip ? `<div class="detail-tip">💡 <strong>쉬운 설명</strong> ${tip}</div>` : ''}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 // ── 기술적 분석 카드 ──────────────────────────────────────
@@ -494,6 +549,122 @@ function renderDetail(details) {
 // ── 투자 판단 카드 ────────────────────────────────────────
 function renderFundamental(details) {
   document.getElementById('fundamentalList').innerHTML = _buildCards(details);
+}
+
+// ── 매수/매도 구간 탭 ─────────────────────────────────────
+function _getZoneAdvice(price, entry, target, stop, rsi) {
+  if (price <= stop)         return '손절 구간 아래에 있어요. 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.';
+  if (price <= entry * 1.02) return '매수 추천 구간이에요! 분할 매수를 고려해볼 수 있는 좋은 타이밍이에요.';
+  if (price >= target * 0.97) return '목표가 근처에 있어요. 분할 매도를 고려해볼 시점이에요.';
+  const pct = ((price - entry) / entry * 100).toFixed(1);
+  return `매수 추천가 대비 +${pct}% 수준이에요. 급하게 추가 매수하기보다 현 포지션을 유지하세요.`;
+}
+
+function renderZones(analysis, stock) {
+  const el = document.getElementById('zonesList');
+  if (!el || !analysis) return;
+
+  const cur    = stock.currency || 'USD';
+  const isKRW  = cur === 'KRW';
+  const price  = stock.current_price;
+  const entry  = analysis.entry_price;
+  const target = analysis.target_price;
+  const stop   = analysis.stop_loss;
+  const rsi    = analysis.rsi ? analysis.rsi.toFixed(1) : '—';
+
+  const fmt = (v) => {
+    if (v == null) return '—';
+    return isKRW
+      ? Number(Math.round(v)).toLocaleString() + '원'
+      : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  };
+
+  let priceZone = '중립 구간', priceColor = 'neutral';
+  if (price <= stop)          { priceZone = '손절 구간';      priceColor = 'bearish'; }
+  else if (price <= entry*1.02){ priceZone = '매수 추천 구간'; priceColor = 'bullish'; }
+  else if (price >= target*0.97){ priceZone = '매도 추천 구간'; priceColor = 'bearish'; }
+
+  let rsiMsg = '';
+  const rsiNum = parseFloat(rsi);
+  if (rsiNum < 30)      rsiMsg = '⚠️ RSI 과매도 — 반등 가능성';
+  else if (rsiNum > 70) rsiMsg = '⚠️ RSI 과매수 — 조정 가능성';
+  else                  rsiMsg = '✅ RSI 정상 범위';
+
+  el.innerHTML = `
+  <div class="zones-wrap">
+    <div class="zones-header">
+      <span class="zones-current-price">현재가 <strong>${fmt(price)}</strong></span>
+      <span class="zones-rsi-badge">${rsiMsg}</span>
+    </div>
+
+    <div class="zones-list">
+      <div class="zone-row zone-stop">
+        <div class="zone-icon-col">🛑</div>
+        <div class="zone-content">
+          <div class="zone-title-row">
+            <span class="zone-name">손절 구간</span>
+            <span class="zone-price-range">${fmt(stop)} 이하</span>
+          </div>
+          <div class="zone-explanation">이 가격 아래로 떨어지면 더 큰 손실을 막기 위해 매도를 고려하세요. 원칙을 지키는 게 중요해요.</div>
+        </div>
+      </div>
+
+      <div class="zone-row zone-buy">
+        <div class="zone-icon-col">🟢</div>
+        <div class="zone-content">
+          <div class="zone-title-row">
+            <span class="zone-name">매수 추천 구간</span>
+            <span class="zone-price-range">${fmt(entry * 0.98)} ~ ${fmt(entry * 1.02)}</span>
+          </div>
+          <div class="zone-explanation">이 구간으로 주가가 내려오면 분할 매수를 고려해보세요. 한 번에 전액 투자하기보다 2~3번에 나눠 사면 리스크를 줄일 수 있어요.</div>
+        </div>
+      </div>
+
+      <div class="zone-row zone-current ${priceColor}">
+        <div class="zone-icon-col">📍</div>
+        <div class="zone-content">
+          <div class="zone-title-row">
+            <span class="zone-name">현재 위치 <span class="zone-badge ${priceColor}">${priceZone}</span></span>
+            <span class="zone-price-range">${fmt(price)}</span>
+          </div>
+          <div class="zone-explanation">${_getZoneAdvice(price, entry, target, stop, rsiNum)}</div>
+        </div>
+      </div>
+
+      <div class="zone-row zone-sell">
+        <div class="zone-icon-col">💰</div>
+        <div class="zone-content">
+          <div class="zone-title-row">
+            <span class="zone-name">매도 추천 구간 (목표가)</span>
+            <span class="zone-price-range">${fmt(target * 0.97)} ~ ${fmt(target)}</span>
+          </div>
+          <div class="zone-explanation">목표가 근처에서 보유 물량의 절반씩 나눠 파는 것을 추천해요. 한 번에 전량 매도하면 추가 상승을 놓칠 수 있어요.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="zones-guide">
+      <h4 class="zones-guide-title">📚 초보자를 위한 매매 가이드</h4>
+      <div class="zones-guide-grid">
+        <div class="guide-card buy-guide">
+          <div class="guide-card-title">✅ 언제 살까요?</div>
+          <div class="guide-card-body">현재가가 <strong>${fmt(entry * 0.98)} ~ ${fmt(entry * 1.02)}</strong> 구간에 오거나, RSI가 40 이하로 내려오면 분할 매수를 고려하세요. 급등하는 종목을 쫓아가며 사는 건 위험해요.</div>
+        </div>
+        <div class="guide-card sell-guide">
+          <div class="guide-card-title">💰 언제 팔까요?</div>
+          <div class="guide-card-body">목표가 <strong>${fmt(target)}</strong> 근처에서 절반씩 분할 매도를 추천해요. RSI가 70을 넘으면 추가 상승보다 조정 가능성을 고려하세요.</div>
+        </div>
+        <div class="guide-card stop-guide">
+          <div class="guide-card-title">🛑 손절 기준은?</div>
+          <div class="guide-card-body"><strong>${fmt(stop)}</strong> 아래로 떨어지면 추가 하락 가능성이 높아요. 손실이 커지기 전에 매도하는 게 현명해요. "언젠가 오르겠지"는 금물이에요.</div>
+        </div>
+        <div class="guide-card split-guide">
+          <div class="guide-card-title">⚖️ 분할 매매란?</div>
+          <div class="guide-card-body">한 번에 전액 투자하지 말고 2~3번에 나눠 매수·매도하는 방법이에요. 평균 단가를 낮추고 리스크를 줄이는 가장 기본적인 투자 전략이에요.</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 // ── 수익률 트래커 ─────────────────────────────────────────
