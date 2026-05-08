@@ -701,7 +701,8 @@ def analyze():
                     "current_value":    round(current_price * holding.quantity, 2) if current_price else None,
                     "purchase_value":   round(holding.purchase_price * holding.quantity, 2),
                     "recommendation":   _position_recommendation(
-                        current_price, holding.purchase_price, ai_result.get("score", 0)
+                        current_price, holding.purchase_price, ai_result.get("score", 0),
+                        ai_result=ai_result,
                     ),
                 }
 
@@ -725,48 +726,84 @@ def analyze():
 
 
 # ── 포지션 매매 추천 ───────────────────────────────────────────────────────────
-def _position_recommendation(current_price, purchase_price, score):
+def _position_recommendation(current_price, purchase_price, score, ai_result=None):
     if not (current_price and purchase_price):
         return None
+
     pct = (current_price - purchase_price) / purchase_price * 100
 
-    if score >= 40:
-        if pct <= -15:
-            action, color = "추가매수 고려", "bullish"
-            reason = f"강한 매수 신호. {pct:.1f}% 손실 구간, 평단 낮추기 검토 가능"
-        elif pct >= 40:
-            action, color = "일부 익절 + 보유", "bullish"
-            reason = f"큰 수익({pct:.1f}%) + 매수 신호 지속. 일부 익절 후 나머지 보유"
-        else:
-            action, color = "보유 유지", "bullish"
-            reason = f"매수 신호 양호. 현재 {pct:.1f}%, 추가 상승 여지"
-    elif score >= 10:
-        if pct >= 25:
-            action, color = "일부 익절 고려", "neutral"
-            reason = f"신호 약화 중. {pct:.1f}% 수익, 일부 익절로 수익 확정 고려"
-        elif pct <= -20:
-            action, color = "손절 고려", "bearish"
-            reason = f"신호 약화 + {pct:.1f}% 손실. 추가 하락 가능성"
-        else:
-            action, color = "보유 관망", "neutral"
-            reason = f"방향성 불명확. 현재 {pct:.1f}%, 추가 신호 대기"
-    elif score >= -10:
-        if pct >= 20:
-            action, color = "익절 고려", "neutral"
-            reason = f"중립 신호. {pct:.1f}% 수익, 익절 적극 고려"
-        elif pct <= -15:
-            action, color = "손절 고려", "bearish"
-            reason = f"중립 신호 + {pct:.1f}% 손실. 손절로 리스크 관리 고려"
-        else:
-            action, color = "관망", "neutral"
-            reason = f"뚜렷한 신호 없음. 현재 {pct:.1f}%, 관망 권장"
-    else:
-        if pct > 5:
+    # ai_result에서 추세·구간 데이터 추출
+    r          = ai_result or {}
+    trend      = r.get("trend", "sideways")
+    stop_loss  = r.get("stop_loss")
+    entry_high = r.get("entry_high")   # 매수 추천 구간 상단
+    target_low = r.get("target_low")   # 매도 추천 구간 하단
+    month_low  = r.get("month_low")
+
+    is_up   = trend in ("strong-uptrend", "uptrend")
+    is_down = trend in ("strong-downtrend", "downtrend")
+
+    in_buy_zone  = entry_high and current_price <= entry_high
+    in_sell_zone = target_low and current_price >= target_low
+    below_stop   = stop_loss  and current_price <= stop_loss
+    # 매입가가 1개월 최저가보다 낮으면 아주 유리한 포지션
+    great_entry  = month_low  and purchase_price < month_low
+
+    # ── 손절선 이탈 (추세·수익률 무관하게 우선 적용) ──
+    if below_stop:
+        if pct > 0:
             action, color = "익절 매도 권장", "bearish"
-            reason = f"매도 신호 발생. {pct:.1f}% 수익, 익절 권장"
+            reason = f"1개월 지지선 이탈. {pct:.1f}% 수익이지만 하락 전환 신호로 수익 확정 권장"
         else:
             action, color = "손절 매도 권장", "bearish"
-            reason = f"강한 매도 신호 + {pct:.1f}% 손실. 손절로 추가 손실 방지"
+            reason = f"1개월 지지선 이탈 ({pct:.1f}% 손실). 추가 손실 방지를 위해 손절 권장"
+
+    # ── 상승 추세 ────────────────────────────────────────
+    elif is_up:
+        if in_buy_zone:
+            action, color = "추가매수 고려", "bullish"
+            reason = f"상승 추세 속 눌림목 구간. 현 {pct:.1f}%, 분할 추가매수 기회"
+        elif in_sell_zone:
+            if great_entry or pct >= 25:
+                action, color = "일부 익절 후 보유", "bullish"
+                reason = f"상승 추세 고점 부근 + {pct:.1f}% 수익. 20~30% 분할 익절 후 나머지 보유 추천"
+            else:
+                action, color = "보유 유지", "bullish"
+                reason = f"상승 추세 고점 부근이나 수익({pct:.1f}%)이 크지 않아 보유 유지 권장"
+        else:
+            action, color = "보유 유지", "bullish"
+            reason = f"상승 추세 진행 중. 현 {pct:.1f}%, 추세가 유지되는 동안 보유 유지"
+
+    # ── 하락 추세 ────────────────────────────────────────
+    elif is_down:
+        if pct >= 10:
+            action, color = "익절 매도 권장", "bearish"
+            reason = f"하락 추세 전환 감지. {pct:.1f}% 수익 중, 추세 역행 전에 수익 확정 권장"
+        elif pct >= 0:
+            action, color = "매도 고려", "bearish"
+            reason = f"하락 추세 + 소폭 수익({pct:.1f}%). 반등 시 매도 기회 노리기"
+        elif pct >= -10:
+            action, color = "손절 고려", "bearish"
+            reason = f"하락 추세 + {pct:.1f}% 손실. 추가 하락 가능성 높아 손절 검토"
+        else:
+            action, color = "손절 매도 권장", "bearish"
+            reason = f"하락 추세 + {pct:.1f}% 큰 손실. 추세 반전 신호 없으면 추가 손실 방지가 우선"
+
+    # ── 횡보 ─────────────────────────────────────────────
+    else:
+        if in_buy_zone:
+            if pct <= -10:
+                action, color = "분할매수 또는 손절", "neutral"
+                reason = f"횡보 지지선 부근 + {pct:.1f}% 손실. 지지 확인 후 추가매수, 이탈 시 손절"
+            else:
+                action, color = "보유 관망", "neutral"
+                reason = f"횡보 지지선 부근. 현 {pct:.1f}%, 지지 유지되면 보유 유지"
+        elif in_sell_zone:
+            action, color = "익절 고려", "neutral"
+            reason = f"횡보 저항선 부근 ({pct:.1f}% 수익). 분할 익절로 수익 확정 권장"
+        else:
+            action, color = "관망", "neutral"
+            reason = f"횡보 중간 구간. 현 {pct:.1f}%, 매수·매도 구간 진입 시 행동 권장"
 
     return {"action": action, "color": color, "reason": reason,
             "return_pct": round(pct, 2)}
