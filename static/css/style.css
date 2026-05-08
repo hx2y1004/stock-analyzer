@@ -398,19 +398,149 @@ body {
   line-height: 1.7;
 }
 
-/* 태블릿/모바일 */
+/* ── 반응형 ── */
+
+/* 태블릿 (≤ 1024px): 그리드 → 1열 전환 */
 @media (max-width: 1024px) {
   .main-grid { grid-template-columns: 1fr; }
-  .bottom-grid { grid-template-columns: 1fr; }
-  .detail-grid { grid-template-columns: 1fr; }
+  .bottom-grid {
+    grid-template-columns: 1fr;
+    align-items: start;       /* 모바일에선 stretch 불필요 */
+  }
+  .bottom-grid .card { min-height: auto; }   /* 480px 고정 해제 */
+  #newsList { max-height: 480px; }           /* 대신 최대 높이 + 스크롤 */
+  .detail-list.detail-grid { grid-template-columns: 1fr 1fr; }
 }
-@media (max-width: 600px) {
-  .search-row { flex-direction: column; }
-  .trading-panels { grid-template-columns: 1fr; }
-  .current-price { font-size: 24px; }
+
+/* 작은 태블릿 / 큰 폰 (≤ 768px) */
+@media (max-width: 768px) {
+  .result { padding: 0 16px 40px; }
+
+  .search-section { padding: 32px 16px; }
+  .search-title { font-size: 22px; }
+  .search-desc { font-size: 13px; }
+
+  /* 헤더 */
+  .header-inner { padding: 0 16px; }
+  .logo { font-size: 16px; }
+
+  /* 종목 헤더 */
+  .stock-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .stock-price-block { align-self: stretch; }
+  .current-price { font-size: 26px; text-align: left; }
+  .price-change { text-align: left; }
+
+  /* 카드 패딩 */
+  .card { padding: 16px; }
+
+  /* 차트 컨트롤 */
+  .chart-controls { flex-wrap: wrap; gap: 8px; }
+  .indicator-toggles { margin-left: 0; flex-wrap: wrap; gap: 8px; }
+  .main-chart { height: 340px; }
+  .sub-chart  { height: 110px; }
+
+  /* 종합판단 */
+  .verdict-content { gap: 16px; }
+  .price-targets { flex-wrap: wrap; }
+  .target-item { min-width: 80px; }
+
+  /* 지표 그리드 */
+  .metrics-grid { grid-template-columns: 1fr 1fr; }
+
+  /* 분석 상세: 2열 유지하되 gap 줄이기 */
+  .detail-list.detail-grid { gap: 8px; }
+
+  /* 애널리스트 행 */
+  .analyst-firm { min-width: 90px; font-size: 13px; }
+  .analyst-grade { min-width: 70px; font-size: 11px; }
+  .analyst-target { font-size: 15px; }
+
+  /* 뉴스 */
+  .news-title { font-size: 13px; }
+
+  /* 하단 카드 */
+  #newsList { max-height: 400px; }
+}
+
+/* 폰 (≤ 480px) */
+@media (max-width: 480px) {
+  .result { padding: 0 10px 32px; }
+
+  /* 검색 */
+  .search-section { padding: 24px 12px; }
+  .search-title { font-size: 20px; }
+  .search-row { flex-direction: column; gap: 8px; }
+  .search-btn { width: 100%; padding: 12px; }
+  .quick-tickers { gap: 6px; }
+  .quick-btn { padding: 4px 10px; font-size: 12px; }
+
+  /* 헤더 */
+  .header-inner { height: 48px; }
+  .logo { font-size: 15px; }
+  .nav-link { padding: 5px 10px; font-size: 13px; }
+
+  /* 카드 */
+  .card { padding: 12px; border-radius: 10px; }
+  .card-title { font-size: 13px; margin-bottom: 12px; }
+
+  /* 종목 헤더 */
+  .stock-name { font-size: 18px; }
+  .current-price { font-size: 22px; }
+  .price-change { font-size: 13px; }
+  .stock-meta { font-size: 12px; gap: 8px; }
+
+  /* 차트 */
   .chart-controls { gap: 6px; }
-  .indicator-toggles { flex-wrap: wrap; gap: 8px; }
-  .price-targets { flex-direction: column; }
+  .chart-btn, .interval-btn { padding: 5px 10px; font-size: 12px; }
+  .main-chart { height: 260px; }
+  .sub-chart  { height: 90px; }
+  .indicator-toggles label { font-size: 12px; }
+
+  /* 종합판단 */
+  .verdict-badge { font-size: 15px; padding: 5px 14px; }
+  .price-targets { gap: 6px; }
+  .target-item { padding: 8px 10px; }
+  .target-label { font-size: 10px; }
+  .target-value { font-size: 13px; }
+
+  /* 지표 */
+  .metrics-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .metric-item { padding: 10px 10px; }
+  .metric-label { font-size: 10px; }
+  .metric-value { font-size: 14px; }
+
+  /* 수익률 트래커 */
+  .return-label { font-size: 11px; min-width: 36px; }
+  .return-value { font-size: 12px; min-width: 48px; }
+
+  /* 분석 탭 */
+  .analysis-tab { font-size: 12px; padding: 7px 8px; }
+
+  /* 분석 상세: 폰은 1열 */
+  .detail-list.detail-grid { grid-template-columns: 1fr; }
+  .detail-header { padding: 10px 12px; }
+  .detail-indicator { font-size: 11px; }
+  .detail-state { font-size: 11px; padding: 2px 8px; }
+
+  /* 애널리스트 */
+  .analyst-consensus { gap: 8px; }
+  .consensus-item { min-width: 0; padding: 10px 12px; }
+  .consensus-value { font-size: 16px; }
+  .analyst-row { flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+  .analyst-firm { min-width: 0; width: 100%; font-size: 13px; font-weight: 700; }
+  .analyst-grade { min-width: 0; }
+  .analyst-target { margin-left: 0; font-size: 14px; }
+  .analyst-date { min-width: 0; text-align: left; }
+
+  /* 뉴스 */
+  .news-item { padding: 10px 12px; gap: 10px; }
+  .news-title { font-size: 13px; }
+  .news-desc { font-size: 11px; }
+  .news-meta { font-size: 10px; }
+  #newsList { max-height: 360px; }
+
+  /* 모의투자 */
+  .trading-panels { grid-template-columns: 1fr; }
 }
 
 /* ── 종목 헤더 카드 ── */
