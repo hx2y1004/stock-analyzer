@@ -60,6 +60,31 @@ def _clean_num(s):
         return None
 
 
+def _calc_dividend_yield(info, current_price):
+    """
+    배당수익률 계산 (소수점 형태 반환, 예: 0.0063 = 0.63%).
+    yfinance의 dividendYield 필드는 % 형태(0.02=0.02%, 0.55=0.55%)로
+    반환되어 신뢰할 수 없으므로, 아래 우선순위로 직접 계산:
+      1. 한국 주식: 네이버 DPS/price (info["_naver_div_yield"])
+      2. 미국/기타: dividendRate / currentPrice
+    """
+    price = current_price or safe_float(info.get("currentPrice"))
+    if not price or price <= 0:
+        return None
+
+    # 1순위: 한국 주식 — 네이버 DPS/price (정확한 소수점 값)
+    naver_dy = safe_float(info.get("_naver_div_yield"))
+    if naver_dy:
+        return naver_dy
+
+    # 2순위: dividendRate / price (미국/ETF 등)
+    rate = safe_float(info.get("dividendRate"))
+    if rate and rate > 0:
+        return rate / price
+
+    return None
+
+
 def fetch_naver_fundamentals(krx_code):
     """
     네이버 금융 API로 한국 주식 EPS/BPS를 가져옵니다.
@@ -402,14 +427,9 @@ def analyze():
                     info["bookValue"]   = naver["bps"]
                     info["priceToBook"] = round(ref_price / naver["bps"], 2)
 
-            # 배당수익률: DPS / 현재가로 직접 계산 (yfinance 값보다 정확)
+            # 배당수익률: 네이버 DPS / 현재가로 직접 계산
             if naver.get("dps") and ref_price:
-                info["dividendYield"] = naver["dps"] / ref_price
-            else:
-                # fallback: yfinance가 한국 주식에 대해 % 형태로 반환하는 경우 정규화
-                dy = info.get("dividendYield")
-                if dy and dy > 0.15:
-                    info["dividendYield"] = dy / 100
+                info["_naver_div_yield"] = naver["dps"] / ref_price
 
         # NaN 행 제거 (한국 주식 등 마지막 행이 NaN일 수 있음)
         df = df.dropna(subset=["Close", "Open", "High", "Low"])
@@ -474,7 +494,7 @@ def analyze():
             "pe_ratio": safe_float(info.get("trailingPE")),
             "pb_ratio": safe_float(info.get("priceToBook")),
             "eps": safe_float(info.get("trailingEps")),
-            "dividend_yield": safe_float(info.get("dividendYield")),
+            "dividend_yield": _calc_dividend_yield(info, current_price),
             "sector": info.get("sector"),
             "industry": info.get("industry"),
             "currency": info.get("currency", "USD"),
