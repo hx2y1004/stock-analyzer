@@ -1066,19 +1066,20 @@ body {
 .price-move-banner.surge .move-title { color: var(--green); }
 .price-move-banner.down    .move-title,
 .price-move-banner.plunge  .move-title { color: var(--red); }
-.move-sub  { font-size: 11px; font-weight: 400; color: var(--text2); margin-left: 6px; }
-.move-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
-.move-news-item {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 7px 0; border-top: 1px solid var(--border);
-  text-decoration: none; color: var(--text);
-  transition: color 0.15s;
+.move-badge {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 10px; margin-left: 8px;
+  background: rgba(255,255,255,0.1); vertical-align: middle;
 }
-.move-news-item:hover { color: var(--accent); }
-.move-news-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text2); margin-top: 6px; flex-shrink: 0; }
-.move-news-title { flex: 1; font-size: 13px; line-height: 1.4; }
-.move-news-date  { font-size: 11px; color: var(--text2); white-space: nowrap; margin-left: 6px; flex-shrink: 0; }
-.move-no-news    { font-size: 12px; color: var(--text2); padding-top: 6px; }
+.price-move-banner.up    .move-badge,
+.price-move-banner.surge .move-badge { background: rgba(63,185,80,0.2); color: var(--green); }
+.price-move-banner.down   .move-badge,
+.price-move-banner.plunge .move-badge { background: rgba(248,81,73,0.2); color: var(--red); }
+.move-reason-text {
+  font-size: 13px; line-height: 1.7; color: var(--text);
+  padding: 10px 12px; background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+}
 
 /* ── 포트폴리오 섹션 ── */
 .portfolio-section {

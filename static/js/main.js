@@ -371,7 +371,7 @@ async function analyze() {
     renderPositionCard(data.position || null, data.stock);
     renderZones(data.analysis, data.stock);
     renderAnalysts(data.analysts, data.stock.currency);
-    renderPriceMoveBanner(data.stock, data.news);
+    renderPriceMoveBanner(data.stock, data.move_reason);
     renderNews(data.news);
 
     // 봉 뱃지 업데이트
@@ -853,48 +853,38 @@ function renderAnalysts(analysts, currency) {
 }
 
 // ── 뉴스 ──────────────────────────────────────────────
-function renderPriceMoveBanner(stock, news) {
+function renderPriceMoveBanner(stock, moveReason) {
   const el = document.getElementById('priceMoveBanner');
   if (!el) return;
 
-  const pct  = stock.price_change_pct;   // 전일 대비 %
-  const ABS  = Math.abs(pct || 0);
-  if (!pct) { el.classList.add('hidden'); return; }
+  const pct = stock.price_change_pct;
+  const ABS = Math.abs(pct || 0);
+  if (!pct || ABS < 0.5 || !moveReason) { el.classList.add('hidden'); return; }
 
-  // 종류 판별
-  let kind = null;
-  if      (ABS >= 5)   kind = pct > 0 ? 'surge'  : 'plunge';   // 급등/급락
-  else if (pct >  0.5) kind = 'up';
-  else if (pct < -0.5) kind = 'down';
-
-  if (!kind) { el.classList.add('hidden'); return; }
+  let kind;
+  if      (ABS >= 5 && pct > 0) kind = 'surge';
+  else if (ABS >= 5 && pct < 0) kind = 'plunge';
+  else if (pct > 0)              kind = 'up';
+  else                           kind = 'down';
 
   const labels = {
-    surge:  { emoji:'🚀', title:`급등 +${ABS.toFixed(2)}%`, sub:'1시간 전 대비 급등', cls:'surge'  },
-    plunge: { emoji:'📉', title:`급락 -${ABS.toFixed(2)}%`, sub:'1시간 전 대비 급락', cls:'plunge' },
-    up:     { emoji:'▲',  title:`상승 +${ABS.toFixed(2)}%`, sub:'전일 종가 대비 상승', cls:'up'     },
-    down:   { emoji:'▼',  title:`하락 -${ABS.toFixed(2)}%`, sub:'전일 종가 대비 하락', cls:'down'   },
+    surge:  { emoji:'🚀', title:`급등 +${ABS.toFixed(2)}%`, badge:'급등 이유', cls:'surge'  },
+    plunge: { emoji:'📉', title:`급락 -${ABS.toFixed(2)}%`, badge:'급락 이유', cls:'plunge' },
+    up:     { emoji:'▲',  title:`상승 +${ABS.toFixed(2)}%`, badge:'상승 이유', cls:'up'     },
+    down:   { emoji:'▼',  title:`하락 -${ABS.toFixed(2)}%`, badge:'하락 이유', cls:'down'   },
   };
-  const { emoji, title, sub, cls } = labels[kind];
-
-  // 관련 뉴스 상위 3개
-  const newsHtml = (news || []).slice(0, 3).map(n => `
-    <a class="move-news-item" href="${n.url || '#'}" target="_blank" rel="noopener">
-      <span class="move-news-dot"></span>
-      <span class="move-news-title">${n.title}</span>
-      <span class="move-news-date">${n.pub || ''}</span>
-    </a>`).join('');
+  const { emoji, title, badge, cls } = labels[kind];
 
   el.className = `price-move-banner ${cls}`;
   el.innerHTML = `
     <div class="move-banner-head">
       <span class="move-emoji">${emoji}</span>
       <div>
-        <div class="move-title">${title} <span class="move-sub">${sub}</span></div>
-        <div class="move-desc">${kind === 'surge' || kind === 'plunge' ? '급등락' : (pct > 0 ? '상승' : '하락')} 관련 최신 이슈</div>
+        <span class="move-title">${title}</span>
+        <span class="move-badge">${badge}</span>
       </div>
     </div>
-    ${newsHtml || '<div class="move-no-news">관련 뉴스를 찾을 수 없습니다.</div>'}
+    <div class="move-reason-text">${moveReason.replace(/\n/g, '<br>')}</div>
   `;
   el.classList.remove('hidden');
 }
