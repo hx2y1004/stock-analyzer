@@ -371,6 +371,7 @@ async function analyze() {
     renderPositionCard(data.position || null, data.stock);
     renderZones(data.analysis, data.stock);
     renderAnalysts(data.analysts, data.stock.currency);
+    renderPriceMoveBanner(data.stock, data.news);
     renderNews(data.news);
 
     // 봉 뱃지 업데이트
@@ -583,12 +584,15 @@ function renderFundamental(details) {
 }
 
 // ── 매수/매도 구간 탭 ─────────────────────────────────────
-function _getZoneAdvice(price, entry, target, stop, rsi) {
-  if (price <= stop)         return '손절 구간 아래에 있어요. 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.';
-  if (price <= entry * 1.02) return '매수 추천 구간이에요! 분할 매수를 고려해볼 수 있는 좋은 타이밍이에요.';
-  if (price >= target * 0.97) return '목표가 근처에 있어요. 분할 매도를 고려해볼 시점이에요.';
+function _getZoneAdvice(price, entry, target, stop, rsi, verdictColor) {
+  if (price <= stop)            return '손절 구간 아래에 있어요. 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.';
+  if (price >= target * 0.97)   return '목표가 근처에 있어요. 분할 매도를 고려해볼 시점이에요.';
+  if (verdictColor === 'strong-buy' || verdictColor === 'buy')
+    return '기술적 지표상 매수 시그널이 우세해요. 분할 매수를 고려해볼 수 있는 타이밍이에요.';
+  if (verdictColor === 'strong-sell' || verdictColor === 'sell')
+    return '기술적 지표상 매도 시그널이 우세해요. 추가 하락에 대비한 리스크 관리가 필요해요.';
   const pct = ((price - entry) / entry * 100).toFixed(1);
-  return `매수 추천가 대비 +${pct}% 수준이에요. 급하게 추가 매수하기보다 현 포지션을 유지하세요.`;
+  return `진입 추천가 대비 +${pct}% 수준이에요. 뚜렷한 방향성이 없으니 현 포지션을 유지하며 관망하세요.`;
 }
 
 function renderZones(analysis, stock) {
@@ -610,10 +614,21 @@ function renderZones(analysis, stock) {
       : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
   };
 
-  let priceZone = '중립 구간', priceColor = 'neutral';
-  if (price <= stop)          { priceZone = '손절 구간';      priceColor = 'bearish'; }
-  else if (price <= entry*1.02){ priceZone = '매수 추천 구간'; priceColor = 'bullish'; }
-  else if (price >= target*0.97){ priceZone = '매도 추천 구간'; priceColor = 'bearish'; }
+  const verdictColor = analysis.verdict_color || 'neutral';
+  let priceZone = '관망 구간', priceColor = 'neutral';
+  if (price <= stop) {
+    priceZone = '손절 구간'; priceColor = 'bearish';
+  } else if (price >= target * 0.97) {
+    priceZone = '매도 추천 구간'; priceColor = 'bearish';
+  } else if (verdictColor === 'strong-buy') {
+    priceZone = '강한 매수 구간'; priceColor = 'bullish';
+  } else if (verdictColor === 'buy') {
+    priceZone = '매수 추천 구간'; priceColor = 'bullish';
+  } else if (verdictColor === 'sell') {
+    priceZone = '매도 주의 구간'; priceColor = 'bearish';
+  } else if (verdictColor === 'strong-sell') {
+    priceZone = '강한 매도 구간'; priceColor = 'bearish';
+  }
 
   let rsiMsg = '';
   const rsiNum = parseFloat(rsi);
@@ -658,7 +673,7 @@ function renderZones(analysis, stock) {
             <span class="zone-name">현재 위치 <span class="zone-badge ${priceColor}">${priceZone}</span></span>
             <span class="zone-price-range">${fmt(price)}</span>
           </div>
-          <div class="zone-explanation">${_getZoneAdvice(price, entry, target, stop, rsiNum)}</div>
+          <div class="zone-explanation">${_getZoneAdvice(price, entry, target, stop, rsiNum, verdictColor)}</div>
         </div>
       </div>
 
@@ -838,6 +853,52 @@ function renderAnalysts(analysts, currency) {
 }
 
 // ── 뉴스 ──────────────────────────────────────────────
+function renderPriceMoveBanner(stock, news) {
+  const el = document.getElementById('priceMoveBanner');
+  if (!el) return;
+
+  const pct  = stock.price_change_pct;   // 전일 대비 %
+  const ABS  = Math.abs(pct || 0);
+  if (!pct) { el.classList.add('hidden'); return; }
+
+  // 종류 판별
+  let kind = null;
+  if      (ABS >= 5)   kind = pct > 0 ? 'surge'  : 'plunge';   // 급등/급락
+  else if (pct >  0.5) kind = 'up';
+  else if (pct < -0.5) kind = 'down';
+
+  if (!kind) { el.classList.add('hidden'); return; }
+
+  const labels = {
+    surge:  { emoji:'🚀', title:`급등 +${ABS.toFixed(2)}%`, sub:'1시간 전 대비 급등', cls:'surge'  },
+    plunge: { emoji:'📉', title:`급락 -${ABS.toFixed(2)}%`, sub:'1시간 전 대비 급락', cls:'plunge' },
+    up:     { emoji:'▲',  title:`상승 +${ABS.toFixed(2)}%`, sub:'전일 종가 대비 상승', cls:'up'     },
+    down:   { emoji:'▼',  title:`하락 -${ABS.toFixed(2)}%`, sub:'전일 종가 대비 하락', cls:'down'   },
+  };
+  const { emoji, title, sub, cls } = labels[kind];
+
+  // 관련 뉴스 상위 3개
+  const newsHtml = (news || []).slice(0, 3).map(n => `
+    <a class="move-news-item" href="${n.url || '#'}" target="_blank" rel="noopener">
+      <span class="move-news-dot"></span>
+      <span class="move-news-title">${n.title}</span>
+      <span class="move-news-date">${n.pub || ''}</span>
+    </a>`).join('');
+
+  el.className = `price-move-banner ${cls}`;
+  el.innerHTML = `
+    <div class="move-banner-head">
+      <span class="move-emoji">${emoji}</span>
+      <div>
+        <div class="move-title">${title} <span class="move-sub">${sub}</span></div>
+        <div class="move-desc">${kind === 'surge' || kind === 'plunge' ? '급등락' : (pct > 0 ? '상승' : '하락')} 관련 최신 이슈</div>
+      </div>
+    </div>
+    ${newsHtml || '<div class="move-no-news">관련 뉴스를 찾을 수 없습니다.</div>'}
+  `;
+  el.classList.remove('hidden');
+}
+
 function renderNews(news) {
   const el = document.getElementById('newsList');
   if (!news || !news.length) {
