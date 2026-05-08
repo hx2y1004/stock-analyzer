@@ -859,7 +859,8 @@ function renderPriceMoveBanner(stock, moveReason) {
 
   const pct = stock.price_change_pct;
   const ABS = Math.abs(pct || 0);
-  if (!pct || ABS < 0.5 || !moveReason) { el.classList.add('hidden'); return; }
+  if (!pct || ABS < 0.5) { el.classList.add('hidden'); return; }
+  if (!moveReason) { el.classList.add('hidden'); return; }
 
   let kind;
   if      (ABS >= 5 && pct > 0) kind = 'surge';
