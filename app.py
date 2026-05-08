@@ -451,15 +451,15 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items):
                 f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
                 json={"contents": [{"parts": [{"text": prompt}]}],
                       "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}},
-                timeout=12,
+                timeout=15,
             )
+            app.logger.info(f"Gemini status={resp.status_code} body={resp.text[:300]}")
             data = resp.json()
-            app.logger.info(f"Gemini response status: {resp.status_code}")
             text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             if text:
                 return text
         except Exception as e:
-            app.logger.warning(f"Gemini API error: {e}")
+            app.logger.error(f"Gemini API error: {e}")
 
     # Gemini 실패 또는 키 없을 때 — 뉴스 기반 폴백 메시지
     if not news_items:
