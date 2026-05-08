@@ -858,15 +858,16 @@ function renderCharts(data) {
   const c2 = renderRSIChart(data);
   const c3 = renderMACDChart(data);
 
-  // 초기 표시 범위를 메인 차트 기준으로 통일한 뒤 동기화 연결
-  requestAnimationFrame(() => {
+  // 차트 완전 렌더링 후 메인 기준으로 범위 통일 → 이후 동기화
+  const alignAndSync = () => {
     const range = c1.timeScale().getVisibleLogicalRange();
     if (range) {
       c2.timeScale().setVisibleLogicalRange(range);
       c3.timeScale().setVisibleLogicalRange(range);
     }
     syncChartTimeScales([c1, c2, c3]);
-  });
+  };
+  requestAnimationFrame(() => setTimeout(alignAndSync, 80));
 }
 
 function makeChart(el, height) {
