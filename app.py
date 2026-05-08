@@ -424,39 +424,100 @@ def fetch_news(stock):
         return []
 
 
-def analyze_move_reason(ticker, name, price_change_pct, news_items):
-    """Gemini로 주가 변동 이유 분석."""
+def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=None, ai_result=None):
+    """Groq으로 주가 변동 이유 종합 분석."""
     if price_change_pct is None or abs(price_change_pct) < 0.5:
         return None
 
     direction = "상승" if price_change_pct > 0 else "하락"
     kind      = "급등" if price_change_pct >= 5 else ("급락" if price_change_pct <= -5 else direction)
 
-    # Groq API 시도 (무료, llama-3.3-70b)
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()  # 하위호환
-    if api_key and news_items:
-        headlines = "\n".join(f"- {n.get('title_orig') or n['title']}" for n in news_items[:8])
-        prompt = (
-            f"{name}({ticker}) 주식이 오늘 {price_change_pct:+.2f}% {kind}했습니다.\n"
-            f"아래 최근 뉴스 헤드라인을 분석하여 {kind} 이유를 한국어로 설명하세요.\n\n"
-            f"뉴스:\n{headlines}\n\n"
-            f"조건:\n"
-            f"- 주가 변동과 직접 관련 없는 뉴스는 무시하세요.\n"
-            f"- 3~5문장으로 간결하게 핵심 이유만 작성하세요.\n"
-            f"- 관련 뉴스가 없으면 '관련 뉴스를 찾을 수 없습니다.'라고만 작성하세요.\n"
-            f"- 한국어로만 답변하세요."
-        )
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+
+    if api_key:
+        # ── 기술적 지표 컨텍스트 ──────────────────────────
+        tech_ctx = ""
+        if ai_result:
+            rsi    = ai_result.get("rsi")
+            macd   = ai_result.get("macd")
+            trend  = ai_result.get("trend", "")
+            verdict = ai_result.get("verdict", "")
+            score  = ai_result.get("score", 0)
+            ma_analysis = ai_result.get("ma_analysis", {})
+            ma_trend = ma_analysis.get("trend", "") if ma_analysis else ""
+
+            trend_map = {
+                "strong-uptrend": "강한 상승 추세",
+                "uptrend": "상승 추세",
+                "sideways": "횡보",
+                "downtrend": "하락 추세",
+                "strong-downtrend": "강한 하락 추세",
+            }
+            tech_ctx = (
+                f"\n[기술적 지표]\n"
+                f"- 종합 판단: {verdict} (점수: {score:+d})\n"
+                f"- 추세: {trend_map.get(trend, trend)}\n"
+                f"- RSI(14): {rsi if rsi else '—'}\n"
+                f"- MACD: {macd if macd else '—'}\n"
+                f"- 이동평균 추세: {ma_trend}\n"
+            )
+
+        # ── 종목 기본 정보 ────────────────────────────────
+        stock_ctx = ""
+        if stock_data:
+            sector   = stock_data.get("sector", "")
+            pe       = stock_data.get("pe_ratio")
+            year_high = stock_data.get("year_high")
+            year_low  = stock_data.get("year_low")
+            cur_price = stock_data.get("current_price")
+            vol_ratio = ""
+            vol  = stock_data.get("volume")
+            avg_vol = stock_data.get("avg_volume")
+            if vol and avg_vol and avg_vol > 0:
+                vr = vol / avg_vol
+                vol_ratio = f"{vr:.1f}배 (평균 대비)"
+            stock_ctx = (
+                f"\n[종목 정보]\n"
+                f"- 섹터: {sector or '—'}\n"
+                f"- 현재가: {cur_price}\n"
+                f"- 52주 고가: {year_high} / 저가: {year_low}\n"
+                f"- PER: {pe if pe else '—'}\n"
+                f"- 거래량: {vol_ratio or '—'}\n"
+            )
+
+        # ── 뉴스 헤드라인 (원문) ──────────────────────────
+        news_ctx = ""
+        if news_items:
+            headlines = "\n".join(
+                f"- {n.get('title_orig') or n['title']}" for n in news_items[:6]
+            )
+            news_ctx = f"\n[최근 뉴스 헤드라인]\n{headlines}"
+
+        prompt = f"""당신은 주식 시장 전문 애널리스트입니다.
+아래 데이터를 종합적으로 분석하여 {name}({ticker}) 주식이 오늘 {price_change_pct:+.2f}% {kind}한 이유를 설명하세요.
+{stock_ctx}{tech_ctx}{news_ctx}
+
+[분석 지침]
+1. 단순히 뉴스를 요약하지 말고, 기술적 지표·시황·뉴스를 종합해 실질적인 원인을 분석하세요.
+2. RSI, 추세, 거래량 등 지표가 이번 움직임을 어떻게 뒷받침하는지 언급하세요.
+3. 뉴스가 주가에 미친 영향을 구체적으로 설명하세요 (없으면 기술적/시장 요인 위주로).
+4. 4~6문장으로 간결하되 인사이트 있게 작성하세요.
+5. 한국어로만 답변하세요. 불필요한 서론 없이 바로 분석 내용으로 시작하세요."""
+
         try:
             resp = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={
                     "model": "llama-3.3-70b-versatile",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                    "max_tokens": 300,
+                    "messages": [
+                        {"role": "system", "content": "당신은 한국어로 답변하는 주식 시장 전문 애널리스트입니다."},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    "temperature": 0.4,
+                    "max_tokens": 400,
                 },
                 timeout=15,
             )
@@ -470,12 +531,11 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items):
         except Exception as e:
             app.logger.error(f"Groq API exception: {e}")
 
-    # Gemini 실패 또는 키 없을 때 — 뉴스 기반 폴백 메시지
+    # 폴백
     if not news_items:
-        return f"현재 {kind} 관련 뉴스를 찾을 수 없습니다. 거시경제 지표나 시장 전반의 흐름을 함께 확인해 보세요."
+        return f"현재 {kind} 관련 정보를 찾을 수 없습니다. 거시경제 지표나 시장 전반의 흐름을 함께 확인해 보세요."
     top = [n['title'] for n in news_items[:3]]
-    headlines_ko = " / ".join(top)
-    return f"최근 관련 뉴스: {headlines_ko}"
+    return "관련 뉴스: " + " / ".join(top)
 
 
 @app.route("/api/analyze", methods=["GET"])
@@ -624,7 +684,8 @@ def analyze():
         analyst_data = fetch_analysts(stock, info)
         move_reason  = analyze_move_reason(
             ticker, stock_data["name"],
-            stock_data.get("price_change_pct"), news_data
+            stock_data.get("price_change_pct"), news_data,
+            stock_data=stock_data, ai_result=ai_result,
         )
 
         # ── 내 포지션 데이터 (로그인된 경우) ──────────────────────────────
