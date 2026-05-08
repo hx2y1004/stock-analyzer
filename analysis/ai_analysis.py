@@ -306,7 +306,7 @@ def _analyze_fundamental(df, info):
     return {"details": details, "score": score}
 
 
-def analyze_signals(df, info):
+def analyze_signals(df, info, df_weekly=None):
     latest = df.iloc[-1]
     prev   = df.iloc[-2]
     signals = []
@@ -635,13 +635,17 @@ def analyze_signals(df, info):
     near_52w_high = year_high_252 > 0 and close >= year_high_252 * 0.97   # 신고가 3% 이내
     near_52w_low  = year_low_252  > 0 and close <= year_low_252  * 1.05   # 신저가 5% 이내
 
-    # ② 최근 1개월(21거래일) MA5/MA20 골든·데드크로스
+    # ── 주봉 기반 추세 보조 지표 (df_weekly 없으면 스킵) ─────────────────
+    # ② 최근 1개월(주봉 5캔들) MA5/MA20 골든·데드크로스
     recent_golden = False
     recent_dead   = False
-    if "MA5" in df.columns and "MA20" in df.columns and len(df) >= 23:
-        ma5_arr  = df["MA5"].values
-        ma20_arr = df["MA20"].values
-        for i in range(-21, -1):
+    dfw = df_weekly
+    if dfw is not None and not dfw.empty and \
+       "MA5" in dfw.columns and "MA20" in dfw.columns and len(dfw) >= 7:
+        ma5_arr  = dfw["MA5"].values
+        ma20_arr = dfw["MA20"].values
+        # 최근 5주(≈1개월) 내 크로스 탐지
+        for i in range(-5, -1):
             p5,  c5  = _f(ma5_arr[i-1]),  _f(ma5_arr[i])
             p20, c20 = _f(ma20_arr[i-1]), _f(ma20_arr[i])
             if None not in (p5, c5, p20, c20):
@@ -650,42 +654,44 @@ def analyze_signals(df, info):
                 elif p5 >= p20 and c5 < c20:
                     recent_dead = True
 
-    # ③ 볼린저밴드 폭 확장/수축 (현재 vs 10일 전)
+    # ③ 볼린저밴드 폭 확장/수축 (주봉 현재 vs 4주 전)
     bb_expanding   = False
     bb_contracting = False
-    bb_dir_bullish = False   # 확장 + 상단 위치
-    bb_dir_bearish = False   # 확장 + 하단 위치
-    if all(c in df.columns for c in ["BB_upper","BB_lower","BB_mid"]) and len(df) >= 12:
-        def _bbw(idx):
-            u = _f(df["BB_upper"].iloc[idx])
-            l = _f(df["BB_lower"].iloc[idx])
-            m = _f(df["BB_mid"].iloc[idx])
+    bb_dir_bullish = False
+    bb_dir_bearish = False
+    if dfw is not None and not dfw.empty and \
+       all(c in dfw.columns for c in ["BB_upper","BB_lower","BB_mid"]) and len(dfw) >= 6:
+        def _bbw(src, idx):
+            u = _f(src["BB_upper"].iloc[idx])
+            l = _f(src["BB_lower"].iloc[idx])
+            m = _f(src["BB_mid"].iloc[idx])
             return (u - l) / m if u and l and m and m > 0 else None
-        w_now, w_10 = _bbw(-1), _bbw(-11)
-        if w_now and w_10:
-            ratio = w_now / w_10
+        w_now, w_4 = _bbw(dfw, -1), _bbw(dfw, -5)
+        if w_now and w_4:
+            ratio = w_now / w_4
             if ratio >= 1.10:
                 bb_expanding = True
-                bb_mid_now = _f(df["BB_mid"].iloc[-1])
+                bb_mid_now = _f(dfw["BB_mid"].iloc[-1])
                 if bb_mid_now:
                     bb_dir_bullish = close > bb_mid_now
                     bb_dir_bearish = close < bb_mid_now
             elif ratio <= 0.90:
                 bb_contracting = True
 
-    # ④ 거래량 동반 상승/하락 (최근 5일 거래량 vs 20일 평균)
+    # ④ 거래량 동반 상승/하락 (주봉 최근 2주 거래량 vs 8주 평균)
     vol_up_confirm   = False
     vol_down_confirm = False
-    if len(df) >= 6:
-        vol_5d  = float(df["Volume"].tail(5).mean())
-        vol_20d = float(df["Volume"].tail(20).mean())
-        p5d_ago = _f(df["Close"].iloc[-6])
-        if vol_20d > 0 and p5d_ago and p5d_ago > 0:
-            vol_ratio_5d = vol_5d / vol_20d
-            price_5d_ch  = (close - p5d_ago) / p5d_ago * 100
-            if vol_ratio_5d >= 1.30 and price_5d_ch >= 2.0:
+    if dfw is not None and not dfw.empty and len(dfw) >= 10:
+        vol_2w  = float(dfw["Volume"].tail(2).mean())
+        vol_8w  = float(dfw["Volume"].tail(8).mean())
+        p2w_ago = _f(dfw["Close"].iloc[-3])
+        close_w = _f(dfw["Close"].iloc[-1])
+        if vol_8w > 0 and p2w_ago and p2w_ago > 0 and close_w:
+            vol_ratio_w  = vol_2w / vol_8w
+            price_2w_ch  = (close_w - p2w_ago) / p2w_ago * 100
+            if vol_ratio_w >= 1.30 and price_2w_ch >= 2.0:
                 vol_up_confirm = True
-            elif vol_ratio_5d >= 1.30 and price_5d_ch <= -2.0:
+            elif vol_ratio_w >= 1.30 and price_2w_ch <= -2.0:
                 vol_down_confirm = True
 
     # ── 추가 트렌드 신호 종합 → effective_score 계산 ──────────────────────
