@@ -112,58 +112,57 @@ async function deleteHolding(event, hid) {
 }
 
 // ── 종목 추가 모달 ─────────────────────────────────────────────────────────
+function _currencyFromTicker(ticker) {
+  // 한국 주식: .KS(코스피) 또는 .KQ(코스닥)
+  return /\.(KS|KQ)$/i.test(ticker) ? 'KRW' : 'USD';
+}
+
+function _updateAddCurrencyLabel(cur) {
+  document.getElementById('addCurrencyLabel').textContent = `(${cur})`;
+}
+
 function openAddModal(ticker, name, currency) {
   if (!currentUser) { openLoginModal(); return; }
   const hasTickerFromCtx = !!ticker;
-  document.getElementById('addTicker').value    = ticker   || '';
-  document.getElementById('addName').value      = name     || '';
-  document.getElementById('addCurrency').value  = currency || 'USD';
-  document.getElementById('addCurrencyLabel').textContent = `(${currency || 'USD'})`;
+  document.getElementById('addTicker').value   = ticker || '';
+  document.getElementById('addName').value     = name   || '';
+  document.getElementById('addCurrency').value = currency || (ticker ? _currencyFromTicker(ticker) : 'USD');
+  _updateAddCurrencyLabel(document.getElementById('addCurrency').value);
   document.getElementById('addModalDesc').textContent = hasTickerFromCtx
     ? `${name || ticker} 을(를) 포트폴리오에 추가합니다`
-    : '티커를 입력하고 매입 정보를 등록하세요';
+    : '종목명 또는 티커를 검색하세요';
 
-  // 직접 입력 필드: ticker 없을 때만 표시
-  const tickerField    = document.getElementById('addTickerField');
-  const currencyField  = document.getElementById('addCurrencyField');
-  const tickerInput    = document.getElementById('addTickerInput');
-  const currencySelect = document.getElementById('addCurrencySelect');
+  const tickerField = document.getElementById('addTickerField');
+  const tickerInput = document.getElementById('addTickerInput');
+  const badge       = document.getElementById('addTickerBadge');
   if (hasTickerFromCtx) {
-    tickerField.style.display   = 'none';
-    currencyField.style.display = 'none';
+    tickerField.style.display = 'none';
   } else {
-    tickerField.style.display   = '';
-    currencyField.style.display = '';
-    tickerInput.value    = '';
-    currencySelect.value = 'USD';
-    // 통화 변경 시 라벨도 업데이트
-    currencySelect.onchange = () => {
-      document.getElementById('addCurrencyLabel').textContent = `(${currencySelect.value})`;
-    };
+    tickerField.style.display = '';
+    tickerInput.value = '';
+    if (badge) badge.textContent = '';
+    hideAddAC();
   }
 
   document.getElementById('addPrice').value = '';
   document.getElementById('addQty').value   = '';
   document.getElementById('addModal').classList.remove('hidden');
-  if (!hasTickerFromCtx) tickerInput.focus();
+  if (!hasTickerFromCtx) setTimeout(() => tickerInput.focus(), 50);
 }
 function closeAddModal(event) {
-  if (!event || event.target === document.getElementById('addModal'))
+  if (!event || event.target === document.getElementById('addModal')) {
     document.getElementById('addModal').classList.add('hidden');
+    hideAddAC();
+  }
 }
 async function submitAddHolding() {
-  // ticker: hidden(분석창에서 호출) or 직접 입력(포트폴리오 추가)
-  const tickerHidden = document.getElementById('addTicker').value;
-  const tickerInput  = document.getElementById('addTickerInput').value.trim().toUpperCase();
-  const ticker   = tickerHidden || tickerInput;
+  const ticker   = document.getElementById('addTicker').value;
   const name     = document.getElementById('addName').value || ticker;
-  // currency: hidden(분석창) or select(직접입력)
-  const currencyHidden = document.getElementById('addCurrency').value;
-  const currencySelect = document.getElementById('addCurrencySelect').value;
-  const currency = tickerHidden ? currencyHidden : currencySelect;
+  const currency = document.getElementById('addCurrency').value || 'USD';
   const price    = parseFloat(document.getElementById('addPrice').value);
   const qty      = parseFloat(document.getElementById('addQty').value);
-  if (!ticker || !price || !qty) { alert('티커·매입가·수량을 모두 입력해주세요'); return; }
+  if (!ticker) { alert('종목을 검색해서 선택해주세요'); return; }
+  if (!price || !qty) { alert('매입가와 수량을 입력해주세요'); return; }
   const res = await fetch('/api/portfolio', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1084,4 +1083,82 @@ function hideAC() {
   acList.classList.add('hidden');
   acItems = [];
   acIndex = -1;
+}
+
+// ── 모달 자동완성 ──────────────────────────────────────────────────────────
+let addAcItems = [];
+let addAcIndex = -1;
+let addAcTimer = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const inp  = document.getElementById('addTickerInput');
+  const list = document.getElementById('addAcList');
+  if (!inp || !list) return;
+
+  inp.addEventListener('input', () => {
+    clearTimeout(addAcTimer);
+    const q = inp.value.trim();
+    if (q.length < 1) { hideAddAC(); return; }
+    addAcTimer = setTimeout(() => fetchAddAC(q), 280);
+  });
+
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveAddAC(1); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); moveAddAC(-1); }
+    if (e.key === 'Escape')    { hideAddAC(); }
+    if (e.key === 'Enter')     { e.preventDefault(); if (addAcIndex >= 0 && addAcItems[addAcIndex]) selectAddAC(addAcItems[addAcIndex]); }
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#addTickerField')) hideAddAC();
+  });
+});
+
+async function fetchAddAC(q) {
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    addAcItems = await res.json();
+    addAcIndex = -1;
+    renderAddAC();
+  } catch { hideAddAC(); }
+}
+
+function renderAddAC() {
+  const list = document.getElementById('addAcList');
+  if (!list || !addAcItems.length) { hideAddAC(); return; }
+  list.innerHTML = addAcItems.map((item, i) => `
+    <div class="autocomplete-item" data-i="${i}" onmousedown="selectAddAC(addAcItems[${i}])">
+      <span class="ac-symbol">${item.symbol}</span>
+      <span class="ac-name">${item.name}</span>
+      <span class="ac-exchange">${item.exchange}</span>
+      ${item.type === 'ETF' ? '<span class="ac-type">ETF</span>' : ''}
+    </div>
+  `).join('');
+  list.classList.remove('hidden');
+}
+
+function moveAddAC(dir) {
+  const list = document.getElementById('addAcList');
+  addAcIndex = Math.max(-1, Math.min(addAcItems.length - 1, addAcIndex + dir));
+  list.querySelectorAll('.autocomplete-item').forEach((el, i) => el.classList.toggle('active', i === addAcIndex));
+}
+
+function selectAddAC(item) {
+  const cur = _currencyFromTicker(item.symbol);
+  document.getElementById('addTicker').value   = item.symbol;
+  document.getElementById('addName').value     = item.name;
+  document.getElementById('addCurrency').value = cur;
+  document.getElementById('addTickerInput').value = `${item.name} (${item.symbol})`;
+  _updateAddCurrencyLabel(cur);
+  const badge = document.getElementById('addTickerBadge');
+  if (badge) badge.textContent = `✅ ${item.symbol} · ${cur === 'KRW' ? '원화(KRW)' : '달러(USD)'}`;
+  hideAddAC();
+  document.getElementById('addPrice').focus();
+}
+
+function hideAddAC() {
+  const list = document.getElementById('addAcList');
+  if (list) list.classList.add('hidden');
+  addAcItems = [];
+  addAcIndex = -1;
 }
