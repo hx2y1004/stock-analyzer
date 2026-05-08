@@ -601,7 +601,18 @@ def analyze():
             return jsonify({"error": f"'{ticker}' 유효한 가격 데이터가 없습니다."}), 404
 
         df = add_all_indicators(df)
-        ai_result = analyze_signals(df, info)
+
+        # ── 주봉 데이터 (추세 보조 지표용) ──────────────────────────────
+        df_weekly = None
+        try:
+            df_w_raw = stock.history(period="2y", interval="1wk")
+            df_w_raw = df_w_raw.dropna(subset=["Close", "Open", "High", "Low"])
+            if not df_w_raw.empty:
+                df_weekly = add_all_indicators(df_w_raw)
+        except Exception:
+            df_weekly = None
+
+        ai_result = analyze_signals(df, info, df_weekly=df_weekly)
 
         # 차트용 데이터
         chart_df = df.tail(chart_bars).copy()
