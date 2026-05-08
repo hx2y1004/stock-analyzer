@@ -16,8 +16,25 @@
         <a href="/" class="nav-link active">분석</a>
         <a href="/trading" class="nav-link">모의투자</a>
       </nav>
+      <!-- 로그인/프로필 -->
+      <div id="authArea" class="auth-area">
+        <button class="login-btn" onclick="openLoginModal()">로그인</button>
+      </div>
     </div>
   </header>
+
+  <!-- 포트폴리오 섹션 (로그인 후) -->
+  <section id="portfolioSection" class="portfolio-section hidden">
+    <div class="portfolio-inner">
+      <div class="portfolio-top">
+        <h2 class="portfolio-title">📂 내 포트폴리오</h2>
+        <button class="pf-add-btn" onclick="openAddModal()">+ 종목 추가</button>
+      </div>
+      <div id="portfolioCards" class="portfolio-cards">
+        <div class="pf-loading">불러오는 중...</div>
+      </div>
+    </div>
+  </section>
 
   <!-- 검색 영역 -->
   <section class="search-section">
@@ -29,7 +46,7 @@
           <input id="tickerInput" class="search-input" type="text" placeholder="종목명 또는 티커 검색..." autocomplete="off" />
           <div id="autocompleteList" class="autocomplete-list hidden"></div>
         </div>
-<button id="analyzeBtn" class="search-btn" onclick="analyze()">분석하기</button>
+        <button id="analyzeBtn" class="search-btn" onclick="analyze()">분석하기</button>
       </div>
       <div class="quick-tickers">
         <span class="quick-label">빠른 선택:</span>
@@ -104,7 +121,7 @@
         </section>
       </div>
 
-      <!-- 우: 종합판단 + 주요지표 + 이동평균선 -->
+      <!-- 우: 사이드바 -->
       <div class="col-side">
 
         <section class="card verdict-card">
@@ -139,15 +156,16 @@
           </div>
         </section>
 
-        <section class="card">
-          <h3 class="card-title">수익률 현황</h3>
-          <div id="returnTracker" class="return-tracker"></div>
+        <!-- 내 포지션 카드 -->
+        <section class="card" id="positionCard">
+          <h3 class="card-title">📊 내 포지션</h3>
+          <div id="positionContent"></div>
         </section>
 
       </div>
     </div>
 
-    <!-- 상세 분석 (전체 너비, 펼치면 아래 자동 밀림) -->
+    <!-- 상세 분석 (전체 너비) -->
     <section class="card analysis-full-card">
       <div class="analysis-tabs">
         <button class="analysis-tab active" data-tab="technical" onclick="switchDetailTab('technical')">📊 기술적 분석</button>
@@ -157,7 +175,7 @@
       <div id="fundamentalList" class="detail-list detail-grid hidden"></div>
     </section>
 
-    <!-- 하단 그리드: 애널리스트(좌) + 뉴스(우) -->
+    <!-- 하단 그리드: 애널리스트 + 뉴스 -->
     <div class="bottom-grid">
       <section class="card">
         <h3 class="card-title">월가 애널리스트 의견</h3>
@@ -166,7 +184,6 @@
           <div id="analystTargets" class="analyst-targets"></div>
         </div>
       </section>
-
       <section class="card">
         <h3 class="card-title">최근 관련 뉴스</h3>
         <div id="newsList" class="news-list"></div>
@@ -174,6 +191,48 @@
     </div>
 
   </main>
+
+  <!-- ── 로그인 모달 ── -->
+  <div id="loginModal" class="modal-overlay hidden" onclick="closeLoginModal(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeLoginModal()">✕</button>
+      <div class="modal-logo">📈</div>
+      <h2 class="modal-title">StockAnalyzer</h2>
+      <p class="modal-desc">로그인하면 포트폴리오를 관리하고<br>보유 주식 기준 매매 타이밍을 볼 수 있어요</p>
+      <div class="social-btns">
+        <a href="/auth/google" class="social-btn google-btn">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.548 0 9s.348 2.826.957 4.039l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+          Google로 로그인
+        </a>
+        <a href="/auth/kakao" class="social-btn kakao-btn">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#3C1E1E" d="M9 1C4.582 1 1 3.896 1 7.455c0 2.268 1.513 4.258 3.793 5.385L3.9 16.5l3.742-2.48C8.1 14.09 8.546 14.13 9 14.13c4.418 0 8-2.896 8-6.455C17 3.896 13.418 1 9 1z"/></svg>
+          카카오로 로그인
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 종목 추가 모달 ── -->
+  <div id="addModal" class="modal-overlay hidden" onclick="closeAddModal(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+      <h2 class="modal-title" style="font-size:18px;margin-bottom:8px">포트폴리오에 추가</h2>
+      <p id="addModalDesc" class="modal-desc" style="margin-bottom:20px"></p>
+      <div class="add-form">
+        <input type="hidden" id="addTicker" />
+        <input type="hidden" id="addName" />
+        <div class="add-field">
+          <label>매입가 <span id="addCurrencyLabel">(USD)</span></label>
+          <input id="addPrice" class="add-input" type="number" step="any" placeholder="매입 평균가" />
+        </div>
+        <div class="add-field">
+          <label>보유 수량</label>
+          <input id="addQty" class="add-input" type="number" step="any" placeholder="보유 주수" />
+        </div>
+        <button class="add-submit-btn" onclick="submitAddHolding()">추가하기</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/js/chart.js"></script>
   <script src="/static/js/main.js"></script>
