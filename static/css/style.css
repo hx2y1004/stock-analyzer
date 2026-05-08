@@ -398,6 +398,87 @@ body {
   color: var(--text2);
   line-height: 1.7;
 }
+.detail-tip {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(88,166,255,0.07);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* ── 매수/매도 구간 탭 ── */
+.zones-wrap { display: flex; flex-direction: column; gap: 20px; }
+.zones-header {
+  display: flex; align-items: center; gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.zones-current-price { font-size: 16px; color: var(--text); }
+.zones-current-price strong { color: var(--accent); font-size: 20px; }
+.zones-rsi-badge {
+  font-size: 12px; padding: 4px 10px;
+  background: var(--bg3); border-radius: 20px; color: var(--text2);
+}
+.zones-list { display: flex; flex-direction: column; gap: 12px; }
+.zone-row {
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 14px 16px; border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+}
+.zone-row.zone-stop    { border-left: 4px solid var(--red); }
+.zone-row.zone-buy     { border-left: 4px solid var(--green); }
+.zone-row.zone-sell    { border-left: 4px solid #e3a008; }
+.zone-row.zone-current { border-left: 4px solid var(--accent); }
+.zone-row.zone-current.bullish { border-left-color: var(--green); background: rgba(63,185,80,0.05); }
+.zone-row.zone-current.bearish { border-left-color: var(--red);   background: rgba(248,81,73,0.05); }
+.zone-icon-col { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+.zone-content  { flex: 1; }
+.zone-title-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; flex-wrap: wrap; gap: 6px;
+}
+.zone-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.zone-price-range { font-size: 14px; font-weight: 700; color: var(--accent); }
+.zone-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  font-weight: 600; margin-left: 6px;
+}
+.zone-badge.bullish { background: rgba(63,185,80,0.15);  color: var(--green); }
+.zone-badge.bearish { background: rgba(248,81,73,0.15);  color: var(--red); }
+.zone-badge.neutral { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.zone-explanation { font-size: 12px; color: var(--text2); line-height: 1.7; }
+
+.zones-guide { margin-top: 4px; }
+.zones-guide-title {
+  font-size: 14px; font-weight: 700; margin-bottom: 12px;
+  color: var(--text);
+}
+.zones-guide-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.guide-card {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+}
+.guide-card.buy-guide   { border-top: 3px solid var(--green); }
+.guide-card.sell-guide  { border-top: 3px solid #e3a008; }
+.guide-card.stop-guide  { border-top: 3px solid var(--red); }
+.guide-card.split-guide { border-top: 3px solid var(--accent); }
+.guide-card-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+.guide-card-body  { font-size: 12px; color: var(--text2); line-height: 1.7; }
+.guide-card-body strong { color: var(--text); }
+
+@media (max-width: 768px) {
+  .zones-guide-grid { grid-template-columns: 1fr; }
+}
 
 /* ── 반응형 ── */
 
