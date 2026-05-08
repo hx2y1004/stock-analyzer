@@ -448,7 +448,7 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items):
         )
         try:
             resp = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
                 json={"contents": [{"parts": [{"text": prompt}]}],
                       "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}},
                 timeout=15,
