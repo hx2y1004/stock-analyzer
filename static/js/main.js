@@ -66,7 +66,9 @@ function renderPortfolioCards(holdings) {
     const retClass  = retPct == null ? 'neutral' : retPct > 0 ? 'up' : retPct < 0 ? 'down' : 'neutral';
     const retIcon   = retPct > 0 ? '▲' : retPct < 0 ? '▼' : '';
     const cur       = h.currency || 'USD';
-    const fmtPrice  = (v) => v == null ? '—' : (cur === 'USD' ? '$' : '') + v.toLocaleString();
+    const fmtPrice  = (v) => v == null ? '—' : cur === 'KRW'
+      ? Number(v).toLocaleString('ko-KR') + '원'
+      : '$' + Number(v).toLocaleString();
 
     return `
     <div class="pf-card" onclick="quickSearch('${h.ticker}')">
@@ -112,9 +114,10 @@ async function deleteHolding(event, hid) {
 // ── 종목 추가 모달 ─────────────────────────────────────────────────────────
 function openAddModal(ticker, name, currency) {
   if (!currentUser) { openLoginModal(); return; }
-  document.getElementById('addTicker').value  = ticker  || '';
-  document.getElementById('addName').value    = name    || '';
-  document.getElementById('addCurrencyLabel').textContent = currency ? `(${currency})` : '';
+  document.getElementById('addTicker').value    = ticker   || '';
+  document.getElementById('addName').value      = name     || '';
+  document.getElementById('addCurrency').value  = currency || 'USD';
+  document.getElementById('addCurrencyLabel').textContent = currency ? `(${currency})` : '(USD)';
   document.getElementById('addModalDesc').textContent = ticker
     ? `${name || ticker} 을(를) 포트폴리오에 추가합니다`
     : '검색 후 분석창에서 종목을 추가할 수 있어요';
@@ -127,15 +130,16 @@ function closeAddModal(event) {
     document.getElementById('addModal').classList.add('hidden');
 }
 async function submitAddHolding() {
-  const ticker = document.getElementById('addTicker').value;
-  const name   = document.getElementById('addName').value;
-  const price  = parseFloat(document.getElementById('addPrice').value);
-  const qty    = parseFloat(document.getElementById('addQty').value);
+  const ticker   = document.getElementById('addTicker').value;
+  const name     = document.getElementById('addName').value;
+  const currency = document.getElementById('addCurrency').value || 'USD';
+  const price    = parseFloat(document.getElementById('addPrice').value);
+  const qty      = parseFloat(document.getElementById('addQty').value);
   if (!ticker || !price || !qty) { alert('모든 항목을 입력해주세요'); return; }
   const res = await fetch('/api/portfolio', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ticker, name, quantity: qty, purchase_price: price }),
+    body: JSON.stringify({ ticker, name, quantity: qty, purchase_price: price, currency }),
   });
   const data = await res.json();
   if (!res.ok) { alert(data.error || '추가 실패'); return; }
