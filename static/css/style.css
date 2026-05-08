@@ -39,12 +39,13 @@ body {
   margin: 0 auto;
   padding: 0 24px;
   height: 56px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
 }
-.logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
-.nav { display: flex; gap: 4px; }
+.logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; justify-self: start; }
+.nav { display: flex; gap: 4px; justify-self: center; }
+
 .nav-link {
   padding: 6px 16px;
   border-radius: 8px;
@@ -502,11 +503,11 @@ body {
   .search-title { font-size: 22px; }
   .search-desc { font-size: 13px; }
 
-  /* 헤더 */
-  .header-inner { padding: 0 16px; gap: 6px; flex-wrap: nowrap; }
-  .logo { font-size: 15px; white-space: nowrap; flex: 0 0 auto; }
-  .nav { flex: 0 0 auto; }
-  .auth-area { flex: 0 0 auto; flex-wrap: nowrap; }
+  /* 헤더 - grid → flex fallback for tablet */
+  .header-inner { display: flex; justify-content: space-between; padding: 0 16px; gap: 6px; flex-wrap: nowrap; }
+  .logo { font-size: 15px; white-space: nowrap; flex: 0 0 auto; justify-self: unset; }
+  .nav { flex: 0 0 auto; justify-self: unset; }
+  .auth-area { flex: 0 0 auto; flex-wrap: nowrap; justify-self: unset; }
   .profile-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* 종목 헤더 */
@@ -561,6 +562,7 @@ body {
 
   /* 헤더 - 로그인/로그아웃 모두 동일하게 한줄 유지 */
   .header-inner {
+    display: flex;
     height: 48px;
     padding: 0 10px;
     gap: 4px;
@@ -568,8 +570,8 @@ body {
     overflow: hidden;
     justify-content: space-between;
   }
-  .logo { font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
-  .nav { gap: 2px; flex: 0 0 auto; }
+  .logo { font-size: 13px; white-space: nowrap; flex: 0 0 auto; justify-self: unset; }
+  .nav { gap: 2px; flex: 0 0 auto; justify-self: unset; }
   .nav-link { padding: 4px 8px; font-size: 12px; white-space: nowrap; }
   .auth-area { flex: 0 0 auto; gap: 4px; flex-wrap: nowrap; }
   .login-btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
@@ -998,7 +1000,7 @@ body {
 .empty-row { text-align: center !important; color: var(--text2); padding: 32px; }
 
 /* ── 인증 영역 ── */
-.auth-area { display: flex; align-items: center; gap: 10px; }
+.auth-area { display: flex; align-items: center; gap: 10px; justify-self: end; }
 .login-btn {
   background: var(--accent);
   color: #fff;
