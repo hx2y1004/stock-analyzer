@@ -425,37 +425,48 @@ def fetch_news(stock):
 
 
 def analyze_move_reason(ticker, name, price_change_pct, news_items):
-    """Gemini로 주가 변동 이유 분석. API 키 없으면 None 반환."""
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key or not news_items or price_change_pct is None:
+    """Gemini로 주가 변동 이유 분석."""
+    if price_change_pct is None or abs(price_change_pct) < 0.5:
         return None
-    if abs(price_change_pct) < 0.5:   # 0.5% 미만 변동은 스킵
-        return None
+
     direction = "상승" if price_change_pct > 0 else "하락"
     kind      = "급등" if price_change_pct >= 5 else ("급락" if price_change_pct <= -5 else direction)
-    headlines = "\n".join(f"- {n.get('title_orig') or n['title']}" for n in news_items[:8])
-    prompt = (
-        f"{name}({ticker}) 주식이 오늘 {price_change_pct:+.2f}% {kind}했습니다.\n"
-        f"아래 최근 뉴스 헤드라인을 분석하여 {kind} 이유를 한국어로 설명하세요.\n\n"
-        f"뉴스:\n{headlines}\n\n"
-        f"조건:\n"
-        f"- 주가 변동과 직접 관련 없는 뉴스는 무시하세요.\n"
-        f"- 3~5문장으로 간결하게 핵심 이유만 작성하세요.\n"
-        f"- 관련 뉴스가 없으면 '관련 뉴스를 찾을 수 없습니다.'라고만 작성하세요.\n"
-        f"- 한국어로만 답변하세요."
-    )
-    try:
-        resp = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
-            json={"contents": [{"parts": [{"text": prompt}]}],
-                  "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}},
-            timeout=12,
+
+    # Gemini API 시도
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if api_key and news_items:
+        headlines = "\n".join(f"- {n.get('title_orig') or n['title']}" for n in news_items[:8])
+        prompt = (
+            f"{name}({ticker}) 주식이 오늘 {price_change_pct:+.2f}% {kind}했습니다.\n"
+            f"아래 최근 뉴스 헤드라인을 분석하여 {kind} 이유를 한국어로 설명하세요.\n\n"
+            f"뉴스:\n{headlines}\n\n"
+            f"조건:\n"
+            f"- 주가 변동과 직접 관련 없는 뉴스는 무시하세요.\n"
+            f"- 3~5문장으로 간결하게 핵심 이유만 작성하세요.\n"
+            f"- 관련 뉴스가 없으면 '관련 뉴스를 찾을 수 없습니다.'라고만 작성하세요.\n"
+            f"- 한국어로만 답변하세요."
         )
-        data = resp.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:
-        app.logger.warning(f"Gemini move reason error: {e}")
-        return None
+        try:
+            resp = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+                json={"contents": [{"parts": [{"text": prompt}]}],
+                      "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}},
+                timeout=12,
+            )
+            data = resp.json()
+            app.logger.info(f"Gemini response status: {resp.status_code}")
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            if text:
+                return text
+        except Exception as e:
+            app.logger.warning(f"Gemini API error: {e}")
+
+    # Gemini 실패 또는 키 없을 때 — 뉴스 기반 폴백 메시지
+    if not news_items:
+        return f"현재 {kind} 관련 뉴스를 찾을 수 없습니다. 거시경제 지표나 시장 전반의 흐름을 함께 확인해 보세요."
+    top = [n['title'] for n in news_items[:3]]
+    headlines_ko = " / ".join(top)
+    return f"최근 관련 뉴스: {headlines_ko}"
 
 
 @app.route("/api/analyze", methods=["GET"])
