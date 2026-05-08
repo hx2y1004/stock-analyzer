@@ -1340,6 +1340,21 @@ body {
 .position-rec-reason { font-size: 12px; color: var(--text2); line-height: 1.6; }
 .position-actions { display: flex; gap: 8px; margin-top: 8px; }
 
+/* ── 52주 고/저가 배지 ── */
+.badge-52w {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.badge-52w.high      { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+.badge-52w.near-high { background: rgba(63,185,80,0.08); color: var(--green); border: 1px solid rgba(63,185,80,0.25); }
+.badge-52w.low       { background: rgba(248,81,73,0.12); color: var(--red);   border: 1px solid rgba(248,81,73,0.35); }
+
 /* ── 신규 매수자 관점 박스 ── */
 .new-buyer-advice {
   margin-top: 10px;

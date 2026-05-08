@@ -667,11 +667,20 @@ function renderZones(analysis, stock) {
     'strong-downtrend': { text: '강한 하락 추세 ↓↓', cls: 'trend-down' },
   }[trend] || { text: '횡보', cls: 'trend-side' };
 
+  const new52wHigh  = analysis.new_52w_high;
+  const near52wHigh = analysis.near_52w_high;
+  const near52wLow  = analysis.near_52w_low;
+  const highBadge   = new52wHigh  ? `<span class="badge-52w high">🏆 52주 신고가</span>`
+                    : near52wHigh ? `<span class="badge-52w near-high">📈 신고가 근방</span>`
+                    : near52wLow  ? `<span class="badge-52w low">📉 52주 신저가 근방</span>`
+                    : '';
+
   el.innerHTML = `
   <div class="zones-wrap">
     <div class="zones-header">
       <span class="zones-current-price">현재가 <strong>${fmt(price)}</strong></span>
       <span class="trend-badge ${trendLabel.cls}">${trendLabel.text}</span>
+      ${highBadge}
       <span class="zones-rsi-badge">${rsiMsg}</span>
     </div>
 
