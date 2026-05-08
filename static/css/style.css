@@ -503,8 +503,11 @@ body {
   .search-desc { font-size: 13px; }
 
   /* 헤더 */
-  .header-inner { padding: 0 16px; }
-  .logo { font-size: 16px; }
+  .header-inner { padding: 0 16px; gap: 6px; flex-wrap: nowrap; }
+  .logo { font-size: 15px; white-space: nowrap; flex: 0 0 auto; }
+  .nav { flex: 0 0 auto; }
+  .auth-area { flex: 0 0 auto; flex-wrap: nowrap; }
+  .profile-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* 종목 헤더 */
   .stock-header { flex-direction: column; align-items: flex-start; gap: 10px; }
@@ -556,15 +559,24 @@ body {
   .quick-tickers { gap: 6px; }
   .quick-btn { padding: 4px 10px; font-size: 12px; }
 
-  /* 헤더 */
-  .header-inner { height: auto; min-height: 48px; padding: 8px 12px; flex-wrap: nowrap; gap: 6px; }
-  .logo { font-size: 13px; white-space: nowrap; flex-shrink: 0; }
-  .nav { gap: 2px; flex-shrink: 0; }
-  .nav-link { padding: 4px 8px; font-size: 12px; }
-  .auth-area { flex-shrink: 0; }
-  .login-btn { padding: 5px 10px; font-size: 12px; }
+  /* 헤더 - 로그인/로그아웃 모두 동일하게 한줄 유지 */
+  .header-inner {
+    height: 48px;
+    padding: 0 10px;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    justify-content: space-between;
+  }
+  .logo { font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
+  .nav { gap: 2px; flex: 0 0 auto; }
+  .nav-link { padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+  .auth-area { flex: 0 0 auto; gap: 4px; flex-wrap: nowrap; }
+  .login-btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
+  .profile-area { padding: 3px 6px; gap: 4px; flex-wrap: nowrap; }
   .profile-name { display: none; }
-  .logout-btn { padding: 5px 8px; font-size: 11px; }
+  .profile-img { width: 22px; height: 22px; }
+  .logout-btn { padding: 4px 7px; font-size: 11px; white-space: nowrap; }
 
   /* 카드 */
   .card { padding: 12px; border-radius: 10px; }
