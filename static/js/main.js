@@ -667,12 +667,28 @@ function renderZones(analysis, stock) {
     'strong-downtrend': { text: '강한 하락 추세 ↓↓', cls: 'trend-down' },
   }[trend] || { text: '횡보', cls: 'trend-side' };
 
-  const new52wHigh  = analysis.new_52w_high;
-  const near52wHigh = analysis.near_52w_high;
-  const near52wLow  = analysis.near_52w_low;
+  const new52wHigh    = analysis.new_52w_high;
+  const near52wHigh   = analysis.near_52w_high;
+  const near52wLow    = analysis.near_52w_low;
+  const recentGolden  = analysis.recent_golden;
+  const recentDead    = analysis.recent_dead;
+  const bbExpanding   = analysis.bb_expanding;
+  const bbContracting = analysis.bb_contracting;
+  const volUp         = analysis.vol_up_confirm;
+  const volDown       = analysis.vol_down_confirm;
+
   const highBadge   = new52wHigh  ? `<span class="badge-52w high">🏆 52주 신고가</span>`
                     : near52wHigh ? `<span class="badge-52w near-high">📈 신고가 근방</span>`
                     : near52wLow  ? `<span class="badge-52w low">📉 52주 신저가 근방</span>`
+                    : '';
+  const crossBadge  = recentGolden ? `<span class="badge-trend golden">✨ 골든크로스</span>`
+                    : recentDead   ? `<span class="badge-trend dead">💀 데드크로스</span>`
+                    : '';
+  const bbBadge     = bbExpanding   ? `<span class="badge-trend bb-exp">↔ 밴드 확장</span>`
+                    : bbContracting ? `<span class="badge-trend bb-con">→← 밴드 수축</span>`
+                    : '';
+  const volBadge    = volUp   ? `<span class="badge-trend vol-up">📊 거래량 동반 상승</span>`
+                    : volDown ? `<span class="badge-trend vol-down">📊 거래량 동반 하락</span>`
                     : '';
 
   el.innerHTML = `
@@ -680,7 +696,7 @@ function renderZones(analysis, stock) {
     <div class="zones-header">
       <span class="zones-current-price">현재가 <strong>${fmt(price)}</strong></span>
       <span class="trend-badge ${trendLabel.cls}">${trendLabel.text}</span>
-      ${highBadge}
+      ${highBadge}${crossBadge}${bbBadge}${volBadge}
       <span class="zones-rsi-badge">${rsiMsg}</span>
     </div>
 

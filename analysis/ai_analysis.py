@@ -624,41 +624,102 @@ def analyze_signals(df, info):
     target_high = round(month_high, 2)
     target_price = target_low   # 기존 호환용 (매도 시작점)
 
-    # ── 추세 판단 (MA + 종합점수 + 52주 고/저가) ────────────────────────
+    # ── 추세 판단 (MA + 종합점수 + 52주 고/저가 + 크로스 + BB + 거래량) ──────────
     ma20 = _f(df["Close"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else None
     ma50 = _f(df["Close"].rolling(50).mean().iloc[-1]) if len(df) >= 50 else None
 
-    # 52주 고가/저가 기준 (거래일 252일)
+    # ① 52주 고가/저가 기준 (거래일 252일)
     year_high_252 = float(df["High"].tail(252).max())
     year_low_252  = float(df["Low"].tail(252).min())
-    # 신고가 달성: 52주 고가의 99% 이상 (실질 신고가)
-    new_52w_high  = year_high_252 > 0 and close >= year_high_252 * 0.99
-    # 신고가 근방: 52주 고가의 97% 이상
-    near_52w_high = year_high_252 > 0 and close >= year_high_252 * 0.97
-    # 신저가 근방: 52주 저가의 105% 이하
-    near_52w_low  = year_low_252  > 0 and close <= year_low_252  * 1.05
+    new_52w_high  = year_high_252 > 0 and close >= year_high_252 * 0.99   # 실질 신고가
+    near_52w_high = year_high_252 > 0 and close >= year_high_252 * 0.97   # 신고가 3% 이내
+    near_52w_low  = year_low_252  > 0 and close <= year_low_252  * 1.05   # 신저가 5% 이내
+
+    # ② 최근 1개월(21거래일) MA5/MA20 골든·데드크로스
+    recent_golden = False
+    recent_dead   = False
+    if "MA5" in df.columns and "MA20" in df.columns and len(df) >= 23:
+        ma5_arr  = df["MA5"].values
+        ma20_arr = df["MA20"].values
+        for i in range(-21, -1):
+            p5,  c5  = _f(ma5_arr[i-1]),  _f(ma5_arr[i])
+            p20, c20 = _f(ma20_arr[i-1]), _f(ma20_arr[i])
+            if None not in (p5, c5, p20, c20):
+                if p5 <= p20 and c5 > c20:
+                    recent_golden = True
+                elif p5 >= p20 and c5 < c20:
+                    recent_dead = True
+
+    # ③ 볼린저밴드 폭 확장/수축 (현재 vs 10일 전)
+    bb_expanding   = False
+    bb_contracting = False
+    bb_dir_bullish = False   # 확장 + 상단 위치
+    bb_dir_bearish = False   # 확장 + 하단 위치
+    if all(c in df.columns for c in ["BB_upper","BB_lower","BB_mid"]) and len(df) >= 12:
+        def _bbw(idx):
+            u = _f(df["BB_upper"].iloc[idx])
+            l = _f(df["BB_lower"].iloc[idx])
+            m = _f(df["BB_mid"].iloc[idx])
+            return (u - l) / m if u and l and m and m > 0 else None
+        w_now, w_10 = _bbw(-1), _bbw(-11)
+        if w_now and w_10:
+            ratio = w_now / w_10
+            if ratio >= 1.10:
+                bb_expanding = True
+                bb_mid_now = _f(df["BB_mid"].iloc[-1])
+                if bb_mid_now:
+                    bb_dir_bullish = close > bb_mid_now
+                    bb_dir_bearish = close < bb_mid_now
+            elif ratio <= 0.90:
+                bb_contracting = True
+
+    # ④ 거래량 동반 상승/하락 (최근 5일 거래량 vs 20일 평균)
+    vol_up_confirm   = False
+    vol_down_confirm = False
+    if len(df) >= 6:
+        vol_5d  = float(df["Volume"].tail(5).mean())
+        vol_20d = float(df["Volume"].tail(20).mean())
+        p5d_ago = _f(df["Close"].iloc[-6])
+        if vol_20d > 0 and p5d_ago and p5d_ago > 0:
+            vol_ratio_5d = vol_5d / vol_20d
+            price_5d_ch  = (close - p5d_ago) / p5d_ago * 100
+            if vol_ratio_5d >= 1.30 and price_5d_ch >= 2.0:
+                vol_up_confirm = True
+            elif vol_ratio_5d >= 1.30 and price_5d_ch <= -2.0:
+                vol_down_confirm = True
+
+    # ── 추가 트렌드 신호 종합 → effective_score 계산 ──────────────────────
+    trend_boost = 0
+    if recent_golden:   trend_boost += 15
+    if recent_dead:     trend_boost -= 15
+    if bb_dir_bullish:  trend_boost += 10
+    if bb_dir_bearish:  trend_boost -= 10
+    if vol_up_confirm:  trend_boost += 10
+    if vol_down_confirm:trend_boost -= 10
+
+    effective_score = max(-100, min(100, combined_score + trend_boost))
 
     if ma20 and ma50:
-        # strong-uptrend: 기존 조건(점수 30+ MA 정배열) OR 52주 신고가 달성(점수 기준 완화)
-        if (combined_score >= 30 and close > ma20 and ma20 > ma50) or \
-           (new_52w_high and combined_score >= 15 and close > ma20):
+        # strong-uptrend
+        if (effective_score >= 30 and close > ma20 and ma20 > ma50) or \
+           (new_52w_high and effective_score >= 15 and close > ma20):
             trend = "strong-uptrend"
-        # uptrend: 기존 조건 OR 신고가 근방(점수 기준 완화)
-        elif (combined_score >= 10 and close > ma20) or \
-             (near_52w_high and combined_score >= 5 and close > ma20):
+        # uptrend
+        elif (effective_score >= 10 and close > ma20) or \
+             (near_52w_high and effective_score >= 5 and close > ma20):
             trend = "uptrend"
-        # strong-downtrend: 기존 조건 OR 52주 신저가 근방(점수 기준 완화)
-        elif (combined_score <= -30 and close < ma20 and ma20 < ma50) or \
-             (near_52w_low and combined_score <= -15 and close < ma20):
+        # strong-downtrend
+        elif (effective_score <= -30 and close < ma20 and ma20 < ma50) or \
+             (near_52w_low and effective_score <= -15 and close < ma20):
             trend = "strong-downtrend"
-        # downtrend: 기존 조건 OR 신저가 근방(점수 기준 완화)
-        elif (combined_score <= -10 and close < ma20) or \
-             (near_52w_low and combined_score <= -5 and close < ma20):
+        # downtrend
+        elif (effective_score <= -10 and close < ma20) or \
+             (near_52w_low and effective_score <= -5 and close < ma20):
             trend = "downtrend"
         else:
             trend = "sideways"
     else:
-        trend = "uptrend" if combined_score >= 20 else "downtrend" if combined_score <= -20 else "sideways"
+        trend = "uptrend" if effective_score >= 20 else "downtrend" if effective_score <= -20 else "sideways"
 
     if combined_score >= 50:   verdict, verdict_color = "강한 매수", "strong-buy"
     elif combined_score >= 20: verdict, verdict_color = "매수",       "buy"
@@ -683,9 +744,16 @@ def analyze_signals(df, info):
         "month_high": round(month_high, 2),
         "month_low":  round(month_low, 2),
         "trend": trend,
-        "new_52w_high":  new_52w_high,
-        "near_52w_high": near_52w_high,
-        "near_52w_low":  near_52w_low,
+        "trend_boost":     trend_boost,
+        "new_52w_high":    new_52w_high,
+        "near_52w_high":   near_52w_high,
+        "near_52w_low":    near_52w_low,
+        "recent_golden":   recent_golden,
+        "recent_dead":     recent_dead,
+        "bb_expanding":    bb_expanding,
+        "bb_contracting":  bb_contracting,
+        "vol_up_confirm":  vol_up_confirm,
+        "vol_down_confirm":vol_down_confirm,
         "rsi":         round(rsi, 2)          if not np.isnan(rsi)  else None,
         "macd":        round(macd, 4)          if not np.isnan(macd) else None,
         "bb_position": round(bb_position, 1)   if bb_position is not None else None,
