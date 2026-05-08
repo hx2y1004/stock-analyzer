@@ -424,6 +424,40 @@ def fetch_news(stock):
         return []
 
 
+def analyze_move_reason(ticker, name, price_change_pct, news_items):
+    """Gemini로 주가 변동 이유 분석. API 키 없으면 None 반환."""
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key or not news_items or price_change_pct is None:
+        return None
+    if abs(price_change_pct) < 0.5:   # 0.5% 미만 변동은 스킵
+        return None
+    direction = "상승" if price_change_pct > 0 else "하락"
+    kind      = "급등" if price_change_pct >= 5 else ("급락" if price_change_pct <= -5 else direction)
+    headlines = "\n".join(f"- {n.get('title_orig') or n['title']}" for n in news_items[:8])
+    prompt = (
+        f"{name}({ticker}) 주식이 오늘 {price_change_pct:+.2f}% {kind}했습니다.\n"
+        f"아래 최근 뉴스 헤드라인을 분석하여 {kind} 이유를 한국어로 설명하세요.\n\n"
+        f"뉴스:\n{headlines}\n\n"
+        f"조건:\n"
+        f"- 주가 변동과 직접 관련 없는 뉴스는 무시하세요.\n"
+        f"- 3~5문장으로 간결하게 핵심 이유만 작성하세요.\n"
+        f"- 관련 뉴스가 없으면 '관련 뉴스를 찾을 수 없습니다.'라고만 작성하세요.\n"
+        f"- 한국어로만 답변하세요."
+    )
+    try:
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+            json={"contents": [{"parts": [{"text": prompt}]}],
+                  "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}},
+            timeout=12,
+        )
+        data = resp.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception as e:
+        app.logger.warning(f"Gemini move reason error: {e}")
+        return None
+
+
 @app.route("/api/analyze", methods=["GET"])
 def analyze():
     ticker = request.args.get("ticker", "").strip().upper()
@@ -568,6 +602,10 @@ def analyze():
 
         news_data    = fetch_news(stock)
         analyst_data = fetch_analysts(stock, info)
+        move_reason  = analyze_move_reason(
+            ticker, stock_data["name"],
+            stock_data.get("price_change_pct"), news_data
+        )
 
         # ── 내 포지션 데이터 (로그인된 경우) ──────────────────────────────
         position_data = None
@@ -591,7 +629,7 @@ def analyze():
                 {
                     "stock": stock_data, "analysis": ai_result, "chart": chart_data,
                     "interval": interval, "interval_label": interval_label,
-                    "news": news_data, "analysts": analyst_data,
+                    "news": news_data, "analysts": analyst_data, "move_reason": move_reason,
                     "position": position_data,
                 },
                 cls=NumpyEncoder,
