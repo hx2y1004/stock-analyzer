@@ -142,6 +142,9 @@ function renderMetrics(stock, analysis) {
   document.getElementById('peRatio').textContent =
     stock.pe_ratio != null ? stock.pe_ratio.toFixed(1) + 'x' : '—';
 
+  document.getElementById('pbRatio').textContent =
+    stock.pb_ratio != null ? stock.pb_ratio.toFixed(2) + 'x' : '—';
+
   document.getElementById('epsValue').textContent =
     stock.eps != null ? fmt(stock.eps, cur) : '—';
 
