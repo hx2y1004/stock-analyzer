@@ -624,6 +624,24 @@ def analyze_signals(df, info):
     target_high = round(month_high, 2)
     target_price = target_low   # 기존 호환용 (매도 시작점)
 
+    # ── 추세 판단 (MA + 종합점수) ────────────────────────
+    ma20 = _f(df["Close"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else None
+    ma50 = _f(df["Close"].rolling(50).mean().iloc[-1]) if len(df) >= 50 else None
+
+    if ma20 and ma50:
+        if combined_score >= 30 and close > ma20 and ma20 > ma50:
+            trend = "strong-uptrend"
+        elif combined_score >= 10 and close > ma20:
+            trend = "uptrend"
+        elif combined_score <= -30 and close < ma20 and ma20 < ma50:
+            trend = "strong-downtrend"
+        elif combined_score <= -10 and close < ma20:
+            trend = "downtrend"
+        else:
+            trend = "sideways"
+    else:
+        trend = "uptrend" if combined_score >= 20 else "downtrend" if combined_score <= -20 else "sideways"
+
     if combined_score >= 50:   verdict, verdict_color = "강한 매수", "strong-buy"
     elif combined_score >= 20: verdict, verdict_color = "매수",       "buy"
     elif combined_score >= -20:verdict, verdict_color = "중립 / 관망","neutral"
@@ -646,6 +664,7 @@ def analyze_signals(df, info):
         "stop_loss": stop_loss,
         "month_high": round(month_high, 2),
         "month_low":  round(month_low, 2),
+        "trend": trend,
         "rsi":         round(rsi, 2)          if not np.isnan(rsi)  else None,
         "macd":        round(macd, 4)          if not np.isnan(macd) else None,
         "bb_position": round(bb_position, 1)   if bb_position is not None else None,

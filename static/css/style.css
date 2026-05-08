@@ -423,6 +423,13 @@ body {
   font-size: 12px; padding: 4px 10px;
   background: var(--bg3); border-radius: 20px; color: var(--text2);
 }
+.trend-badge {
+  font-size: 12px; font-weight: 700; padding: 4px 12px;
+  border-radius: 20px;
+}
+.trend-badge.trend-up   { background: rgba(63,185,80,0.15); color: var(--green); }
+.trend-badge.trend-down { background: rgba(248,81,73,0.15);  color: var(--red);   }
+.trend-badge.trend-side { background: var(--bg3); color: var(--text2); }
 .zones-list { display: flex; flex-direction: column; gap: 12px; }
 .zone-row {
   display: flex; gap: 14px; align-items: flex-start;

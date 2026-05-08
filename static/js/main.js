@@ -584,11 +584,19 @@ function renderFundamental(details) {
 }
 
 // ── 매수/매도 구간 탭 ─────────────────────────────────────
-function _getZoneAdvice(price, entryLow, entryHigh, targetLow, stop) {
-  if (price <= stop)       return '최근 1개월 최저가 아래로 이탈했어요. 지지선이 무너진 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.';
-  if (price <= entryHigh)  return '최근 1개월 저점 부근이에요. 분할 매수를 고려해볼 수 있는 좋은 타이밍이에요.';
-  if (price >= targetLow)  return '최근 1개월 고점 부근이에요. 분할 매도를 고려해볼 시점이에요.';
-  return '1개월 가격 범위 중간대에 있어요. 매수·매도 구간이 올 때까지 현 포지션을 유지하며 관망하세요.';
+function _getZoneAdvice(zone) {
+  const map = {
+    '손절 구간':              '1개월 최저가 아래로 이탈했어요. 지지선 붕괴 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.',
+    '눌림목 매수 구간':       '상승 추세 속 일시적 조정 구간이에요. 추세가 유효하다면 분할 매수 기회가 될 수 있어요.',
+    '상승 추세 (보유)':       '상승 추세가 살아있어요. 매수·매도보다 현 포지션 보유를 유지하는 게 유리해요.',
+    '고점 부근 (일부 익절)':  '상승 추세 고점 부근이에요. 전량 매도보다 보유량 일부(20~30%)를 익절하며 리스크를 줄여보세요.',
+    '매수 추천 구간':         '1개월 저점 부근이에요. 횡보 흐름에서 지지선 역할을 하는 구간으로 분할 매수를 고려해보세요.',
+    '매도 추천 구간':         '1개월 고점 부근이에요. 횡보 흐름에서 저항선 역할을 하는 구간으로 분할 매도를 고려해보세요.',
+    '하락 추세 저점 (관망)':  '하락 추세 저점 부근이에요. 반등이 나올 수 있지만 추세가 꺾이지 않았으니 섣불리 매수하기보다 관망을 추천해요.',
+    '하락 추세 반등 (매도)':  '하락 추세 속 반등 구간이에요. 추세가 살아있다면 반등 시 일부 매도로 리스크를 줄이는 전략이 유효해요.',
+    '관망 구간':              '가격이 매수·매도 구간 사이에 있어요. 뚜렷한 방향성이 나올 때까지 현 포지션을 유지하며 관망하세요.',
+  };
+  return map[zone] || '현재 가격 위치를 분석 중이에요.';
 }
 
 function renderZones(analysis, stock) {
@@ -610,21 +618,39 @@ function renderZones(analysis, stock) {
       : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
   };
 
-  // 1개월 범위 기반 현재 위치 판단
-  const entryLow  = analysis.entry_low  || entry;
-  const entryHigh = analysis.entry_high || entry * 1.02;
-  const targetLow = analysis.target_low || target * 0.97;
+  // 1개월 범위 + 추세 기반 현재 위치 판단
+  const entryLow   = analysis.entry_low   || entry;
+  const entryHigh  = analysis.entry_high  || entry * 1.02;
+  const targetLow  = analysis.target_low  || target * 0.97;
   const targetHigh = analysis.target_high || target;
-  const monthHigh = analysis.month_high || target;
-  const monthLow  = analysis.month_low  || stop;
+  const monthHigh  = analysis.month_high  || target;
+  const monthLow   = analysis.month_low   || stop;
+  const trend      = analysis.trend       || 'sideways';
+  const monthRange = monthHigh - monthLow || 1;
+  const rangePct   = (price - monthLow) / monthRange; // 0~1 (1개월 범위 내 위치)
 
   let priceZone = '관망 구간', priceColor = 'neutral';
+
   if (price <= stop) {
     priceZone = '손절 구간'; priceColor = 'bearish';
-  } else if (price <= entryHigh) {
-    priceZone = '매수 추천 구간'; priceColor = 'bullish';
-  } else if (price >= targetLow) {
-    priceZone = '매도 추천 구간'; priceColor = 'bearish';
+
+  } else if (trend === 'strong-uptrend' || trend === 'uptrend') {
+    // 상승 추세
+    if (rangePct <= 0.35)      { priceZone = '눌림목 매수 구간';      priceColor = 'bullish'; }
+    else if (rangePct >= 0.80) { priceZone = '고점 부근 (일부 익절)'; priceColor = 'neutral'; }
+    else                       { priceZone = '상승 추세 (보유)';       priceColor = 'bullish'; }
+
+  } else if (trend === 'strong-downtrend' || trend === 'downtrend') {
+    // 하락 추세
+    if (rangePct <= 0.30)      { priceZone = '하락 추세 저점 (관망)'; priceColor = 'neutral'; }
+    else if (rangePct >= 0.65) { priceZone = '하락 추세 반등 (매도)'; priceColor = 'bearish'; }
+    else                       { priceZone = '관망 구간';              priceColor = 'neutral'; }
+
+  } else {
+    // 횡보
+    if (rangePct <= 0.30)      { priceZone = '매수 추천 구간'; priceColor = 'bullish'; }
+    else if (rangePct >= 0.70) { priceZone = '매도 추천 구간'; priceColor = 'bearish'; }
+    else                       { priceZone = '관망 구간';      priceColor = 'neutral'; }
   }
 
   let rsiMsg = '';
@@ -633,10 +659,19 @@ function renderZones(analysis, stock) {
   else if (rsiNum > 70) rsiMsg = '⚠️ RSI 과매수 — 조정 가능성';
   else                  rsiMsg = '✅ RSI 정상 범위';
 
+  const trendLabel = {
+    'strong-uptrend':   { text: '강한 상승 추세 ↑↑', cls: 'trend-up' },
+    'uptrend':          { text: '상승 추세 ↑',        cls: 'trend-up' },
+    'sideways':         { text: '횡보',               cls: 'trend-side' },
+    'downtrend':        { text: '하락 추세 ↓',        cls: 'trend-down' },
+    'strong-downtrend': { text: '강한 하락 추세 ↓↓', cls: 'trend-down' },
+  }[trend] || { text: '횡보', cls: 'trend-side' };
+
   el.innerHTML = `
   <div class="zones-wrap">
     <div class="zones-header">
       <span class="zones-current-price">현재가 <strong>${fmt(price)}</strong></span>
+      <span class="trend-badge ${trendLabel.cls}">${trendLabel.text}</span>
       <span class="zones-rsi-badge">${rsiMsg}</span>
     </div>
 
@@ -670,7 +705,7 @@ function renderZones(analysis, stock) {
             <span class="zone-name">현재 위치 <span class="zone-badge ${priceColor}">${priceZone}</span></span>
             <span class="zone-price-range">${fmt(price)}</span>
           </div>
-          <div class="zone-explanation">${_getZoneAdvice(price, entryLow, entryHigh, targetLow, stop)}</div>
+          <div class="zone-explanation">${_getZoneAdvice(priceZone)}</div>
         </div>
       </div>
 
