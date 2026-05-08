@@ -107,9 +107,9 @@ function renderPortfolioCards(holdings) {
     return;
   }
 
-  // 접힌 상태: 수익률 내림차순 상위 5개 / 펼친 상태: 원래 순서 전체
+  // 수익률 내림차순 정렬 (접힘: 상위 5개 / 펼침: 전체)
   const byReturn  = [...holdings].sort((a, b) => (b.return_pct ?? -9999) - (a.return_pct ?? -9999));
-  const displayed = pfCollapsed ? byReturn.slice(0, 5) : holdings;
+  const displayed = pfCollapsed ? byReturn.slice(0, 5) : byReturn;
 
   cards.innerHTML = displayed.map(_pfCardHTML).join('');
 
