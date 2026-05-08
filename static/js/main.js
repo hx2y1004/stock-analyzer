@@ -584,19 +584,44 @@ function renderFundamental(details) {
 }
 
 // ── 매수/매도 구간 탭 ─────────────────────────────────────
-function _getZoneAdvice(zone) {
+function _getZoneAdvice(zone, analysis) {
+  // 주요 신호 컨텍스트 문자열 생성
+  const a = analysis || {};
+  const sigParts = [];
+  if (a.new_52w_high)       sigParts.push('52주 신고가 달성');
+  else if (a.near_52w_high) sigParts.push('52주 신고가 근방');
+  if (a.near_52w_low)       sigParts.push('52주 신저가 근방');
+  if (a.recent_golden)      sigParts.push('골든크로스 발생');
+  if (a.recent_dead)        sigParts.push('데드크로스 발생');
+  if (a.vol_up_confirm)     sigParts.push('거래량 동반 상승 확인');
+  else if (a.vol_down_confirm) sigParts.push('거래량 동반 하락 확인');
+  if (a.bb_expanding)       sigParts.push('밴드 확장 중');
+  else if (a.bb_contracting)sigParts.push('밴드 수축 중');
+  const sigCtx = sigParts.length ? ` (${sigParts.join(' · ')})` : '';
+
+  const isStrong = a.trend === 'strong-uptrend' || a.trend === 'strong-downtrend';
+
   const map = {
-    '손절 구간':              '1개월 최저가 아래로 이탈했어요. 지지선 붕괴 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.',
-    '눌림목 매수 구간':       '상승 추세 속 일시적 조정 구간이에요. 추세가 유효하다면 분할 매수 기회가 될 수 있어요.',
-    '상승 추세 (보유)':       '상승 추세가 살아있어요. 매수·매도보다 현 포지션 보유를 유지하는 게 유리해요.',
-    '고점 부근 (일부 익절)':  '상승 추세 고점 부근이에요. 전량 매도보다 보유량 일부(20~30%)를 익절하며 리스크를 줄여보세요.',
-    '매수 추천 구간':         '1개월 저점 부근이에요. 횡보 흐름에서 지지선 역할을 하는 구간으로 분할 매수를 고려해보세요.',
-    '매도 추천 구간':         '1개월 고점 부근이에요. 횡보 흐름에서 저항선 역할을 하는 구간으로 분할 매도를 고려해보세요.',
-    '하락 추세 저점 (관망)':  '하락 추세 저점 부근이에요. 반등이 나올 수 있지만 추세가 꺾이지 않았으니 섣불리 매수하기보다 관망을 추천해요.',
-    '하락 추세 반등 (매도)':  '하락 추세 속 반등 구간이에요. 추세가 살아있다면 반등 시 일부 매도로 리스크를 줄이는 전략이 유효해요.',
-    '관망 구간':              '가격이 매수·매도 구간 사이에 있어요. 뚜렷한 방향성이 나올 때까지 현 포지션을 유지하며 관망하세요.',
+    '손절 구간':
+      `1개월 최저가 아래로 이탈했어요${sigCtx}. 지지선 붕괴 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.`,
+    '눌림목 매수 구간':
+      `${isStrong ? '강한 ' : ''}상승 추세 속 일시적 조정 구간이에요${sigCtx}. 추세가 유효하다면 분할 매수 기회가 될 수 있어요.`,
+    '상승 추세 (보유)':
+      `${isStrong ? '강한 ' : ''}상승 추세가 살아있어요${sigCtx}. 매수·매도보다 현 포지션 보유를 유지하는 게 유리해요.`,
+    '고점 부근 (일부 익절)':
+      `${isStrong ? '강한 ' : ''}상승 추세 고점 부근이에요${sigCtx}. 전량 매도보다 보유량 일부(20~30%)를 익절하며 리스크를 줄여보세요.`,
+    '매수 추천 구간':
+      `횡보 구간 지지선 부근이에요${sigCtx}. 지지선 역할을 하는 구간으로 분할 매수를 고려해보세요.`,
+    '매도 추천 구간':
+      `횡보 구간 저항선 부근이에요${sigCtx}. 저항선 역할을 하는 구간으로 분할 매도를 고려해보세요.`,
+    '하락 추세 저점 (관망)':
+      `${isStrong ? '강한 ' : ''}하락 추세 저점 부근이에요${sigCtx}. 반등 가능성은 있지만 추세가 꺾이지 않았으니 관망을 추천해요.`,
+    '하락 추세 반등 (매도)':
+      `${isStrong ? '강한 ' : ''}하락 추세 속 반등 구간이에요${sigCtx}. 반등 시 일부 매도로 리스크를 줄이는 전략이 유효해요.`,
+    '관망 구간':
+      `가격이 매수·매도 구간 사이에 있어요${sigCtx}. 뚜렷한 방향성이 나올 때까지 현 포지션을 유지하며 관망하세요.`,
   };
-  return map[zone] || '현재 가격 위치를 분석 중이에요.';
+  return map[zone] || `현재 가격 위치를 분석 중이에요${sigCtx}.`;
 }
 
 function renderZones(analysis, stock) {
@@ -730,7 +755,7 @@ function renderZones(analysis, stock) {
             <span class="zone-name">현재 위치 <span class="zone-badge ${priceColor}">${priceZone}</span></span>
             <span class="zone-price-range">${fmt(price)}</span>
           </div>
-          <div class="zone-explanation">${_getZoneAdvice(priceZone)}</div>
+          <div class="zone-explanation">${_getZoneAdvice(priceZone, analysis)}</div>
         </div>
       </div>
 
