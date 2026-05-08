@@ -102,6 +102,8 @@ def fetch_naver_fundamentals(krx_code):
                 result["eps"] = val
             elif title == "BPS":
                 result["bps"] = val
+            elif "배당금" in title or title == "DPS":   # 주당배당금
+                result["dps"] = val
 
         return result
     except Exception:
@@ -400,11 +402,14 @@ def analyze():
                     info["bookValue"]   = naver["bps"]
                     info["priceToBook"] = round(ref_price / naver["bps"], 2)
 
-            # 배당수익률: yfinance가 한국 주식에 대해 이미 %로 반환 (0.55 = 0.55%)
-            # 프론트에서 ×100 하기 때문에 0.0055로 정규화
-            dy = info.get("dividendYield")
-            if dy and dy > 0.15:   # 15% 초과 = % 형태로 온 것
-                info["dividendYield"] = dy / 100
+            # 배당수익률: DPS / 현재가로 직접 계산 (yfinance 값보다 정확)
+            if naver.get("dps") and ref_price:
+                info["dividendYield"] = naver["dps"] / ref_price
+            else:
+                # fallback: yfinance가 한국 주식에 대해 % 형태로 반환하는 경우 정규화
+                dy = info.get("dividendYield")
+                if dy and dy > 0.15:
+                    info["dividendYield"] = dy / 100
 
         # NaN 행 제거 (한국 주식 등 마지막 행이 NaN일 수 있음)
         df = df.dropna(subset=["Close", "Open", "High", "Low"])
