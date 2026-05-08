@@ -844,10 +844,10 @@ function toggleIndicator(name) {
 function syncChartTimeScales(charts) {
   let syncing = false;
   charts.forEach(src => {
-    src.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    src.timeScale().subscribeVisibleTimeRangeChange(range => {
       if (syncing || !range) return;
       syncing = true;
-      charts.forEach(tgt => { if (tgt !== src) tgt.timeScale().setVisibleLogicalRange(range); });
+      charts.forEach(tgt => { if (tgt !== src) tgt.timeScale().setVisibleRange(range); });
       syncing = false;
     });
   });
@@ -858,12 +858,12 @@ function renderCharts(data) {
   const c2 = renderRSIChart(data);
   const c3 = renderMACDChart(data);
 
-  // 차트 완전 렌더링 후 메인 기준으로 범위 통일 → 이후 동기화
+  // 시간(timestamp) 기준으로 통일 — 데이터 시작점이 달라도 날짜 기준으로 정렬됨
   const alignAndSync = () => {
-    const range = c1.timeScale().getVisibleLogicalRange();
+    const range = c1.timeScale().getVisibleRange();
     if (range) {
-      c2.timeScale().setVisibleLogicalRange(range);
-      c3.timeScale().setVisibleLogicalRange(range);
+      c2.timeScale().setVisibleRange(range);
+      c3.timeScale().setVisibleRange(range);
     }
     syncChartTimeScales([c1, c2, c3]);
   };
