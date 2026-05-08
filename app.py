@@ -432,8 +432,10 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items):
     direction = "상승" if price_change_pct > 0 else "하락"
     kind      = "급등" if price_change_pct >= 5 else ("급락" if price_change_pct <= -5 else direction)
 
-    # Gemini API 시도
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    # Groq API 시도 (무료, llama-3.3-70b)
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()  # 하위호환
     if api_key and news_items:
         headlines = "\n".join(f"- {n.get('title_orig') or n['title']}" for n in news_items[:8])
         prompt = (
@@ -448,25 +450,25 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items):
         )
         try:
             resp = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={api_key}",
-                json={"contents": [{"parts": [{"text": prompt}]}],
-                      "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}},
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 300,
+                },
                 timeout=15,
             )
             data = resp.json()
-            # candidates 없으면 응답 전체 로깅
-            if "candidates" not in data:
-                app.logger.warning(f"Gemini no candidates: {data}")
-                # error 필드 있으면 메시지 추출
-                err_msg = data.get("error", {}).get("message", "")
-                if err_msg:
-                    app.logger.warning(f"Gemini error message: {err_msg}")
-            else:
-                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            if "choices" in data:
+                text = data["choices"][0]["message"]["content"].strip()
                 if text:
                     return text
+            else:
+                app.logger.warning(f"Groq no choices: {data}")
         except Exception as e:
-            app.logger.error(f"Gemini API exception: {e}")
+            app.logger.error(f"Groq API exception: {e}")
 
     # Gemini 실패 또는 키 없을 때 — 뉴스 기반 폴백 메시지
     if not news_items:
