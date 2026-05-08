@@ -1095,6 +1095,33 @@ body {
   padding: 20px 24px;
 }
 .portfolio-inner { max-width: 1440px; margin: 0 auto; }
+.portfolio-title-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pf-toggle-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.pf-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+.pf-more-footer {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text2);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.pf-more-footer:hover { color: var(--accent); }
 .portfolio-top {
   display: flex;
   align-items: center;
