@@ -6,6 +6,8 @@ let currentUser = null;
 let currentAnalysisTicker = null;
 let currentPositionId = null;
 let currentPositionData = null;
+let pfCollapsed = true;       // 포트폴리오 기본 상태: 접힘
+let pfAllHoldings = [];       // 마지막으로 불러온 전체 보유 종목
 
 // ── 앱 초기화 ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -53,51 +55,84 @@ async function loadPortfolio() {
   }
 }
 
+function _pfCardHTML(h) {
+  const hasPrice = h.current_price != null;
+  const retPct   = h.return_pct;
+  const retAmt   = h.return_amount;
+  const retClass = retPct == null ? 'neutral' : retPct > 0 ? 'up' : retPct < 0 ? 'down' : 'neutral';
+  const retIcon  = retPct > 0 ? '▲' : retPct < 0 ? '▼' : '';
+  const cur      = h.currency || 'USD';
+  const fmtPrice = (v) => v == null ? '—' : cur === 'KRW'
+    ? Number(v).toLocaleString('ko-KR') + '원'
+    : '$' + Number(v).toLocaleString();
+  return `
+  <div class="pf-card" onclick="quickSearch('${h.ticker}')">
+    <div class="pf-card-top">
+      <div>
+        <div class="pf-stock-name">${h.name}</div>
+        <div class="pf-ticker">${h.ticker}</div>
+      </div>
+      <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제">✕</button>
+    </div>
+    <div class="pf-prices">
+      <div class="pf-price-item">
+        <div>매입가</div>
+        <div class="pf-price-val">${fmtPrice(h.purchase_price)}</div>
+      </div>
+      <div class="pf-price-item" style="text-align:right">
+        <div>현재가</div>
+        <div class="pf-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
+      </div>
+    </div>
+    <div class="pf-return ${retClass}">
+      <div>
+        <div class="pf-return-pct">${retPct != null ? `${retIcon} ${Math.abs(retPct).toFixed(2)}%` : '—'}</div>
+        <div class="pf-qty">${h.quantity}주</div>
+      </div>
+      <div class="pf-return-amt">${retAmt != null ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt)) : ''}</div>
+    </div>
+  </div>`;
+}
+
 function renderPortfolioCards(holdings) {
-  const cards = document.getElementById('portfolioCards');
+  pfAllHoldings = holdings;
+  const cards  = document.getElementById('portfolioCards');
+  const footer = document.getElementById('pfMoreFooter');
+  const btn    = document.getElementById('pfToggleBtn');
+
   if (!holdings.length) {
     cards.innerHTML = `<div class="pf-empty">보유 종목이 없습니다. 종목을 추가해보세요!</div>`;
+    footer.classList.add('hidden');
+    btn.classList.add('hidden');
     return;
   }
-  cards.innerHTML = holdings.map(h => {
-    const hasPrice  = h.current_price != null;
-    const retPct    = h.return_pct;
-    const retAmt    = h.return_amount;
-    const retClass  = retPct == null ? 'neutral' : retPct > 0 ? 'up' : retPct < 0 ? 'down' : 'neutral';
-    const retIcon   = retPct > 0 ? '▲' : retPct < 0 ? '▼' : '';
-    const cur       = h.currency || 'USD';
-    const fmtPrice  = (v) => v == null ? '—' : cur === 'KRW'
-      ? Number(v).toLocaleString('ko-KR') + '원'
-      : '$' + Number(v).toLocaleString();
 
-    return `
-    <div class="pf-card" onclick="quickSearch('${h.ticker}')">
-      <div class="pf-card-top">
-        <div>
-          <div class="pf-stock-name">${h.name}</div>
-          <div class="pf-ticker">${h.ticker}</div>
-        </div>
-        <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제">✕</button>
-      </div>
-      <div class="pf-prices">
-        <div class="pf-price-item">
-          <div>매입가</div>
-          <div class="pf-price-val">${fmtPrice(h.purchase_price)}</div>
-        </div>
-        <div class="pf-price-item" style="text-align:right">
-          <div>현재가</div>
-          <div class="pf-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
-        </div>
-      </div>
-      <div class="pf-return ${retClass}">
-        <div>
-          <div class="pf-return-pct">${retPct != null ? `${retIcon} ${Math.abs(retPct).toFixed(2)}%` : '—'}</div>
-          <div class="pf-qty">${h.quantity}주</div>
-        </div>
-        <div class="pf-return-amt">${retAmt != null ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt)) : ''}</div>
-      </div>
-    </div>`;
-  }).join('');
+  // 접힌 상태: 수익률 내림차순 상위 5개 / 펼친 상태: 원래 순서 전체
+  const byReturn  = [...holdings].sort((a, b) => (b.return_pct ?? -9999) - (a.return_pct ?? -9999));
+  const displayed = pfCollapsed ? byReturn.slice(0, 5) : holdings;
+
+  cards.innerHTML = displayed.map(_pfCardHTML).join('');
+
+  // 토글 버튼 & 푸터 업데이트
+  if (holdings.length <= 5) {
+    btn.classList.add('hidden');
+    footer.classList.add('hidden');
+  } else {
+    btn.classList.remove('hidden');
+    if (pfCollapsed) {
+      btn.innerHTML = `펼치기 ▼`;
+      footer.textContent = `수익률 상위 5개 표시 중 · 전체 ${holdings.length}개 보유`;
+      footer.classList.remove('hidden');
+    } else {
+      btn.innerHTML = `접기 ▲`;
+      footer.classList.add('hidden');
+    }
+  }
+}
+
+function togglePortfolio() {
+  pfCollapsed = !pfCollapsed;
+  renderPortfolioCards(pfAllHoldings);
 }
 
 async function deleteHolding(event, hid) {

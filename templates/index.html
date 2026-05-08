@@ -27,12 +27,16 @@
   <section id="portfolioSection" class="portfolio-section hidden">
     <div class="portfolio-inner">
       <div class="portfolio-top">
-        <h2 class="portfolio-title">📂 내 포트폴리오</h2>
+        <div class="portfolio-title-area">
+          <h2 class="portfolio-title">📂 내 포트폴리오</h2>
+          <button class="pf-toggle-btn hidden" id="pfToggleBtn" onclick="togglePortfolio()">펼치기 ▼</button>
+        </div>
         <button class="pf-add-btn" onclick="openAddModal()">+ 종목 추가</button>
       </div>
       <div id="portfolioCards" class="portfolio-cards">
         <div class="pf-loading">불러오는 중...</div>
       </div>
+      <div id="pfMoreFooter" class="pf-more-footer hidden" onclick="togglePortfolio()"></div>
     </div>
   </section>
 
