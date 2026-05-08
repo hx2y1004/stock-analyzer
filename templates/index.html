@@ -233,15 +233,12 @@
         <input type="hidden" id="addCurrency" />
         <!-- 직접 입력 시에만 표시 -->
         <div id="addTickerField" class="add-field" style="display:none">
-          <label>티커 심볼</label>
-          <input id="addTickerInput" class="add-input" type="text" placeholder="예: AAPL, 005930.KS" style="text-transform:uppercase" />
-        </div>
-        <div id="addCurrencyField" class="add-field" style="display:none">
-          <label>통화</label>
-          <select id="addCurrencySelect" class="add-input" style="background:var(--bg3);color:var(--text)">
-            <option value="USD">USD (달러)</option>
-            <option value="KRW">KRW (원화)</option>
-          </select>
+          <label>종목명 또는 티커</label>
+          <div style="position:relative">
+            <input id="addTickerInput" class="add-input" type="text" placeholder="예: Apple, 삼성전자, AAPL" autocomplete="off" />
+            <div id="addAcList" class="autocomplete-list hidden" style="top:100%;left:0;right:0;z-index:200"></div>
+          </div>
+          <div id="addTickerBadge" style="margin-top:6px;font-size:12px;color:var(--text2)"></div>
         </div>
         <div class="add-field">
           <label>매입가 <span id="addCurrencyLabel">(USD)</span></label>
