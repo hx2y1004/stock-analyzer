@@ -4,6 +4,8 @@ let indicators = { ma: true, bb: true, ichimoku: true };
 let currentInterval = '1d';
 let currentUser = null;
 let currentAnalysisTicker = null;
+let currentPositionId = null;
+let currentPositionData = null;
 
 // ── 앱 초기화 ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -101,7 +103,10 @@ async function deleteHolding(event, hid) {
   if (!confirm('이 종목을 포트폴리오에서 삭제할까요?')) return;
   await fetch(`/api/portfolio/${hid}`, { method: 'DELETE' });
   loadPortfolio();
-  renderPositionCard(null);  // 포지션 카드 초기화
+  currentPositionId   = null;
+  currentPositionData = null;
+  renderTradeActions(null);
+  renderPositionCard(null, null);
 }
 
 // ── 종목 추가 모달 ─────────────────────────────────────────────────────────
@@ -152,14 +157,17 @@ function closeLoginModal(event) {
 // ── 내 포지션 카드 렌더링 ─────────────────────────────────────────────────
 function renderPositionCard(position, stock) {
   const el = document.getElementById('positionContent');
+  currentPositionData = position;
+  currentPositionId   = position ? position.id : null;
 
   // 로그인 안 됨
   if (!currentUser) {
     el.innerHTML = `
       <div class="position-empty">
-        <div>로그인하면 보유 주식 기준<br>매매 타이밍을 볼 수 있어요</div>
+        <div>🔐 로그인하면 보유 주식 기준<br>매매 타이밍을 분석해 드려요</div>
         <button class="position-login-btn" onclick="openLoginModal()">로그인하기</button>
       </div>`;
+    renderTradeActions(null);
     return;
   }
 
@@ -173,15 +181,16 @@ function renderPositionCard(position, stock) {
         <div>이 종목을 보유하고 계신가요?</div>
         <button class="position-add-btn" onclick="openAddModal('${ticker}','${name}','${cur}')">+ 포트폴리오에 추가</button>
       </div>`;
+    renderTradeActions(null);
     return;
   }
 
   // 보유 중
   const cur = position.currency || 'USD';
-  const fmtP = (v) => v == null ? '—' : (cur === 'USD' ? '$' : '') + Number(v).toLocaleString();
+  const fmtP = (v) => v == null ? '—' : (cur === 'KRW' ? '' : '$') + Number(v).toLocaleString() + (cur === 'KRW' ? '원' : '');
   const rec  = position.recommendation;
   const pct  = rec ? rec.return_pct : null;
-  const pctStr = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—';
+  const pctStr   = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—';
   const pctColor = pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : 'var(--text)';
 
   el.innerHTML = `
@@ -208,11 +217,66 @@ function renderPositionCard(position, stock) {
         <div class="position-rec-action">${rec.action}</div>
         <div class="position-rec-reason">${rec.reason}</div>
       </div>` : ''}
-      <div class="position-actions">
-        <button class="position-action-btn" onclick="openAddModal('${position.ticker}','${position.name}','${cur}')">+ 추가매수</button>
-        <button class="position-action-btn del" onclick="deleteHolding(event,${position.id})">포지션 삭제</button>
-      </div>
     </div>`;
+
+  renderTradeActions(position, stock);
+}
+
+// ── 차트 아래 거래 버튼 표시 ────────────────────────────────────────────────
+function renderTradeActions(position, stock) {
+  const el = document.getElementById('tradeActions');
+  if (!position) {
+    el.classList.add('hidden');
+    return;
+  }
+  // 버튼에 최신 ticker/name/currency 반영
+  const cur  = position.currency || 'USD';
+  const name = stock ? stock.name : position.name;
+  el.querySelector('.buy').onclick  = () => openAddModal(position.ticker, name, cur);
+  el.querySelector('.sell').onclick = () => openSellModal();
+  el.querySelector('.del').onclick  = (e) => deleteHolding(e, position.id);
+  el.classList.remove('hidden');
+}
+
+// ── 모의 매도 모달 ───────────────────────────────────────────────────────────
+function openSellModal() {
+  if (!currentPositionData) return;
+  const p = currentPositionData;
+  const cur = p.currency || 'USD';
+  document.getElementById('sellModalDesc').textContent =
+    `${p.name || p.ticker} 보유 ${p.quantity}주 · 평균매입가 ${Number(p.purchase_price).toLocaleString()}`;
+  document.getElementById('sellCurrencyLabel').textContent = `(${cur})`;
+  document.getElementById('sellPrice').value = '';
+  document.getElementById('sellQty').value   = '';
+  document.getElementById('sellModal').classList.remove('hidden');
+}
+function closeSellModal(event) {
+  if (!event || event.target === document.getElementById('sellModal'))
+    document.getElementById('sellModal').classList.add('hidden');
+}
+async function submitSellHolding() {
+  const price = parseFloat(document.getElementById('sellPrice').value);
+  const qty   = parseFloat(document.getElementById('sellQty').value);
+  if (!price || !qty || qty <= 0) { alert('매도가와 수량을 입력해주세요'); return; }
+  if (!currentPositionId) return;
+
+  const p = currentPositionData;
+  const newQty = p.quantity - qty;
+
+  if (newQty <= 0) {
+    // 전량 매도 → 포지션 삭제
+    await fetch(`/api/portfolio/${currentPositionId}`, { method: 'DELETE' });
+  } else {
+    // 일부 매도 → 수량 업데이트
+    await fetch(`/api/portfolio/${currentPositionId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quantity: newQty }),
+    });
+  }
+  closeSellModal();
+  loadPortfolio();
+  if (currentAnalysisTicker === p.ticker) analyze();
 }
 
 function quickSearch(ticker) {
