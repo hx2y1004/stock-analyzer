@@ -3,6 +3,7 @@ import os
 import re
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
@@ -47,6 +48,53 @@ def safe_float(val):
         return float(val)
     except Exception:
         return None
+
+
+def _clean_num(s):
+    """문자열 숫자 → float 변환 (쉼표, 공백 제거)"""
+    if not s:
+        return None
+    try:
+        return float(s.replace(",", "").strip())
+    except Exception:
+        return None
+
+
+def fetch_naver_fundamentals(krx_code):
+    """
+    네이버 금융에서 한국 주식 PER/EPS/PBR/BPS를 가져옵니다.
+    yfinance가 한국 주식 재무 데이터를 제공하지 않을 때 보완용으로 사용.
+    """
+    try:
+        url = f"https://finance.naver.com/item/main.nhn?code={krx_code}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://finance.naver.com/",
+        }
+        resp = requests.get(url, headers=headers, timeout=8)
+        resp.encoding = "euc-kr"
+        text = resp.text
+
+        patterns = {
+            "per":  r"PER\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
+            "eps":  r"EPS\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
+            "pbr":  r"PBR\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
+            "bps":  r"BPS\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
+        }
+        result = {}
+        for key, pat in patterns.items():
+            m = re.search(pat, text, re.DOTALL)
+            if m:
+                val = _clean_num(m.group(1))
+                if val is not None and val != 0:
+                    result[key] = val
+        return result
+    except Exception:
+        return {}
 
 
 @app.route("/")
@@ -325,6 +373,22 @@ def analyze():
 
         info = stock.info
 
+        # ── 한국 주식 재무 데이터 보완 (네이버 금융) ────────────────
+        is_korean = ticker.upper().endswith(".KS") or ticker.upper().endswith(".KQ")
+        if is_korean:
+            krx_code = ticker.split(".")[0]
+            naver = fetch_naver_fundamentals(krx_code)
+            if naver:
+                # yfinance 값이 없을 때만 네이버 값으로 채움
+                if not info.get("trailingPE") and naver.get("per"):
+                    info["trailingPE"] = naver["per"]
+                if not info.get("trailingEps") and naver.get("eps"):
+                    info["trailingEps"] = naver["eps"]
+                if not info.get("priceToBook") and naver.get("pbr"):
+                    info["priceToBook"] = naver["pbr"]
+                if not info.get("bookValue") and naver.get("bps"):
+                    info["bookValue"] = naver["bps"]
+
         # NaN 행 제거 (한국 주식 등 마지막 행이 NaN일 수 있음)
         df = df.dropna(subset=["Close", "Open", "High", "Low"])
         if df.empty:
@@ -386,6 +450,7 @@ def analyze():
             "year_high": year_high,
             "year_low": year_low,
             "pe_ratio": safe_float(info.get("trailingPE")),
+            "pb_ratio": safe_float(info.get("priceToBook")),
             "eps": safe_float(info.get("trailingEps")),
             "dividend_yield": safe_float(info.get("dividendYield")),
             "sector": info.get("sector"),
