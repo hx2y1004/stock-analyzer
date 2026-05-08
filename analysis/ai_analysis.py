@@ -614,15 +614,30 @@ def analyze_signals(df, info, df_weekly=None):
     # 손절: 1개월 최저가 - ATR (지지선 완전 이탈 기준)
     stop_loss   = round(month_low - (atr_val or month_range * 0.1), 2)
 
-    # 매수 추천 구간: 1개월 범위 하위 30%
+    # 매수 추천 구간: 1개월 범위 하위 30%  (존 차트용)
     entry_low   = round(month_low, 2)
     entry_high  = round(month_low + month_range * 0.30, 2)
-    entry_price = round((entry_low + entry_high) / 2, 2)
 
-    # 매도 추천 구간: 1개월 범위 상위 30%
+    # 매도 추천 구간: 1개월 범위 상위 30%  (존 차트용)
     target_low  = round(month_low + month_range * 0.70, 2)
     target_high = round(month_high, 2)
-    target_price = target_low   # 기존 호환용 (매도 시작점)
+
+    # ── 종합 판단 패널용 진입가·목표가 (현재가 기준 동적 보정) ──────────────
+    # 진입 추천가: 현재가가 이미 매수 구간을 크게 벗어났으면 ATR 기반 눌림목 진입가
+    if close > entry_high and atr_val:
+        entry_price = round(close - atr_val * 1.5, 2)
+    elif close > entry_high:
+        entry_price = round(close * 0.95, 2)
+    else:
+        entry_price = round((entry_low + entry_high) / 2, 2)
+
+    # 목표가: 현재가가 이미 목표 구간을 넘어섰으면 ATR 기반 전방 목표가
+    if close >= target_low and atr_val:
+        target_price = round(close + atr_val * 2.0, 2)
+    elif close >= target_low:
+        target_price = round(close * 1.08, 2)
+    else:
+        target_price = target_low
 
     # ── 추세 판단 (MA + 종합점수 + 52주 고/저가 + 크로스 + BB + 거래량) ──────────
     ma20 = _f(df["Close"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else None
