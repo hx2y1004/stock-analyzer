@@ -2,6 +2,218 @@ let chartData = null;
 let chartType = 'candlestick';
 let indicators = { ma: true, bb: true, ichimoku: true };
 let currentInterval = '1d';
+let currentUser = null;
+let currentAnalysisTicker = null;
+
+// ── 앱 초기화 ────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  checkAuth();
+});
+
+async function checkAuth() {
+  try {
+    const res  = await fetch('/api/me');
+    const data = await res.json();
+    currentUser = data.user;
+    renderAuthArea();
+    if (currentUser) loadPortfolio();
+  } catch (e) {}
+}
+
+function renderAuthArea() {
+  const area = document.getElementById('authArea');
+  if (!currentUser) {
+    area.innerHTML = `<button class="login-btn" onclick="openLoginModal()">로그인</button>`;
+    return;
+  }
+  const img = currentUser.profile_image
+    ? `<img class="profile-img" src="${currentUser.profile_image}" />`
+    : `<div class="profile-img" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
+  area.innerHTML = `
+    <div class="profile-area">
+      ${img}
+      <span class="profile-name">${currentUser.name || '사용자'}</span>
+    </div>
+    <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
+}
+
+// ── 포트폴리오 ───────────────────────────────────────────────────────────────
+async function loadPortfolio() {
+  document.getElementById('portfolioSection').classList.remove('hidden');
+  const cards = document.getElementById('portfolioCards');
+  cards.innerHTML = '<div class="pf-loading">불러오는 중...</div>';
+  try {
+    const res  = await fetch('/api/portfolio');
+    const data = await res.json();
+    renderPortfolioCards(data);
+  } catch (e) {
+    cards.innerHTML = '<div class="pf-loading">불러오기 실패</div>';
+  }
+}
+
+function renderPortfolioCards(holdings) {
+  const cards = document.getElementById('portfolioCards');
+  if (!holdings.length) {
+    cards.innerHTML = `<div class="pf-empty">보유 종목이 없습니다. 종목을 추가해보세요!</div>`;
+    return;
+  }
+  cards.innerHTML = holdings.map(h => {
+    const hasPrice  = h.current_price != null;
+    const retPct    = h.return_pct;
+    const retAmt    = h.return_amount;
+    const retClass  = retPct == null ? 'neutral' : retPct > 0 ? 'up' : retPct < 0 ? 'down' : 'neutral';
+    const retIcon   = retPct > 0 ? '▲' : retPct < 0 ? '▼' : '';
+    const cur       = h.currency || 'USD';
+    const fmtPrice  = (v) => v == null ? '—' : (cur === 'USD' ? '$' : '') + v.toLocaleString();
+
+    return `
+    <div class="pf-card" onclick="quickSearch('${h.ticker}')">
+      <div class="pf-card-top">
+        <div>
+          <div class="pf-stock-name">${h.name}</div>
+          <div class="pf-ticker">${h.ticker}</div>
+        </div>
+        <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제">✕</button>
+      </div>
+      <div class="pf-prices">
+        <div class="pf-price-item">
+          <div>매입가</div>
+          <div class="pf-price-val">${fmtPrice(h.purchase_price)}</div>
+        </div>
+        <div class="pf-price-item" style="text-align:right">
+          <div>현재가</div>
+          <div class="pf-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
+        </div>
+      </div>
+      <div class="pf-return ${retClass}">
+        <div>
+          <div class="pf-return-pct">${retPct != null ? `${retIcon} ${Math.abs(retPct).toFixed(2)}%` : '—'}</div>
+          <div class="pf-qty">${h.quantity}주</div>
+        </div>
+        <div class="pf-return-amt">${retAmt != null ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt)) : ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteHolding(event, hid) {
+  event.stopPropagation();
+  if (!confirm('이 종목을 포트폴리오에서 삭제할까요?')) return;
+  await fetch(`/api/portfolio/${hid}`, { method: 'DELETE' });
+  loadPortfolio();
+  renderPositionCard(null);  // 포지션 카드 초기화
+}
+
+// ── 종목 추가 모달 ─────────────────────────────────────────────────────────
+function openAddModal(ticker, name, currency) {
+  if (!currentUser) { openLoginModal(); return; }
+  document.getElementById('addTicker').value  = ticker  || '';
+  document.getElementById('addName').value    = name    || '';
+  document.getElementById('addCurrencyLabel').textContent = currency ? `(${currency})` : '';
+  document.getElementById('addModalDesc').textContent = ticker
+    ? `${name || ticker} 을(를) 포트폴리오에 추가합니다`
+    : '검색 후 분석창에서 종목을 추가할 수 있어요';
+  document.getElementById('addPrice').value = '';
+  document.getElementById('addQty').value   = '';
+  document.getElementById('addModal').classList.remove('hidden');
+}
+function closeAddModal(event) {
+  if (!event || event.target === document.getElementById('addModal'))
+    document.getElementById('addModal').classList.add('hidden');
+}
+async function submitAddHolding() {
+  const ticker = document.getElementById('addTicker').value;
+  const name   = document.getElementById('addName').value;
+  const price  = parseFloat(document.getElementById('addPrice').value);
+  const qty    = parseFloat(document.getElementById('addQty').value);
+  if (!ticker || !price || !qty) { alert('모든 항목을 입력해주세요'); return; }
+  const res = await fetch('/api/portfolio', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker, name, quantity: qty, purchase_price: price }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || '추가 실패'); return; }
+  closeAddModal();
+  loadPortfolio();
+  // 현재 분석창이 같은 종목이면 포지션 카드 새로고침
+  if (currentAnalysisTicker === ticker) analyze();
+}
+
+// ── 로그인 모달 ──────────────────────────────────────────────────────────────
+function openLoginModal() {
+  document.getElementById('loginModal').classList.remove('hidden');
+}
+function closeLoginModal(event) {
+  if (!event || event.target === document.getElementById('loginModal'))
+    document.getElementById('loginModal').classList.add('hidden');
+}
+
+// ── 내 포지션 카드 렌더링 ─────────────────────────────────────────────────
+function renderPositionCard(position, stock) {
+  const el = document.getElementById('positionContent');
+
+  // 로그인 안 됨
+  if (!currentUser) {
+    el.innerHTML = `
+      <div class="position-empty">
+        <div>로그인하면 보유 주식 기준<br>매매 타이밍을 볼 수 있어요</div>
+        <button class="position-login-btn" onclick="openLoginModal()">로그인하기</button>
+      </div>`;
+    return;
+  }
+
+  // 보유 없음
+  if (!position) {
+    const ticker = currentAnalysisTicker;
+    const name   = stock ? stock.name : ticker;
+    const cur    = stock ? stock.currency : 'USD';
+    el.innerHTML = `
+      <div class="position-empty">
+        <div>이 종목을 보유하고 계신가요?</div>
+        <button class="position-add-btn" onclick="openAddModal('${ticker}','${name}','${cur}')">+ 포트폴리오에 추가</button>
+      </div>`;
+    return;
+  }
+
+  // 보유 중
+  const cur = position.currency || 'USD';
+  const fmtP = (v) => v == null ? '—' : (cur === 'USD' ? '$' : '') + Number(v).toLocaleString();
+  const rec  = position.recommendation;
+  const pct  = rec ? rec.return_pct : null;
+  const pctStr = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—';
+  const pctColor = pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : 'var(--text)';
+
+  el.innerHTML = `
+    <div class="position-holding">
+      <div class="position-row">
+        <span class="position-label">보유 수량</span>
+        <span class="position-value">${position.quantity}주</span>
+      </div>
+      <div class="position-row">
+        <span class="position-label">매입 평균가</span>
+        <span class="position-value">${fmtP(position.purchase_price)}</span>
+      </div>
+      <div class="position-row">
+        <span class="position-label">현재가</span>
+        <span class="position-value">${fmtP(position.current_price)}</span>
+      </div>
+      <div class="position-row">
+        <span class="position-label">평가 손익</span>
+        <span class="position-value" style="color:${pctColor}">${pctStr}</span>
+      </div>
+      <hr class="position-divider" />
+      ${rec ? `
+      <div class="position-rec ${rec.color}">
+        <div class="position-rec-action">${rec.action}</div>
+        <div class="position-rec-reason">${rec.reason}</div>
+      </div>` : ''}
+      <div class="position-actions">
+        <button class="position-action-btn" onclick="openAddModal('${position.ticker}','${position.name}','${cur}')">+ 추가매수</button>
+        <button class="position-action-btn del" onclick="deleteHolding(event,${position.id})">포지션 삭제</button>
+      </div>
+    </div>`;
+}
 
 function quickSearch(ticker) {
   document.getElementById('tickerInput').value = ticker;
@@ -54,13 +266,14 @@ async function analyze() {
       return;
     }
 
+    currentAnalysisTicker = data.stock.ticker;
     chartData = data.chart;
     renderStockInfo(data.stock);
     renderVerdict(data.analysis, data.stock);
     renderDetail(data.analysis.details || []);
     renderFundamental(data.analysis.fundamental_details || []);
-    renderReturnTracker(data.stock);
     renderMetrics(data.stock, data.analysis);
+    renderPositionCard(data.position || null, data.stock);
     renderAnalysts(data.analysts, data.stock.currency);
     renderNews(data.news);
 

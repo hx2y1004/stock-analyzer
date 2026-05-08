@@ -7,13 +7,41 @@ import requests
 import yfinance as yf
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
+from flask_login import LoginManager, login_required, current_user
 
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
+from models import db, User, Holding
+from auth import auth_bp
+
+# ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
+_db_url = os.environ.get("DATABASE_URL", "sqlite:///portfolio.db")
+if _db_url.startswith("postgres://"):          # Railway 구버전 호환
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-in-production")
+app.config["SQLALCHEMY_DATABASE_URI"]        = _db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 CORS(app)
+
+db.init_app(app)
+
+login_manager = LoginManager(app)
+login_manager.login_view = None   # API 위주라 리다이렉트 없음
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    return jsonify({"error": "로그인이 필요합니다"}), 401
+
+app.register_blueprint(auth_bp)
+
+with app.app_context():
+    db.create_all()
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -516,14 +544,34 @@ def analyze():
         stock_data["return_3m"]  = calc_return(63)
         stock_data["return_1y"]  = calc_return(252)
 
-        news_data = fetch_news(stock)
+        news_data    = fetch_news(stock)
         analyst_data = fetch_analysts(stock, info)
+
+        # ── 내 포지션 데이터 (로그인된 경우) ──────────────────────────────
+        position_data = None
+        if current_user.is_authenticated:
+            holding = Holding.query.filter_by(
+                user_id=current_user.id, ticker=ticker
+            ).first()
+            if holding:
+                position_data = {
+                    **holding.to_dict(),
+                    "current_price":    current_price,
+                    "current_value":    round(current_price * holding.quantity, 2) if current_price else None,
+                    "purchase_value":   round(holding.purchase_price * holding.quantity, 2),
+                    "recommendation":   _position_recommendation(
+                        current_price, holding.purchase_price, ai_result.get("score", 0)
+                    ),
+                }
 
         return app.response_class(
             response=json.dumps(
-                {"stock": stock_data, "analysis": ai_result, "chart": chart_data,
-                 "interval": interval, "interval_label": interval_label,
-                 "news": news_data, "analysts": analyst_data},
+                {
+                    "stock": stock_data, "analysis": ai_result, "chart": chart_data,
+                    "interval": interval, "interval_label": interval_label,
+                    "news": news_data, "analysts": analyst_data,
+                    "position": position_data,
+                },
                 cls=NumpyEncoder,
                 ensure_ascii=False,
             ),
@@ -533,6 +581,169 @@ def analyze():
 
     except Exception as e:
         return jsonify({"error": f"분석 중 오류 발생: {str(e)}"}), 500
+
+
+# ── 포지션 매매 추천 ───────────────────────────────────────────────────────────
+def _position_recommendation(current_price, purchase_price, score):
+    if not (current_price and purchase_price):
+        return None
+    pct = (current_price - purchase_price) / purchase_price * 100
+
+    if score >= 40:
+        if pct <= -15:
+            action, color = "추가매수 고려", "bullish"
+            reason = f"강한 매수 신호. {pct:.1f}% 손실 구간, 평단 낮추기 검토 가능"
+        elif pct >= 40:
+            action, color = "일부 익절 + 보유", "bullish"
+            reason = f"큰 수익({pct:.1f}%) + 매수 신호 지속. 일부 익절 후 나머지 보유"
+        else:
+            action, color = "보유 유지", "bullish"
+            reason = f"매수 신호 양호. 현재 {pct:.1f}%, 추가 상승 여지"
+    elif score >= 10:
+        if pct >= 25:
+            action, color = "일부 익절 고려", "neutral"
+            reason = f"신호 약화 중. {pct:.1f}% 수익, 일부 익절로 수익 확정 고려"
+        elif pct <= -20:
+            action, color = "손절 고려", "bearish"
+            reason = f"신호 약화 + {pct:.1f}% 손실. 추가 하락 가능성"
+        else:
+            action, color = "보유 관망", "neutral"
+            reason = f"방향성 불명확. 현재 {pct:.1f}%, 추가 신호 대기"
+    elif score >= -10:
+        if pct >= 20:
+            action, color = "익절 고려", "neutral"
+            reason = f"중립 신호. {pct:.1f}% 수익, 익절 적극 고려"
+        elif pct <= -15:
+            action, color = "손절 고려", "bearish"
+            reason = f"중립 신호 + {pct:.1f}% 손실. 손절로 리스크 관리 고려"
+        else:
+            action, color = "관망", "neutral"
+            reason = f"뚜렷한 신호 없음. 현재 {pct:.1f}%, 관망 권장"
+    else:
+        if pct > 5:
+            action, color = "익절 매도 권장", "bearish"
+            reason = f"매도 신호 발생. {pct:.1f}% 수익, 익절 권장"
+        else:
+            action, color = "손절 매도 권장", "bearish"
+            reason = f"강한 매도 신호 + {pct:.1f}% 손실. 손절로 추가 손실 방지"
+
+    return {"action": action, "color": color, "reason": reason,
+            "return_pct": round(pct, 2)}
+
+
+# ── 현재 사용자 정보 ──────────────────────────────────────────────────────────
+@app.route("/api/me")
+def me():
+    if not current_user.is_authenticated:
+        return jsonify({"user": None})
+    return jsonify({
+        "user": {
+            "id":            current_user.id,
+            "name":          current_user.name,
+            "email":         current_user.email,
+            "profile_image": current_user.profile_image,
+            "provider":      current_user.provider,
+        }
+    })
+
+
+# ── 포트폴리오 조회 ───────────────────────────────────────────────────────────
+@app.route("/api/portfolio")
+def get_portfolio():
+    if not current_user.is_authenticated:
+        return jsonify([])
+
+    holdings = Holding.query.filter_by(user_id=current_user.id)\
+                            .order_by(Holding.created_at.desc()).all()
+    if not holdings:
+        return jsonify([])
+
+    # 현재가 일괄 조회
+    tickers = list({h.ticker for h in holdings})
+    prices  = {}
+    try:
+        if len(tickers) == 1:
+            raw = yf.download(tickers[0], period="2d", auto_adjust=True, progress=False)["Close"]
+            if not raw.empty:
+                prices[tickers[0]] = float(raw.dropna().iloc[-1])
+        else:
+            raw = yf.download(tickers, period="2d", auto_adjust=True, progress=False)["Close"]
+            for t in tickers:
+                col = raw.get(t) if hasattr(raw, "get") else (raw[t] if t in raw.columns else None)
+                if col is not None:
+                    col = col.dropna()
+                    if not col.empty:
+                        prices[t] = float(col.iloc[-1])
+    except Exception:
+        pass
+
+    result = []
+    for h in holdings:
+        d = h.to_dict()
+        cp = prices.get(h.ticker)
+        d["current_price"] = cp
+        if cp and h.purchase_price:
+            d["return_pct"]    = round((cp - h.purchase_price) / h.purchase_price * 100, 2)
+            d["return_amount"] = round((cp - h.purchase_price) * h.quantity, 2)
+        else:
+            d["return_pct"] = d["return_amount"] = None
+        result.append(d)
+    return jsonify(result)
+
+
+# ── 포트폴리오 추가 ───────────────────────────────────────────────────────────
+@app.route("/api/portfolio", methods=["POST"])
+@login_required
+def add_holding():
+    data = request.get_json()
+    ticker   = data.get("ticker", "").strip().upper()
+    name     = data.get("name", ticker)
+    qty      = float(data.get("quantity", 0))
+    price    = float(data.get("purchase_price", 0))
+    currency = data.get("currency", "USD")
+
+    if not ticker or qty <= 0 or price <= 0:
+        return jsonify({"error": "티커·수량·매입가를 올바르게 입력해주세요"}), 400
+
+    # 같은 티커 이미 존재하면 수량/단가 업데이트 (평균단가)
+    existing = Holding.query.filter_by(user_id=current_user.id, ticker=ticker).first()
+    if existing:
+        total_qty   = existing.quantity + qty
+        avg_price   = (existing.purchase_price * existing.quantity + price * qty) / total_qty
+        existing.quantity       = round(total_qty, 6)
+        existing.purchase_price = round(avg_price, 6)
+        db.session.commit()
+        return jsonify({"ok": True, "holding": existing.to_dict()})
+
+    holding = Holding(
+        user_id=current_user.id, ticker=ticker, name=name,
+        quantity=qty, purchase_price=price, currency=currency,
+    )
+    db.session.add(holding)
+    db.session.commit()
+    return jsonify({"ok": True, "holding": holding.to_dict()})
+
+
+# ── 포트폴리오 수정 ───────────────────────────────────────────────────────────
+@app.route("/api/portfolio/<int:hid>", methods=["PUT"])
+@login_required
+def update_holding(hid):
+    holding = Holding.query.filter_by(id=hid, user_id=current_user.id).first_or_404()
+    data = request.get_json()
+    if "quantity"       in data: holding.quantity       = float(data["quantity"])
+    if "purchase_price" in data: holding.purchase_price = float(data["purchase_price"])
+    db.session.commit()
+    return jsonify({"ok": True, "holding": holding.to_dict()})
+
+
+# ── 포트폴리오 삭제 ───────────────────────────────────────────────────────────
+@app.route("/api/portfolio/<int:hid>", methods=["DELETE"])
+@login_required
+def delete_holding(hid):
+    holding = Holding.query.filter_by(id=hid, user_id=current_user.id).first_or_404()
+    db.session.delete(holding)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
