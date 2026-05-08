@@ -584,15 +584,11 @@ function renderFundamental(details) {
 }
 
 // ── 매수/매도 구간 탭 ─────────────────────────────────────
-function _getZoneAdvice(price, entry, target, stop, rsi, verdictColor) {
-  if (price <= stop)            return '손절 구간 아래에 있어요. 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.';
-  if (price >= target * 0.97)   return '목표가 근처에 있어요. 분할 매도를 고려해볼 시점이에요.';
-  if (verdictColor === 'strong-buy' || verdictColor === 'buy')
-    return '기술적 지표상 매수 시그널이 우세해요. 분할 매수를 고려해볼 수 있는 타이밍이에요.';
-  if (verdictColor === 'strong-sell' || verdictColor === 'sell')
-    return '기술적 지표상 매도 시그널이 우세해요. 추가 하락에 대비한 리스크 관리가 필요해요.';
-  const pct = ((price - entry) / entry * 100).toFixed(1);
-  return `진입 추천가 대비 +${pct}% 수준이에요. 뚜렷한 방향성이 없으니 현 포지션을 유지하며 관망하세요.`;
+function _getZoneAdvice(price, entryLow, entryHigh, targetLow, stop) {
+  if (price <= stop)       return '최근 1개월 최저가 아래로 이탈했어요. 지지선이 무너진 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.';
+  if (price <= entryHigh)  return '최근 1개월 저점 부근이에요. 분할 매수를 고려해볼 수 있는 좋은 타이밍이에요.';
+  if (price >= targetLow)  return '최근 1개월 고점 부근이에요. 분할 매도를 고려해볼 시점이에요.';
+  return '1개월 가격 범위 중간대에 있어요. 매수·매도 구간이 올 때까지 현 포지션을 유지하며 관망하세요.';
 }
 
 function renderZones(analysis, stock) {
@@ -674,7 +670,7 @@ function renderZones(analysis, stock) {
             <span class="zone-name">현재 위치 <span class="zone-badge ${priceColor}">${priceZone}</span></span>
             <span class="zone-price-range">${fmt(price)}</span>
           </div>
-          <div class="zone-explanation">${_getZoneAdvice(price, entry, target, stop, rsiNum, verdictColor)}</div>
+          <div class="zone-explanation">${_getZoneAdvice(price, entryLow, entryHigh, targetLow, stop)}</div>
         </div>
       </div>
 
