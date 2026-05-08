@@ -82,17 +82,19 @@ def kakao_callback():
     if not code:
         return redirect("/")
     try:
-        token = http.post(
+        token_res = http.post(
             "https://kauth.kakao.com/oauth/token",
             data={
-                "grant_type":   "authorization_code",
-                "client_id":    os.environ.get("KAKAO_REST_API_KEY"),
-                "redirect_uri": _cb("kakao"),
-                "code":         code,
+                "grant_type":    "authorization_code",
+                "client_id":     os.environ.get("KAKAO_REST_API_KEY"),
+                "client_secret": os.environ.get("KAKAO_CLIENT_SECRET", ""),
+                "redirect_uri":  _cb("kakao"),
+                "code":          code,
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,
-        ).json()
+        )
+        token = token_res.json()
 
         info = http.get(
             "https://kapi.kakao.com/v2/user/me",

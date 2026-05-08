@@ -119,6 +119,13 @@
           <div id="rsiChart" class="sub-chart"></div>
           <div id="macdChart" class="sub-chart"></div>
         </section>
+
+        <!-- 차트 아래 거래 액션 버튼 -->
+        <div id="tradeActions" class="trade-actions hidden">
+          <button class="trade-btn buy"  onclick="openAddModal(currentAnalysisTicker, '', '')">📈 모의 매수</button>
+          <button class="trade-btn sell" onclick="openSellModal()">📉 모의 매도</button>
+          <button class="trade-btn del"  onclick="deleteHolding(event, currentPositionId)">🗑 포지션 삭제</button>
+        </div>
       </div>
 
       <!-- 우: 사이드바 -->
@@ -230,6 +237,26 @@
           <input id="addQty" class="add-input" type="number" step="any" placeholder="보유 주수" />
         </div>
         <button class="add-submit-btn" onclick="submitAddHolding()">추가하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 모의 매도 모달 ── -->
+  <div id="sellModal" class="modal-overlay hidden" onclick="closeSellModal(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeSellModal()">✕</button>
+      <h2 class="modal-title" style="font-size:18px;margin-bottom:8px">📉 모의 매도</h2>
+      <p id="sellModalDesc" class="modal-desc" style="margin-bottom:20px"></p>
+      <div class="add-form">
+        <div class="add-field">
+          <label>매도가 <span id="sellCurrencyLabel">(USD)</span></label>
+          <input id="sellPrice" class="add-input" type="number" step="any" placeholder="매도 평균가" />
+        </div>
+        <div class="add-field">
+          <label>매도 수량</label>
+          <input id="sellQty" class="add-input" type="number" step="any" placeholder="매도 주수" />
+        </div>
+        <button class="add-submit-btn" style="background:var(--red)" onclick="submitSellHolding()">매도하기</button>
       </div>
     </div>
   </div>
