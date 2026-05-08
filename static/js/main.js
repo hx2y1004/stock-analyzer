@@ -421,10 +421,17 @@ function toSeries(dates, values) {
   return dates.map((d, i) => ({ time: d, value: values[i] })).filter(p => p.value != null);
 }
 
+function getChartHeights() {
+  const w = window.innerWidth;
+  if (w <= 480) return { main: 260, sub: 90 };
+  if (w <= 768) return { main: 340, sub: 110 };
+  return { main: 420, sub: 140 };
+}
+
 function renderMainChart(data) {
   const el = document.getElementById('mainChart');
   el.innerHTML = '';
-  const chart = makeChart(el, 420);
+  const chart = makeChart(el, getChartHeights().main);
 
   if (chartType === 'candlestick') {
     const candle = chart.addCandlestickSeries({
@@ -465,7 +472,7 @@ function renderMainChart(data) {
 function renderRSIChart(data) {
   const el = document.getElementById('rsiChart');
   el.innerHTML = '';
-  const chart = makeChart(el, 140);
+  const chart = makeChart(el, getChartHeights().sub);
 
   chart.addLineSeries({ color: '#bc8cff', lineWidth: 2 })
     .setData(toSeries(data.dates, data.rsi));
@@ -483,7 +490,7 @@ function renderRSIChart(data) {
 function renderMACDChart(data) {
   const el = document.getElementById('macdChart');
   el.innerHTML = '';
-  const chart = makeChart(el, 140);
+  const chart = makeChart(el, getChartHeights().sub);
 
   chart.addLineSeries({ color: '#58a6ff', lineWidth: 2 })
     .setData(toSeries(data.dates, data.macd));
