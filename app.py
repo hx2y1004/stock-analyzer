@@ -738,24 +738,23 @@ def get_portfolio():
     if not holdings:
         return jsonify([])
 
-    # 현재가 일괄 조회
+    # 현재가 일괄 조회 (fast_info 병렬)
     tickers = list({h.ticker for h in holdings})
     prices  = {}
-    try:
-        if len(tickers) == 1:
-            raw = yf.download(tickers[0], period="2d", auto_adjust=True, progress=False)["Close"]
-            if not raw.empty:
-                prices[tickers[0]] = float(raw.dropna().iloc[-1])
-        else:
-            raw = yf.download(tickers, period="2d", auto_adjust=True, progress=False)["Close"]
-            for t in tickers:
-                col = raw.get(t) if hasattr(raw, "get") else (raw[t] if t in raw.columns else None)
-                if col is not None:
-                    col = col.dropna()
-                    if not col.empty:
-                        prices[t] = float(col.iloc[-1])
-    except Exception:
-        pass
+
+    def _fetch_price(ticker):
+        try:
+            fi = yf.Ticker(ticker).fast_info
+            p  = getattr(fi, "last_price", None) or getattr(fi, "regular_market_price", None)
+            return ticker, float(p) if p else None
+        except Exception:
+            return ticker, None
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for t, p in ex.map(_fetch_price, tickers):
+            if p:
+                prices[t] = p
 
     result = []
     for h in holdings:
