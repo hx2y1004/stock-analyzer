@@ -624,18 +624,36 @@ def analyze_signals(df, info):
     target_high = round(month_high, 2)
     target_price = target_low   # 기존 호환용 (매도 시작점)
 
-    # ── 추세 판단 (MA + 종합점수) ────────────────────────
+    # ── 추세 판단 (MA + 종합점수 + 52주 고/저가) ────────────────────────
     ma20 = _f(df["Close"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else None
     ma50 = _f(df["Close"].rolling(50).mean().iloc[-1]) if len(df) >= 50 else None
 
+    # 52주 고가/저가 기준 (거래일 252일)
+    year_high_252 = float(df["High"].tail(252).max())
+    year_low_252  = float(df["Low"].tail(252).min())
+    # 신고가 달성: 52주 고가의 99% 이상 (실질 신고가)
+    new_52w_high  = year_high_252 > 0 and close >= year_high_252 * 0.99
+    # 신고가 근방: 52주 고가의 97% 이상
+    near_52w_high = year_high_252 > 0 and close >= year_high_252 * 0.97
+    # 신저가 근방: 52주 저가의 105% 이하
+    near_52w_low  = year_low_252  > 0 and close <= year_low_252  * 1.05
+
     if ma20 and ma50:
-        if combined_score >= 30 and close > ma20 and ma20 > ma50:
+        # strong-uptrend: 기존 조건(점수 30+ MA 정배열) OR 52주 신고가 달성(점수 기준 완화)
+        if (combined_score >= 30 and close > ma20 and ma20 > ma50) or \
+           (new_52w_high and combined_score >= 15 and close > ma20):
             trend = "strong-uptrend"
-        elif combined_score >= 10 and close > ma20:
+        # uptrend: 기존 조건 OR 신고가 근방(점수 기준 완화)
+        elif (combined_score >= 10 and close > ma20) or \
+             (near_52w_high and combined_score >= 5 and close > ma20):
             trend = "uptrend"
-        elif combined_score <= -30 and close < ma20 and ma20 < ma50:
+        # strong-downtrend: 기존 조건 OR 52주 신저가 근방(점수 기준 완화)
+        elif (combined_score <= -30 and close < ma20 and ma20 < ma50) or \
+             (near_52w_low and combined_score <= -15 and close < ma20):
             trend = "strong-downtrend"
-        elif combined_score <= -10 and close < ma20:
+        # downtrend: 기존 조건 OR 신저가 근방(점수 기준 완화)
+        elif (combined_score <= -10 and close < ma20) or \
+             (near_52w_low and combined_score <= -5 and close < ma20):
             trend = "downtrend"
         else:
             trend = "sideways"
@@ -665,6 +683,9 @@ def analyze_signals(df, info):
         "month_high": round(month_high, 2),
         "month_low":  round(month_low, 2),
         "trend": trend,
+        "new_52w_high":  new_52w_high,
+        "near_52w_high": near_52w_high,
+        "near_52w_low":  near_52w_low,
         "rsi":         round(rsi, 2)          if not np.isnan(rsi)  else None,
         "macd":        round(macd, 4)          if not np.isnan(macd) else None,
         "bb_position": round(bb_position, 1)   if bb_position is not None else None,
