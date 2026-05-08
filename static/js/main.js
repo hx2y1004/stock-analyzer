@@ -185,17 +185,116 @@ function closeLoginModal(event) {
     document.getElementById('loginModal').classList.add('hidden');
 }
 
+// ── 신규 매수자 관점 헬퍼 ─────────────────────────────────────────────────
+function _getNewBuyerAdvice(analysis, stock) {
+  if (!analysis || !stock) return null;
+  const cur   = stock.currency || 'USD';
+  const isKRW = cur === 'KRW';
+  const fmtV  = (v) => {
+    if (v == null) return '—';
+    return isKRW
+      ? Number(Math.round(v)).toLocaleString() + '원'
+      : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const price     = stock.current_price;
+  const stop      = analysis.stop_loss;
+  const entryLow  = analysis.entry_low  || analysis.entry_price;
+  const entryHigh = analysis.entry_high || (analysis.entry_price ? analysis.entry_price * 1.02 : null);
+  const targetLow = analysis.target_low;
+  const monthHigh = analysis.month_high;
+  const monthLow  = analysis.month_low;
+  const trend     = analysis.trend || 'sideways';
+
+  if (!price || !monthLow || !monthHigh) return null;
+
+  const monthRange = (monthHigh - monthLow) || 1;
+  const rangePct   = (price - monthLow) / monthRange;
+  const is_up      = trend === 'strong-uptrend' || trend === 'uptrend';
+  const is_down    = trend === 'strong-downtrend' || trend === 'downtrend';
+
+  if (stop && price <= stop) {
+    return {
+      action: '신규 매수 비추천', color: 'bearish',
+      reason: `1개월 지지선(${fmtV(stop)}) 아래로 이탈한 상태예요. 신규 진입은 추가 하락 위험이 크니, 반등 후 지지선 회복을 확인하고 진입을 고려하세요.`,
+    };
+  }
+
+  if (is_up) {
+    if (rangePct <= 0.35) {
+      return {
+        action: '신규 매수 적기 ✓', color: 'bullish',
+        reason: `상승 추세 속 눌림목 구간이에요. 분할 매수하기 좋은 타이밍이에요. 목표가 ${fmtV(targetLow)} 부근에서 절반 익절, 손절 기준은 ${fmtV(stop)} 이탈 시 적용하세요.`,
+      };
+    } else if (rangePct >= 0.80) {
+      return {
+        action: '눌림목 대기 추천', color: 'neutral',
+        reason: `상승 추세이지만 1개월 고점 부근이에요. 신규 진입 시 조정 리스크가 있으니 ${fmtV(entryLow)}~${fmtV(entryHigh)} 구간으로 내려오면 분할 매수를 고려하세요.`,
+      };
+    } else {
+      return {
+        action: '소량 선진입 가능', color: 'bullish',
+        reason: `상승 추세가 유효해요. 추격 매수보다 투자금의 1/3씩 분할 진입을 추천해요. ${fmtV(entryHigh)} 이하 눌림목 구간에서 추가 매수 기회를 노리세요.`,
+      };
+    }
+  }
+
+  if (is_down) {
+    if (rangePct <= 0.30) {
+      return {
+        action: '관망 후 전환 신호 확인', color: 'neutral',
+        reason: `하락 추세 저점 부근이에요. 반등 가능성은 있지만 추세 전환 신호(MA 골든크로스, RSI 30 이상 회복 등)가 나올 때 진입하는 게 안전해요.`,
+      };
+    }
+    return {
+      action: '신규 진입 비추천', color: 'bearish',
+      reason: `하락 추세가 이어지고 있어요. 저점 확인 전 진입은 손실 위험이 높아요. 추세가 전환될 때까지 관망하는 것을 강력히 추천해요.`,
+    };
+  }
+
+  // 횡보
+  if (rangePct <= 0.30) {
+    return {
+      action: '분할 매수 추천', color: 'bullish',
+      reason: `횡보 구간 지지선 부근이에요. ${fmtV(entryLow)}~${fmtV(entryHigh)}에서 분할 매수하고 ${fmtV(targetLow)} 부근에서 익절하는 전략을 추천해요.`,
+    };
+  } else if (rangePct >= 0.70) {
+    return {
+      action: '눌림목 대기 추천', color: 'neutral',
+      reason: `횡보 구간 저항선 부근이에요. 지금보다 ${fmtV(entryLow)}~${fmtV(entryHigh)} 지지선 근처로 내려올 때 진입하는 전략이 유리해요.`,
+    };
+  }
+  return {
+    action: '매수 구간 대기', color: 'neutral',
+    reason: `횡보 구간 중반이에요. 매수 추천 구간(${fmtV(entryLow)}~${fmtV(entryHigh)})까지 내려오면 분할 매수를 고려하세요.`,
+  };
+}
+
+function _renderNewBuyerBox(advice, label) {
+  if (!advice) return '';
+  const colorClass = advice.color === 'bullish' ? 'nba-bullish' : advice.color === 'bearish' ? 'nba-bearish' : 'nba-neutral';
+  return `
+    <div class="new-buyer-advice ${colorClass}">
+      <div class="nba-header">${label || '📊 신규 매수 관점'}</div>
+      <div class="nba-action">${advice.action}</div>
+      <div class="nba-reason">${advice.reason}</div>
+    </div>`;
+}
+
 // ── 내 포지션 카드 렌더링 ─────────────────────────────────────────────────
-function renderPositionCard(position, stock) {
+function renderPositionCard(position, stock, analysis) {
   const el = document.getElementById('positionContent');
   currentPositionData = position;
   currentPositionId   = position ? position.id : null;
 
+  const newBuyerAdvice = _getNewBuyerAdvice(analysis, stock);
+
   // 로그인 안 됨
   if (!currentUser) {
     el.innerHTML = `
-      <div class="position-empty">
-        <div>🔐 로그인하면 보유 주식 기준<br>매매 타이밍을 분석해 드려요</div>
+      ${_renderNewBuyerBox(newBuyerAdvice, '📊 신규 매수 관점')}
+      <div class="position-empty nba-login-footer">
+        <div>🔐 로그인하면 보유 주식 기준<br>맞춤 매매 타이밍을 분석해 드려요</div>
         <button class="position-login-btn" onclick="openLoginModal()">로그인하기</button>
       </div>`;
     renderTradeActions(null);
@@ -208,7 +307,8 @@ function renderPositionCard(position, stock) {
     const name   = stock ? stock.name : ticker;
     const cur    = stock ? stock.currency : 'USD';
     el.innerHTML = `
-      <div class="position-empty">
+      ${_renderNewBuyerBox(newBuyerAdvice, '📊 신규 매수 관점')}
+      <div class="position-empty nba-login-footer">
         <div>이 종목을 보유하고 계신가요?</div>
         <button class="position-add-btn" onclick="openAddModal('${ticker}','${name}','${cur}')">+ 포트폴리오에 추가</button>
       </div>`;
@@ -248,6 +348,7 @@ function renderPositionCard(position, stock) {
         <div class="position-rec-action">${rec.action}</div>
         <div class="position-rec-reason">${rec.reason}</div>
       </div>` : ''}
+      ${_renderNewBuyerBox(newBuyerAdvice, '📊 신규 추가 진입 관점')}
     </div>`;
 
   renderTradeActions(position, stock);
@@ -368,7 +469,7 @@ async function analyze() {
     renderDetail(data.analysis.details || []);
     renderFundamental(data.analysis.fundamental_details || []);
     renderMetrics(data.stock, data.analysis);
-    renderPositionCard(data.position || null, data.stock);
+    renderPositionCard(data.position || null, data.stock, data.analysis);
     renderZones(data.analysis, data.stock);
     renderAnalysts(data.analysts, data.stock.currency);
     renderPriceMoveBanner(data.stock, data.move_reason);
