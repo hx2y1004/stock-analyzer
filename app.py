@@ -7,6 +7,21 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+try:
+    from deep_translator import GoogleTranslator as _GTrans
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    def _translate_ko(text):
+        if not text or not text.strip(): return text
+        try:
+            return _GTrans(source='auto', target='ko').translate(text[:500])
+        except Exception:
+            return text
+    def _translate_batch(texts):
+        with _TPE(max_workers=6) as ex:
+            return list(ex.map(_translate_ko, texts))
+except ImportError:
+    def _translate_ko(text): return text
+    def _translate_batch(texts): return texts
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from flask_login import LoginManager, login_required, current_user
@@ -374,16 +389,16 @@ def fetch_analysts(stock, info):
 def fetch_news(stock):
     try:
         news_list = stock.news or []
-        results = []
-        for item in news_list[:10]:
+        raw = []
+        for item in news_list[:8]:
             c = item.get("content", {})
             if not c:
                 continue
             title = c.get("title", "")
-            desc = c.get("description") or c.get("summary", "")
-            desc = re.sub(r"<[^>]+>", "", desc or "")[:200]
-            pub = c.get("pubDate", "") or c.get("displayTime", "")
-            url = ""
+            desc  = c.get("description") or c.get("summary", "")
+            desc  = re.sub(r"<[^>]+>", "", desc or "")[:200]
+            pub   = c.get("pubDate", "") or c.get("displayTime", "")
+            url   = ""
             cu = c.get("canonicalUrl") or c.get("clickThroughUrl") or {}
             if isinstance(cu, dict):
                 url = cu.get("url", "")
@@ -392,14 +407,19 @@ def fetch_news(stock):
             if isinstance(pv, dict):
                 provider = pv.get("displayName", "")
             if title:
-                results.append({
-                    "title": title,
-                    "desc": desc,
-                    "pub": pub[:10],
-                    "url": url,
-                    "provider": provider,
-                })
-        return results
+                raw.append({"title": title, "desc": desc, "pub": pub[:10], "url": url, "provider": provider})
+
+        if not raw:
+            return []
+
+        # 제목 + 설명 병렬 번역
+        titles = _translate_batch([r["title"] for r in raw])
+        descs  = _translate_batch([r["desc"]  for r in raw])
+
+        return [
+            {**r, "title": titles[i], "title_orig": r["title"], "desc": descs[i]}
+            for i, r in enumerate(raw)
+        ]
     except Exception:
         return []
 
