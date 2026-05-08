@@ -841,10 +841,23 @@ function toggleIndicator(name) {
   if (chartData) renderCharts(chartData);
 }
 
+function syncChartTimeScales(charts) {
+  let syncing = false;
+  charts.forEach(src => {
+    src.timeScale().subscribeVisibleLogicalRangeChange(range => {
+      if (syncing || !range) return;
+      syncing = true;
+      charts.forEach(tgt => { if (tgt !== src) tgt.timeScale().setVisibleLogicalRange(range); });
+      syncing = false;
+    });
+  });
+}
+
 function renderCharts(data) {
-  renderMainChart(data);
-  renderRSIChart(data);
-  renderMACDChart(data);
+  const c1 = renderMainChart(data);
+  const c2 = renderRSIChart(data);
+  const c3 = renderMACDChart(data);
+  syncChartTimeScales([c1, c2, c3]);
 }
 
 function makeChart(el, height) {
@@ -918,6 +931,7 @@ function renderMainChart(data) {
     chart.addLineSeries({ color: '#f85149', lineWidth: 1 }).setData(toSeries(data.dates, data.tenkan));
     chart.addLineSeries({ color: '#58a6ff', lineWidth: 1 }).setData(toSeries(data.dates, data.kijun));
   }
+  return chart;
 }
 
 function renderRSIChart(data) {
@@ -936,6 +950,7 @@ function renderRSIChart(data) {
     chart.addLineSeries({ color: 'rgba(63,185,80,0.5)', lineWidth: 1, lineStyle: 2 })
       .setData([{ time: first, value: 30 }, { time: last, value: 30 }]);
   }
+  return chart;
 }
 
 function renderMACDChart(data) {
@@ -952,6 +967,7 @@ function renderMACDChart(data) {
       time: d, value: data.macd_hist[i],
       color: data.macd_hist[i] >= 0 ? '#3fb950' : '#f85149',
     })).filter(p => p.value != null));
+  return chart;
 }
 
 // ── 자동완성 ─────────────────────────────────────────

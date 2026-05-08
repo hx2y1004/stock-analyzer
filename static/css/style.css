@@ -557,9 +557,14 @@ body {
   .quick-btn { padding: 4px 10px; font-size: 12px; }
 
   /* 헤더 */
-  .header-inner { height: 48px; }
-  .logo { font-size: 15px; }
-  .nav-link { padding: 5px 10px; font-size: 13px; }
+  .header-inner { height: auto; min-height: 48px; padding: 8px 12px; flex-wrap: nowrap; gap: 6px; }
+  .logo { font-size: 13px; white-space: nowrap; flex-shrink: 0; }
+  .nav { gap: 2px; flex-shrink: 0; }
+  .nav-link { padding: 4px 8px; font-size: 12px; }
+  .auth-area { flex-shrink: 0; }
+  .login-btn { padding: 5px 10px; font-size: 12px; }
+  .profile-name { display: none; }
+  .logout-btn { padding: 5px 8px; font-size: 11px; }
 
   /* 카드 */
   .card { padding: 12px; border-radius: 10px; }
@@ -575,7 +580,7 @@ body {
   .chart-controls { gap: 6px; }
   .chart-btn, .interval-btn { padding: 5px 10px; font-size: 12px; }
   .main-chart { height: 260px; }
-  .sub-chart  { height: 90px; }
+  .sub-chart  { height: 90px; margin-top: 4px; }
   .indicator-toggles label { font-size: 12px; }
 
   /* 종합판단 */
