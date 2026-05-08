@@ -114,28 +114,56 @@ async function deleteHolding(event, hid) {
 // ── 종목 추가 모달 ─────────────────────────────────────────────────────────
 function openAddModal(ticker, name, currency) {
   if (!currentUser) { openLoginModal(); return; }
+  const hasTickerFromCtx = !!ticker;
   document.getElementById('addTicker').value    = ticker   || '';
   document.getElementById('addName').value      = name     || '';
   document.getElementById('addCurrency').value  = currency || 'USD';
-  document.getElementById('addCurrencyLabel').textContent = currency ? `(${currency})` : '(USD)';
-  document.getElementById('addModalDesc').textContent = ticker
+  document.getElementById('addCurrencyLabel').textContent = `(${currency || 'USD'})`;
+  document.getElementById('addModalDesc').textContent = hasTickerFromCtx
     ? `${name || ticker} 을(를) 포트폴리오에 추가합니다`
-    : '검색 후 분석창에서 종목을 추가할 수 있어요';
+    : '티커를 입력하고 매입 정보를 등록하세요';
+
+  // 직접 입력 필드: ticker 없을 때만 표시
+  const tickerField    = document.getElementById('addTickerField');
+  const currencyField  = document.getElementById('addCurrencyField');
+  const tickerInput    = document.getElementById('addTickerInput');
+  const currencySelect = document.getElementById('addCurrencySelect');
+  if (hasTickerFromCtx) {
+    tickerField.style.display   = 'none';
+    currencyField.style.display = 'none';
+  } else {
+    tickerField.style.display   = '';
+    currencyField.style.display = '';
+    tickerInput.value    = '';
+    currencySelect.value = 'USD';
+    // 통화 변경 시 라벨도 업데이트
+    currencySelect.onchange = () => {
+      document.getElementById('addCurrencyLabel').textContent = `(${currencySelect.value})`;
+    };
+  }
+
   document.getElementById('addPrice').value = '';
   document.getElementById('addQty').value   = '';
   document.getElementById('addModal').classList.remove('hidden');
+  if (!hasTickerFromCtx) tickerInput.focus();
 }
 function closeAddModal(event) {
   if (!event || event.target === document.getElementById('addModal'))
     document.getElementById('addModal').classList.add('hidden');
 }
 async function submitAddHolding() {
-  const ticker   = document.getElementById('addTicker').value;
-  const name     = document.getElementById('addName').value;
-  const currency = document.getElementById('addCurrency').value || 'USD';
+  // ticker: hidden(분석창에서 호출) or 직접 입력(포트폴리오 추가)
+  const tickerHidden = document.getElementById('addTicker').value;
+  const tickerInput  = document.getElementById('addTickerInput').value.trim().toUpperCase();
+  const ticker   = tickerHidden || tickerInput;
+  const name     = document.getElementById('addName').value || ticker;
+  // currency: hidden(분석창) or select(직접입력)
+  const currencyHidden = document.getElementById('addCurrency').value;
+  const currencySelect = document.getElementById('addCurrencySelect').value;
+  const currency = tickerHidden ? currencyHidden : currencySelect;
   const price    = parseFloat(document.getElementById('addPrice').value);
   const qty      = parseFloat(document.getElementById('addQty').value);
-  if (!ticker || !price || !qty) { alert('모든 항목을 입력해주세요'); return; }
+  if (!ticker || !price || !qty) { alert('티커·매입가·수량을 모두 입력해주세요'); return; }
   const res = await fetch('/api/portfolio', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
