@@ -8,3 +8,4 @@ numpy==2.4.4
 gunicorn==23.0.0
 python-dotenv==1.2.2
 psycopg2-binary==2.9.10
+deep-translator==1.11.4
