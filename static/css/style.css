@@ -1339,6 +1339,40 @@ body {
 .position-rec.neutral .position-rec-action { color: var(--yellow); }
 .position-rec-reason { font-size: 12px; color: var(--text2); line-height: 1.6; }
 .position-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* ── 신규 매수자 관점 박스 ── */
+.new-buyer-advice {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+}
+.new-buyer-advice.nba-bullish { background: rgba(63,185,80,0.07); border-left: 3px solid var(--green); }
+.new-buyer-advice.nba-bearish { background: rgba(248,81,73,0.07); border-left: 3px solid var(--red); }
+.new-buyer-advice.nba-neutral { background: rgba(210,153,34,0.06); border-left: 3px solid var(--yellow); }
+.nba-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.nba-action {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+.nba-bullish .nba-action { color: var(--green); }
+.nba-bearish .nba-action { color: var(--red); }
+.nba-neutral .nba-action { color: var(--yellow); }
+.nba-reason { font-size: 12px; color: var(--text2); line-height: 1.6; }
+
+/* 신규 매수 박스 아래 로그인/추가 버튼 영역 */
+.nba-login-footer {
+  margin-top: 10px !important;
+  padding-top: 12px !important;
+  border-top: 1px solid var(--border);
+}
 .position-action-btn {
   flex: 1;
   background: var(--bg3);
