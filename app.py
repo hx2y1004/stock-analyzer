@@ -62,36 +62,47 @@ def _clean_num(s):
 
 def fetch_naver_fundamentals(krx_code):
     """
-    네이버 금융에서 한국 주식 PER/EPS/PBR/BPS를 가져옵니다.
-    yfinance가 한국 주식 재무 데이터를 제공하지 않을 때 보완용으로 사용.
+    네이버 금융 API로 한국 주식 EPS/BPS를 가져옵니다.
+    가장 최근 확정(non-consensus) 연간 실적 기준.
+    PER/PBR은 호출 측에서 현재가 기준으로 직접 계산합니다.
     """
     try:
-        url = f"https://finance.naver.com/item/main.nhn?code={krx_code}"
+        url = f"https://m.stock.naver.com/api/stock/{krx_code}/finance/annual"
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            "Referer": "https://finance.naver.com/",
+            )
         }
         resp = requests.get(url, headers=headers, timeout=8)
-        resp.encoding = "euc-kr"
-        text = resp.text
+        if resp.status_code != 200:
+            return {}
 
-        patterns = {
-            "per":  r"PER\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
-            "eps":  r"EPS\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
-            "pbr":  r"PBR\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
-            "bps":  r"BPS\([^)]+\)</strong>.*?<td[^>]*>\s*([\d,.-]+)",
-        }
+        data = resp.json()
+        fi = data.get("financeInfo", {})
+        title_list = fi.get("trTitleList", [])
+        row_list   = fi.get("rowList", [])
+
+        # 가장 최근 확정(non-consensus) 컬럼 키 찾기
+        confirmed = [t for t in title_list if t.get("isConsensus") == "N"]
+        if not confirmed:
+            return {}
+        latest_key = sorted([t["key"] for t in confirmed], reverse=True)[0]
+
         result = {}
-        for key, pat in patterns.items():
-            m = re.search(pat, text, re.DOTALL)
-            if m:
-                val = _clean_num(m.group(1))
-                if val is not None and val != 0:
-                    result[key] = val
+        for row in row_list:
+            title  = row.get("title", "")
+            cols   = row.get("columns", {})
+            latest = cols.get(latest_key, {})
+            val    = _clean_num(latest.get("value"))
+            if val is None or val == 0:
+                continue
+            if title == "EPS":
+                result["eps"] = val
+            elif title == "BPS":
+                result["bps"] = val
+
         return result
     except Exception:
         return {}
@@ -378,16 +389,22 @@ def analyze():
         if is_korean:
             krx_code = ticker.split(".")[0]
             naver = fetch_naver_fundamentals(krx_code)
-            if naver:
-                # yfinance 값이 없을 때만 네이버 값으로 채움
-                if not info.get("trailingPE") and naver.get("per"):
-                    info["trailingPE"] = naver["per"]
-                if not info.get("trailingEps") and naver.get("eps"):
+
+            # 현재가 기준 PER/PBR 직접 계산 (네이버 역사 테이블 값 ×)
+            ref_price = safe_float(info.get("currentPrice")) or safe_float(info.get("previousClose"))
+            if naver and ref_price:
+                if naver.get("eps"):
                     info["trailingEps"] = naver["eps"]
-                if not info.get("priceToBook") and naver.get("pbr"):
-                    info["priceToBook"] = naver["pbr"]
-                if not info.get("bookValue") and naver.get("bps"):
-                    info["bookValue"] = naver["bps"]
+                    info["trailingPE"]  = round(ref_price / naver["eps"], 2)
+                if naver.get("bps"):
+                    info["bookValue"]   = naver["bps"]
+                    info["priceToBook"] = round(ref_price / naver["bps"], 2)
+
+            # 배당수익률: yfinance가 한국 주식에 대해 이미 %로 반환 (0.55 = 0.55%)
+            # 프론트에서 ×100 하기 때문에 0.0055로 정규화
+            dy = info.get("dividendYield")
+            if dy and dy > 0.15:   # 15% 초과 = % 형태로 온 것
+                info["dividendYield"] = dy / 100
 
         # NaN 행 제거 (한국 주식 등 마지막 행이 NaN일 수 있음)
         df = df.dropna(subset=["Close", "Open", "High", "Low"])
