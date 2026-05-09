@@ -1044,8 +1044,20 @@ def analyze():
             def _earnings_period(ts):
                 """earnings 발표일 → 해당 분기 말 월 문자열 (YYYY-MM)"""
                 t = pd.Timestamp(ts)
-                # 발표일 기준 30일 전으로 분기 말 추정 (±45일 tolerance로 매칭)
                 return (t - pd.Timedelta(days=30)).strftime('%Y-%m')
+
+            def _near_period_exists(period, d, days=45):
+                """period와 ±days 이내의 키가 dict d에 있으면 True"""
+                if period in d:
+                    return True
+                try:
+                    p_dt = pd.to_datetime(period + '-01')
+                    for p in d:
+                        if abs((pd.to_datetime(p + '-01') - p_dt).days) <= days:
+                            return True
+                except Exception:
+                    pass
+                return False
 
             # --- 소스 1: get_earnings_dates (Yahoo Finance 컨센서스) ---
             try:
@@ -1061,13 +1073,14 @@ def analyze():
                         eps_rep = _get_col(row, 'Reported EPS', 'epsactual', 'reported eps')
                         surp    = _get_col(row, 'Surprise(%)', 'epssurprisepct', 'surprise(%)')
                         rev_est = _get_col(row, 'Revenue Estimate', 'revenueestimate')
-                        if rev_est:
+                        if rev_est and not _near_period_exists(period, rev_est_by_period):
                             rev_est_by_period[period] = rev_est
-                        if eps_est is not None:
+                        if eps_est is not None and not _near_period_exists(period, eps_est_by_period):
                             eps_est_by_period[period] = eps_est
-                        if surp is not None:
+                        if surp is not None and not _near_period_exists(period, eps_surp_by_period):
                             eps_surp_by_period[period] = surp
-                        if eps_rep is not None and period not in eps_act_by_period:
+                        # 발표치는 quarterly_income_stmt 가 우선 → 근접 분기 없을 때만 보완
+                        if eps_rep is not None and not _near_period_exists(period, eps_act_by_period):
                             eps_act_by_period[period] = eps_rep
             except Exception:
                 pass
@@ -1081,16 +1094,16 @@ def analyze():
                         eps_est = _get_col(row, 'epsEstimate', 'eps_estimate', 'EPS Estimate')
                         eps_rep = _get_col(row, 'epsActual', 'eps_actual', 'Reported EPS')
                         surp_pct = _get_col(row, 'surprisePercent', 'surprise_percent', 'Surprise(%)')
-                        if eps_est is not None and period not in eps_est_by_period:
+                        if eps_est is not None and not _near_period_exists(period, eps_est_by_period):
                             eps_est_by_period[period] = eps_est
-                        if surp_pct is not None and period not in eps_surp_by_period:
+                        if surp_pct is not None and not _near_period_exists(period, eps_surp_by_period):
                             eps_surp_by_period[period] = round(surp_pct * 100, 1) if abs(surp_pct) < 5 else round(surp_pct, 1)
-                        if eps_rep is not None and period not in eps_act_by_period:
+                        if eps_rep is not None and not _near_period_exists(period, eps_act_by_period):
                             eps_act_by_period[period] = eps_rep
             except Exception:
                 pass
 
-            app.logger.info(f"[EPS est] {ticker}: est_periods={list(eps_est_by_period.keys())[:6]}")
+            app.logger.info(f"[EPS est] {ticker}: act={list(eps_act_by_period.keys())[:6]} est={list(eps_est_by_period.keys())[:6]}")
 
             # 4. 매출 리스트 (추정치 매칭, 최신순)
             def _match_estimate(period, est_dict):
