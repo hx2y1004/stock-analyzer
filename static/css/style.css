@@ -1612,16 +1612,17 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(255, 200, 50, 0.18);
-  border-top: 2px dashed rgba(255, 200, 50, 0.9);
-  border-radius: 4px 4px 0 0;
+  background: rgba(255, 185, 30, 0.15);
+  border-top: 3px solid rgba(255, 185, 30, 0.95);
+  border-radius: 3px 3px 0 0;
   transition: height 0.4s ease;
+  z-index: 0;
 }
 
 .qc-bar-actual {
   position: relative;
   z-index: 1;
-  width: 60%;
+  width: 58%;
   min-height: 3px;
   background: var(--accent);
   border-radius: 4px 4px 0 0;
@@ -1642,11 +1643,12 @@ body {
 }
 .qc-estimate {
   font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 200, 50, 0.9);  /* 노란색으로 구분 */
+  font-weight: 700;
+  color: rgba(255, 185, 30, 1);
   white-space: nowrap;
   min-height: 14px;
   flex-shrink: 0;
+  letter-spacing: -0.2px;
 }
 .qc-beat-row {
   min-height: 18px;
