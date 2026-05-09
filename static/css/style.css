@@ -1496,6 +1496,36 @@ body {
   padding: 0;
 }
 .co-more-btn:hover { opacity: 0.8; }
+.co-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 12px 0 5px;
+}
+.co-section-label:first-of-type { margin-top: 0; }
+.co-biz-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.co-biz-list li {
+  font-size: 13px;
+  color: var(--text2);
+  padding-left: 14px;
+  position: relative;
+  line-height: 1.6;
+}
+.co-biz-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+}
 
 /* ── 분기 매출 차트 ── */
 .revenue-chart-card {

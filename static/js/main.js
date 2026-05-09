@@ -626,23 +626,53 @@ function renderFundamental(details, stock) {
   const el = document.getElementById('fundamentalList');
   let html = '';
 
-  // ── 1. 회사 소개 ──────────────────────────────────────
-  const summary = (stock && stock.business_summary) ? stock.business_summary.trim() : '';
-  if (summary) {
-    // 첫 2~3 문장만 표시 (최대 300자)
-    const sentences = summary.match(/[^.!?]+[.!?]+/g) || [summary];
-    const shortSummary = sentences.slice(0, 3).join(' ').slice(0, 320).trim();
-    const isLong = summary.length > shortSummary.length;
+  // ── 1. 회사 소개 (Groq AI 분석 우선, 없으면 영문 요약 폴백) ──────────
+  const ov = (stock && stock.company_overview) ? stock.company_overview : null;
+  if (ov) {
+    const intro    = ov['기업소개'] || '';
+    const business = ov['주요사업'] || '';
+    const analysis = ov['기업분석'] || '';
+
+    // 주요사업 bullet 처리
+    const bizHtml = business
+      ? '<ul class="co-biz-list">' +
+          business.split('\n')
+            .map(l => l.replace(/^[•\-\*]\s*/, '').trim())
+            .filter(l => l)
+            .map(l => `<li>${l}</li>`)
+            .join('') +
+        '</ul>'
+      : '';
+
     html += `
       <div class="company-overview-card">
         <div class="co-header">
           <span class="co-icon">🏢</span>
-          <span class="co-title">회사 소개</span>
+          <span class="co-title">기업 분석 (AI)</span>
           ${stock.sector ? `<span class="co-sector">${stock.sector}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
         </div>
-        <p class="co-desc" id="coDescText">${shortSummary}${isLong ? '<span id="coDescMore">...</span>' : ''}</p>
-        ${isLong ? `<button class="co-more-btn" onclick="toggleCoDesc(${JSON.stringify(summary)})">더보기 ▼</button>` : ''}
+        ${intro    ? `<div class="co-section-label">기업 소개</div><p class="co-desc">${intro}</p>` : ''}
+        ${bizHtml  ? `<div class="co-section-label">주요 사업</div>${bizHtml}` : ''}
+        ${analysis ? `<div class="co-section-label">기업 분석</div><p class="co-desc">${analysis}</p>` : ''}
       </div>`;
+  } else {
+    // 폴백: 영문 business_summary
+    const summary = (stock && stock.business_summary) ? stock.business_summary.trim() : '';
+    if (summary) {
+      const sentences = summary.match(/[^.!?]+[.!?]+/g) || [summary];
+      const shortSummary = sentences.slice(0, 3).join(' ').slice(0, 320).trim();
+      const isLong = summary.length > shortSummary.length;
+      html += `
+        <div class="company-overview-card">
+          <div class="co-header">
+            <span class="co-icon">🏢</span>
+            <span class="co-title">회사 소개</span>
+            ${stock.sector ? `<span class="co-sector">${stock.sector}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
+          </div>
+          <p class="co-desc" id="coDescText">${shortSummary}${isLong ? '<span>...</span>' : ''}</p>
+          ${isLong ? `<button class="co-more-btn" onclick="toggleCoDesc(${JSON.stringify(summary)})">더보기 ▼</button>` : ''}
+        </div>`;
+    }
   }
 
   // ── 2. 분기 매출 추이 ──────────────────────────────────
