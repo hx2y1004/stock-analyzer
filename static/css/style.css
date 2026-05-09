@@ -1606,12 +1606,13 @@ body {
   min-height: 0;
 }
 
-/* 추정치 오버레이 바 (발표치 앞에 점선 테두리로 표시) */
+/* 추정치 오버레이 바 (발표치와 동일 폭으로 완전 겹침) */
 .qc-bar-estimate {
   position: absolute;
   bottom: 0;
-  left: 4%;
-  right: 4%;
+  width: 65%;
+  left: 50%;
+  transform: translateX(-50%);
   background: rgba(255, 185, 30, 0.12);
   border: 2px dashed rgba(255, 185, 30, 0.9);
   border-radius: 4px 4px 0 0;
