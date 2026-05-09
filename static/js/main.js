@@ -675,12 +675,18 @@ function renderFundamental(details, stock) {
     }
   }
 
-  // ── 2. 분기 실적 추이 (매출 + EPS, 발표치 + 추정치) ─────────────────
+  // ── 2. 분기 실적 추이 (매출 + EPS/영업이익, 발표치 + 추정치) ──────────
   const revQ = (stock && stock.revenue_quarters) ? stock.revenue_quarters : [];
   const epsQ = (stock && stock.eps_quarters)     ? stock.eps_quarters     : [];
-  if (revQ.length >= 2 || epsQ.length >= 2) {
-    const cur   = (stock && stock.currency) || 'USD';
-    const isKRW = cur === 'KRW';
+  const oiQ  = (stock && stock.oi_quarters)      ? stock.oi_quarters      : [];
+  const cur2    = (stock && stock.currency) || 'USD';
+  const isKRW2  = cur2 === 'KRW';
+  // 한국 주식이면 영업이익, 아니면 EPS
+  const secQ  = isKRW2 ? oiQ : epsQ;
+
+  if (revQ.length >= 2 || secQ.length >= 2) {
+    const cur   = cur2;
+    const isKRW = isKRW2;
 
     // period "YYYY-MM" → "Q? 'YY"
     function toQLabel(p) {
@@ -690,7 +696,7 @@ function renderFundamental(details, stock) {
       return `Q${q} '${String(y).slice(2)}`;
     }
 
-    // 매출 포맷
+    // 매출/영업이익 포맷 (억원/조원 or $B/$M)
     function fmtRev(v) {
       if (v == null) return '—';
       if (isKRW) {
@@ -703,11 +709,10 @@ function renderFundamental(details, stock) {
       return '$' + v.toLocaleString();
     }
 
-    // EPS 포맷
+    // EPS 포맷 (미국 주식 전용)
     function fmtEps(v) {
       if (v == null) return '—';
-      const prefix = isKRW ? '' : '$';
-      return prefix + Number(v).toFixed(isKRW ? 0 : 2);
+      return '$' + Number(v).toFixed(2);
     }
 
     // beat/miss 뱃지
@@ -761,19 +766,22 @@ function renderFundamental(details, stock) {
         </div>`;
     }
 
-    // ── EPS 차트 ──
-    let epsHtml = '';
-    if (epsQ.length >= 2) {
-      const epsList = [...epsQ].reverse();
-      const actVals = epsList.map(q => q.actual).filter(v => v != null);
-      const estVals = epsList.map(q => q.estimate).filter(v => v != null);
-      const maxEps  = Math.max(...[...actVals, ...estVals].map(Math.abs));
+    // ── EPS 차트 (미국주식) / 영업이익 차트 (한국주식) ──
+    let secHtml = '';
+    if (secQ.length >= 2) {
+      const secList  = [...secQ].reverse();
+      const actVals  = secList.map(q => q.actual).filter(v => v != null);
+      const estVals  = secList.map(q => q.estimate).filter(v => v != null);
+      const maxSec   = Math.max(...[...actVals, ...estVals].map(Math.abs));
+      const fmtSec   = isKRW ? fmtRev : fmtEps;
+      const secTitle = isKRW ? '📊 영업이익' : '📊 주당순이익 (EPS)';
 
-      const epsBars = epsList.map(q => {
-        const actPct = maxEps > 0 && q.actual != null ? Math.round(Math.abs(q.actual) / maxEps * 100) : 0;
-        const estPct = maxEps > 0 && q.estimate != null ? Math.round(Math.abs(q.estimate) / maxEps * 100) : null;
+      const secBars = secList.map(q => {
+        const actPct = maxSec > 0 && q.actual != null ? Math.round(Math.abs(q.actual) / maxSec * 100) : 0;
+        const estPct = maxSec > 0 && q.estimate != null ? Math.round(Math.abs(q.estimate) / maxSec * 100) : null;
         const isNeg  = q.actual != null && q.actual < 0;
-        const badge  = q.surprise_pct != null
+        // EPS: use surprise_pct if available; OI/KRW: just beat/miss from actual vs estimate
+        const badge  = (!isKRW && q.surprise_pct != null)
           ? `<span class="beat-badge ${q.surprise_pct >= 0 ? 'beat' : 'miss'}">${q.surprise_pct >= 0 ? '✅' : '❌'} ${q.surprise_pct >= 0 ? '+' : ''}${q.surprise_pct.toFixed(1)}%</span>`
           : beatBadge(q.actual, q.estimate);
         return `
@@ -782,28 +790,27 @@ function renderFundamental(details, stock) {
               <div class="qc-bar-actual ${isNeg ? 'neg' : ''}" style="height:${actPct}%"></div>
               ${estPct != null ? `<div class="qc-bar-est-line" style="bottom:${estPct}%"></div>` : ''}
             </div>
-            <div class="qc-actual">${fmtEps(q.actual)}</div>
-            ${q.estimate != null ? `<div class="qc-estimate">${fmtEps(q.estimate)} 추정</div>` : '<div class="qc-estimate"></div>'}
+            <div class="qc-actual">${fmtSec(q.actual)}</div>
+            ${q.estimate != null ? `<div class="qc-estimate">${fmtSec(q.estimate)} 추정</div>` : '<div class="qc-estimate"></div>'}
             ${badge ? `<div class="qc-beat-row">${badge}</div>` : '<div class="qc-beat-row"></div>'}
             <div class="qc-period">${toQLabel(q.period)}</div>
           </div>`;
       }).join('');
 
-      // EPS 추세
-      const epsActuals = epsList.map(q => q.actual).filter(v => v != null);
-      const epsOld = epsActuals[0], epsNew = epsActuals[epsActuals.length - 1];
-      const epsTrendLbl = epsNew > epsOld * 1.05 ? '📈 증가'
-                        : epsNew < epsOld * 0.95 ? '📉 감소' : '➡️ 보합';
-      const epsTrendCls = epsNew > epsOld * 1.05 ? 'rev-trend-up'
-                        : epsNew < epsOld * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
+      const secActuals = secList.map(q => q.actual).filter(v => v != null);
+      const secOld = secActuals[0], secNew = secActuals[secActuals.length - 1];
+      const secTrendLbl = secNew > secOld * 1.05 ? '📈 증가'
+                        : secNew < secOld * 0.95 ? '📉 감소' : '➡️ 보합';
+      const secTrendCls = secNew > secOld * 1.05 ? 'rev-trend-up'
+                        : secNew < secOld * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
 
-      epsHtml = `
+      secHtml = `
         <div class="qc-section qc-section--eps">
           <div class="qc-section-hd">
-            <span class="qc-section-title">📊 주당순이익 (EPS)</span>
-            <span class="rev-trend ${epsTrendCls}">${epsTrendLbl}</span>
+            <span class="qc-section-title">${secTitle}</span>
+            <span class="rev-trend ${secTrendCls}">${secTrendLbl}</span>
           </div>
-          <div class="qc-bars">${epsBars}</div>
+          <div class="qc-bars">${secBars}</div>
         </div>`;
     }
 
@@ -811,7 +818,7 @@ function renderFundamental(details, stock) {
       <div class="quarterly-card">
         <div class="qc-header">📋 분기 실적 추이</div>
         ${revHtml}
-        ${epsHtml}
+        ${secHtml}
       </div>`;
   }
 
