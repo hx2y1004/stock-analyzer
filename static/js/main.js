@@ -724,36 +724,39 @@ function renderFundamental(details, stock) {
       return `<span class="beat-badge ${isBeat ? 'beat' : 'miss'}">${isBeat ? '✅' : '❌'} ${sign}${diff}%</span>`;
     }
 
+    // ── 공통: 바 1개 렌더링 (추정치는 배경 바로 표시) ──
+    function makeBar(q, actPct, estPct, fmtFn, badge, isNeg) {
+      return `
+        <div class="qc-col">
+          <div class="qc-bar-wrap">
+            ${estPct != null ? `<div class="qc-bar-estimate" style="height:${estPct}%"></div>` : ''}
+            <div class="qc-bar-actual${isNeg ? ' neg' : ''}" style="height:${actPct}%"></div>
+          </div>
+          <div class="qc-actual">${fmtFn(q.actual)}</div>
+          ${q.estimate != null
+            ? `<div class="qc-estimate">▶ ${fmtFn(q.estimate)}</div>`
+            : '<div class="qc-estimate"></div>'}
+          ${badge ? `<div class="qc-beat-row">${badge}</div>` : '<div class="qc-beat-row"></div>'}
+          <div class="qc-period">${toQLabel(q.period)}</div>
+        </div>`;
+    }
+
     // ── 매출 차트 ──
     let revHtml = '';
     if (revQ.length >= 2) {
-      const revList = [...revQ].reverse();  // 오래된 순 정렬
+      const revList = [...revQ].reverse();
       const maxAct  = Math.max(...revList.map(q => q.actual || 0));
       const maxEst  = Math.max(...revList.map(q => q.estimate || 0));
-      const maxVal  = Math.max(maxAct, maxEst);
+      const maxVal  = Math.max(maxAct, maxEst, 1);
 
-      const oldest = revList[0].actual;
-      const newest = revList[revList.length - 1].actual;
-      const revTrendLbl = newest > oldest * 1.05 ? '📈 증가'
-                        : newest < oldest * 0.95 ? '📉 감소' : '➡️ 보합';
-      const revTrendCls = newest > oldest * 1.05 ? 'rev-trend-up'
-                        : newest < oldest * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
+      const oldest = revList[0].actual, newest = revList[revList.length - 1].actual;
+      const revTrendLbl = newest > oldest * 1.05 ? '📈 증가' : newest < oldest * 0.95 ? '📉 감소' : '➡️ 보합';
+      const revTrendCls = newest > oldest * 1.05 ? 'rev-trend-up' : newest < oldest * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
 
       const revBars = revList.map(q => {
-        const actPct = maxVal > 0 ? Math.round((q.actual || 0) / maxVal * 100) : 0;
-        const estPct = (maxVal > 0 && q.estimate) ? Math.round(q.estimate / maxVal * 100) : null;
-        const badge  = beatBadge(q.actual, q.estimate);
-        return `
-          <div class="qc-col">
-            <div class="qc-bar-wrap">
-              <div class="qc-bar-actual" style="height:${actPct}%"></div>
-              ${estPct != null ? `<div class="qc-bar-est-line" style="bottom:${estPct}%"></div>` : ''}
-            </div>
-            <div class="qc-actual">${fmtRev(q.actual)}</div>
-            ${q.estimate != null ? `<div class="qc-estimate">${fmtRev(q.estimate)} 추정</div>` : '<div class="qc-estimate"></div>'}
-            ${badge ? `<div class="qc-beat-row">${badge}</div>` : '<div class="qc-beat-row"></div>'}
-            <div class="qc-period">${toQLabel(q.period)}</div>
-          </div>`;
+        const actPct = Math.round((q.actual || 0) / maxVal * 100);
+        const estPct = q.estimate != null ? Math.round(q.estimate / maxVal * 100) : null;
+        return makeBar(q, actPct, estPct, fmtRev, beatBadge(q.actual, q.estimate), false);
       }).join('');
 
       revHtml = `
@@ -766,43 +769,30 @@ function renderFundamental(details, stock) {
         </div>`;
     }
 
-    // ── EPS 차트 (미국주식) / 영업이익 차트 (한국주식) ──
+    // ── EPS (미국) / 영업이익 (한국) 차트 ──
     let secHtml = '';
     if (secQ.length >= 2) {
       const secList  = [...secQ].reverse();
       const actVals  = secList.map(q => q.actual).filter(v => v != null);
       const estVals  = secList.map(q => q.estimate).filter(v => v != null);
-      const maxSec   = Math.max(...[...actVals, ...estVals].map(Math.abs));
+      const maxSec   = Math.max(...[...actVals, ...estVals].map(Math.abs), 1);
       const fmtSec   = isKRW ? fmtRev : fmtEps;
       const secTitle = isKRW ? '📊 영업이익' : '📊 주당순이익 (EPS)';
 
       const secBars = secList.map(q => {
-        const actPct = maxSec > 0 && q.actual != null ? Math.round(Math.abs(q.actual) / maxSec * 100) : 0;
-        const estPct = maxSec > 0 && q.estimate != null ? Math.round(Math.abs(q.estimate) / maxSec * 100) : null;
+        const actPct = q.actual != null ? Math.round(Math.abs(q.actual) / maxSec * 100) : 0;
+        const estPct = q.estimate != null ? Math.round(Math.abs(q.estimate) / maxSec * 100) : null;
         const isNeg  = q.actual != null && q.actual < 0;
-        // EPS: use surprise_pct if available; OI/KRW: just beat/miss from actual vs estimate
         const badge  = (!isKRW && q.surprise_pct != null)
           ? `<span class="beat-badge ${q.surprise_pct >= 0 ? 'beat' : 'miss'}">${q.surprise_pct >= 0 ? '✅' : '❌'} ${q.surprise_pct >= 0 ? '+' : ''}${q.surprise_pct.toFixed(1)}%</span>`
           : beatBadge(q.actual, q.estimate);
-        return `
-          <div class="qc-col">
-            <div class="qc-bar-wrap">
-              <div class="qc-bar-actual ${isNeg ? 'neg' : ''}" style="height:${actPct}%"></div>
-              ${estPct != null ? `<div class="qc-bar-est-line" style="bottom:${estPct}%"></div>` : ''}
-            </div>
-            <div class="qc-actual">${fmtSec(q.actual)}</div>
-            ${q.estimate != null ? `<div class="qc-estimate">${fmtSec(q.estimate)} 추정</div>` : '<div class="qc-estimate"></div>'}
-            ${badge ? `<div class="qc-beat-row">${badge}</div>` : '<div class="qc-beat-row"></div>'}
-            <div class="qc-period">${toQLabel(q.period)}</div>
-          </div>`;
+        return makeBar(q, actPct, estPct, fmtSec, badge, isNeg);
       }).join('');
 
       const secActuals = secList.map(q => q.actual).filter(v => v != null);
       const secOld = secActuals[0], secNew = secActuals[secActuals.length - 1];
-      const secTrendLbl = secNew > secOld * 1.05 ? '📈 증가'
-                        : secNew < secOld * 0.95 ? '📉 감소' : '➡️ 보합';
-      const secTrendCls = secNew > secOld * 1.05 ? 'rev-trend-up'
-                        : secNew < secOld * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
+      const secTrendLbl = secNew > secOld * 1.05 ? '📈 증가' : secNew < secOld * 0.95 ? '📉 감소' : '➡️ 보합';
+      const secTrendCls = secNew > secOld * 1.05 ? 'rev-trend-up' : secNew < secOld * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
 
       secHtml = `
         <div class="qc-section qc-section--eps">
@@ -817,8 +807,10 @@ function renderFundamental(details, stock) {
     html += `
       <div class="quarterly-card">
         <div class="qc-header">📋 분기 실적 추이</div>
-        ${revHtml}
-        ${secHtml}
+        <div class="qc-sections-wrap">
+          ${revHtml}
+          ${secHtml}
+        </div>
       </div>`;
   }
 
