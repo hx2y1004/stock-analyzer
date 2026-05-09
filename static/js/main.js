@@ -1375,39 +1375,43 @@ function renderMainChart(data) {
   el.innerHTML = '';
   const chart = makeChart(el, getChartHeights().main);
 
+  // 보조 지표 공통 옵션 — 점선(priceLineVisible) 제거
+  const indOpt = { priceLineVisible: false, lastValueVisible: false };
+
   if (chartType === 'candlestick') {
     const candle = chart.addCandlestickSeries({
       upColor: '#3fb950', downColor: '#f85149',
       borderUpColor: '#3fb950', borderDownColor: '#f85149',
       wickUpColor: '#3fb950', wickDownColor: '#f85149',
+      priceLineVisible: false,
     });
     candle.setData(data.dates.map((d, i) => ({
       time: d, open: data.open[i], high: data.high[i],
       low: data.low[i], close: data.close[i],
     })).filter(d => d.close != null));
   } else {
-    const line = chart.addLineSeries({ color: '#58a6ff', lineWidth: 2 });
+    const line = chart.addLineSeries({ color: '#58a6ff', lineWidth: 2, priceLineVisible: false });
     line.setData(toSeries(data.dates, data.close));
   }
 
   if (indicators.bb) {
-    chart.addLineSeries({ color: 'rgba(188,140,255,0.7)', lineWidth: 1, lineStyle: 2 })
+    chart.addLineSeries({ ...indOpt, color: 'rgba(188,140,255,0.7)', lineWidth: 1, lineStyle: 2 })
       .setData(toSeries(data.dates, data.bb_upper));
-    chart.addLineSeries({ color: 'rgba(188,140,255,0.4)', lineWidth: 1, lineStyle: 2 })
+    chart.addLineSeries({ ...indOpt, color: 'rgba(188,140,255,0.4)', lineWidth: 1, lineStyle: 2 })
       .setData(toSeries(data.dates, data.bb_mid));
-    chart.addLineSeries({ color: 'rgba(188,140,255,0.7)', lineWidth: 1, lineStyle: 2 })
+    chart.addLineSeries({ ...indOpt, color: 'rgba(188,140,255,0.7)', lineWidth: 1, lineStyle: 2 })
       .setData(toSeries(data.dates, data.bb_lower));
   }
 
   if (indicators.ma) {
     [['ma5','#f0a500'],['ma20','#58a6ff'],['ma60','#3fb950'],['ma120','#f85149']].forEach(([key, color]) => {
-      chart.addLineSeries({ color, lineWidth: 1 }).setData(toSeries(data.dates, data[key]));
+      chart.addLineSeries({ ...indOpt, color, lineWidth: 1 }).setData(toSeries(data.dates, data[key]));
     });
   }
 
   if (indicators.ichimoku) {
-    chart.addLineSeries({ color: '#f85149', lineWidth: 1 }).setData(toSeries(data.dates, data.tenkan));
-    chart.addLineSeries({ color: '#58a6ff', lineWidth: 1 }).setData(toSeries(data.dates, data.kijun));
+    chart.addLineSeries({ ...indOpt, color: '#f85149', lineWidth: 1 }).setData(toSeries(data.dates, data.tenkan));
+    chart.addLineSeries({ ...indOpt, color: '#58a6ff', lineWidth: 1 }).setData(toSeries(data.dates, data.kijun));
   }
   return chart;
 }
@@ -1417,15 +1421,15 @@ function renderRSIChart(data) {
   el.innerHTML = '';
   const chart = makeChart(el, getChartHeights().sub);
 
-  chart.addLineSeries({ color: '#bc8cff', lineWidth: 2 })
+  chart.addLineSeries({ color: '#bc8cff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.rsi));
 
   const validDates = data.dates.filter((_, i) => data.rsi[i] != null);
   if (validDates.length >= 2) {
     const first = validDates[0], last = validDates[validDates.length - 1];
-    chart.addLineSeries({ color: 'rgba(248,81,73,0.5)', lineWidth: 1, lineStyle: 2 })
+    chart.addLineSeries({ color: 'rgba(248,81,73,0.5)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false })
       .setData([{ time: first, value: 70 }, { time: last, value: 70 }]);
-    chart.addLineSeries({ color: 'rgba(63,185,80,0.5)', lineWidth: 1, lineStyle: 2 })
+    chart.addLineSeries({ color: 'rgba(63,185,80,0.5)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false })
       .setData([{ time: first, value: 30 }, { time: last, value: 30 }]);
   }
   return chart;
@@ -1436,9 +1440,9 @@ function renderMACDChart(data) {
   el.innerHTML = '';
   const chart = makeChart(el, getChartHeights().sub);
 
-  chart.addLineSeries({ color: '#58a6ff', lineWidth: 2 })
+  chart.addLineSeries({ color: '#58a6ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.macd));
-  chart.addLineSeries({ color: '#f0a500', lineWidth: 2 })
+  chart.addLineSeries({ color: '#f0a500', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.macd_signal));
   chart.addHistogramSeries({ priceFormat: { type: 'price' } })
     .setData(data.dates.map((d, i) => ({
