@@ -959,53 +959,85 @@ def analyze():
                             break
                         rev_by_period[str(idx)[:7]] = safe_float(val)
 
-            # 2. EPS + 추정치 from earnings_dates
-            rev_est_by_period = {}      # "YYYY-MM" → revenue_estimate
-            eps_raw = []
+            # 2. EPS 발표치 from quarterly_income_stmt (Diluted EPS / Basic EPS)
+            eps_act_by_period = {}   # "YYYY-MM" → actual_eps
+            if qf is not None and not qf.empty:
+                eps_inc_row = None
+                for key in ["Diluted EPS", "Basic EPS", "EPS"]:
+                    if key in qf.index:
+                        eps_inc_row = qf.loc[key]
+                        break
+                if eps_inc_row is not None:
+                    eps_inc = eps_inc_row.dropna().sort_index(ascending=False)
+                    for i, (idx, val) in enumerate(eps_inc.items()):
+                        if i >= 5:
+                            break
+                        eps_act_by_period[str(idx)[:7]] = safe_float(val)
+
+            # 3. EPS 추정치 + 매출 추정치 from earnings_dates
+            rev_est_by_period = {}   # "YYYY-MM" → revenue_estimate
+            eps_est_by_period = {}   # "YYYY-MM" → eps_estimate
+            eps_surp_by_period = {}  # "YYYY-MM" → surprise_pct
             try:
                 ed = stock.earnings_dates
                 if ed is not None and not ed.empty:
                     ed_s = ed.sort_index(ascending=False)
                     for i, (date, row) in enumerate(ed_s.iterrows()):
-                        if i >= 5:
+                        if i >= 8:
                             break
                         ts = pd.Timestamp(date)
                         period = (ts - pd.Timedelta(days=30)).strftime('%Y-%m')
                         eps_est = safe_float(row.get('EPS Estimate'))
-                        eps_act = safe_float(row.get('Reported EPS'))
+                        eps_rep = safe_float(row.get('Reported EPS'))
                         surp    = safe_float(row.get('Surprise(%)'))
                         rev_est = safe_float(row.get('Revenue Estimate'))
                         if rev_est:
                             rev_est_by_period[period] = rev_est
-                        eps_raw.append({
-                            "period":       period,
-                            "actual":       eps_act,
-                            "estimate":     eps_est,
-                            "surprise_pct": surp,
-                        })
+                        if eps_est is not None:
+                            eps_est_by_period[period] = eps_est
+                        if surp is not None:
+                            eps_surp_by_period[period] = surp
+                        # earnings_dates 발표치로 보완 (quarterly_income_stmt 미수록 분기)
+                        if eps_rep is not None and period not in eps_act_by_period:
+                            eps_act_by_period[period] = eps_rep
             except Exception:
                 pass
 
-            # 3. 매출 리스트 (추정치 매칭, 최신순)
+            # 4. 매출 리스트 (추정치 매칭, 최신순)
+            def _match_estimate(period, est_dict):
+                """period에 가장 가까운 추정치 반환 (±45일 허용)."""
+                v = est_dict.get(period)
+                if v is not None:
+                    return v
+                for p, e in est_dict.items():
+                    try:
+                        diff = abs((pd.to_datetime(p + '-01') -
+                                    pd.to_datetime(period + '-01')).days)
+                        if diff <= 45:
+                            return e
+                    except Exception:
+                        pass
+                return None
+
             for period, actual in sorted(rev_by_period.items(), reverse=True):
-                estimate = rev_est_by_period.get(period)
-                if not estimate:
-                    for p, e in rev_est_by_period.items():
-                        try:
-                            diff = abs((pd.to_datetime(p + '-01') -
-                                        pd.to_datetime(period + '-01')).days)
-                            if diff <= 45:
-                                estimate = e
-                                break
-                        except Exception:
-                            pass
                 revenue_quarters.append({
                     "period":   period,
                     "actual":   actual,
-                    "estimate": estimate,
+                    "estimate": _match_estimate(period, rev_est_by_period),
                 })
 
-            eps_quarters = eps_raw
+            # 5. EPS 리스트 (추정치·surprise 매칭, 최신순)
+            for period, actual in sorted(eps_act_by_period.items(), reverse=True):
+                estimate = _match_estimate(period, eps_est_by_period)
+                surp     = eps_surp_by_period.get(period)
+                if surp is None and actual is not None and estimate is not None and estimate != 0:
+                    surp = round((actual - estimate) / abs(estimate) * 100, 1)
+                eps_quarters.append({
+                    "period":       period,
+                    "actual":       actual,
+                    "estimate":     estimate,
+                    "surprise_pct": surp,
+                })
 
         except Exception as e:
             app.logger.error(f"quarter_results fetch: {e}")
