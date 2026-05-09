@@ -1064,7 +1064,7 @@ function renderAnalysts(analysts, stock) {
 
   // 타이틀 동적 변경
   const titleEl = document.getElementById('analystCardTitle');
-  if (titleEl) titleEl.textContent = isKRW ? '국내 애널리스트 의견' : '애널리스트 의견';
+  if (titleEl) titleEl.textContent = '애널리스트 의견';
 
   if (!analysts) {
     document.getElementById('analystConsensus').innerHTML = '<p class="no-data">애널리스트 데이터가 없습니다.</p>';
