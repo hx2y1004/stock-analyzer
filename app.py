@@ -334,6 +334,140 @@ GRADE_SCORE = {
     "sell": 1, "strong sell": 1, "reduce": 1,
 }
 
+def fetch_kr_analysts(code):
+    """네이버 금융에서 국내 증권사 애널리스트 데이터 수집."""
+    hdrs = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Referer': 'https://finance.naver.com/',
+    }
+    targets = []
+    summary = {}
+
+    # ── 1. 네이버 모바일 API → 컨센서스 요약 ───────────────────────────
+    try:
+        r = requests.get(
+            f"https://m.stock.naver.com/api/stock/{code}/investment",
+            headers={**hdrs, 'Referer': 'https://m.stock.naver.com/'},
+            timeout=8,
+        )
+        if r.status_code == 200:
+            d = r.json()
+            tp = d.get("targetPrice") or {}
+            cs = d.get("consensus") or d.get("investmentOpinion") or {}
+            # 목표주가 요약
+            mean_p = tp.get("targetPrice") or tp.get("mean")
+            if mean_p:
+                summary["mean"] = safe_float(mean_p)
+                summary["high"] = safe_float(tp.get("high") or tp.get("max"))
+                summary["low"]  = safe_float(tp.get("low") or tp.get("min"))
+                cnt = tp.get("numberOfAnalystOpinions") or tp.get("analystCount") or tp.get("count")
+                if cnt:
+                    summary["num_analysts"] = int(cnt)
+            # 의견 비율 → 컨센서스
+            sb = int(cs.get("strongBuy", 0) or cs.get("strongbuy", 0) or 0)
+            b  = int(cs.get("buy", 0) or 0)
+            h  = int(cs.get("hold", 0) or cs.get("neutral", 0) or 0)
+            se = int(cs.get("sell", 0) or 0)
+            ss = int(cs.get("strongSell", 0) or cs.get("strongsell", 0) or 0)
+            total = sb + b + h + se + ss
+            if total > 0:
+                buy_r = (sb + b) / total
+                sell_r = (se + ss) / total
+                if buy_r >= 0.6:
+                    summary["recommendation"] = "buy" if buy_r < 0.8 else "strong_buy"
+                elif sell_r >= 0.4:
+                    summary["recommendation"] = "sell"
+                else:
+                    summary["recommendation"] = "hold"
+                summary.setdefault("num_analysts", total)
+    except Exception as e:
+        app.logger.warning(f"Naver mobile API: {e}")
+
+    # ── 2. 네이버 리서치 리포트 목록 → 증권사별 목표가 ─────────────────
+    try:
+        from bs4 import BeautifulSoup as _BS
+        r2 = requests.get(
+            f"https://finance.naver.com/research/company_list.naver?searchType=itemCode&itemCode={code}&page=1",
+            headers=hdrs, timeout=12,
+        )
+        r2.encoding = 'euc-kr'
+        soup = _BS(r2.text, 'html.parser')
+        table = soup.find('table', class_='type_1')
+        if table:
+            GRADE_MAP = {
+                '강력매수': 5, 'Strong Buy': 5,
+                '매수': 4, 'Buy': 4, 'BUY': 4, 'Outperform': 4,
+                '시장수익률상회': 4, 'Overweight': 4, '비중확대': 4,
+                '중립': 3, 'Hold': 3, 'Neutral': 3,
+                '시장수익률': 3, 'Market Perform': 3, '보유': 3,
+                '비중축소': 2, 'Underweight': 2, 'Underperform': 2,
+                '매도': 1, 'Sell': 1, 'SELL': 1,
+            }
+            seen = set()
+            for row in table.find_all('tr'):
+                cells = row.find_all('td')
+                if len(cells) < 4:
+                    continue
+                title_td = row.find('td', class_='title')
+                firm_td  = row.find('td', class_='company')
+                date_td  = row.find('td', class_='date')
+                if not title_td or not firm_td:
+                    continue
+                title = title_td.get_text(strip=True)
+                firm  = firm_td.get_text(strip=True)
+                date  = date_td.get_text(strip=True) if date_td else ''
+                if not firm or firm in seen:
+                    continue
+                # 목표가 파싱 (숫자 셀)
+                target_price = None
+                for cell in cells:
+                    raw = cell.get_text(strip=True).replace(',', '')
+                    try:
+                        v = float(raw)
+                        if 100 <= v <= 100_000_000:
+                            target_price = v
+                            break
+                    except Exception:
+                        pass
+                # 의견 추출 (긴 키워드 우선)
+                grade = '매수'
+                for kw in sorted(GRADE_MAP, key=len, reverse=True):
+                    if kw in title:
+                        grade = kw
+                        break
+                score = GRADE_MAP.get(grade, 3)
+                seen.add(firm)
+                targets.append({
+                    'firm': firm, 'grade': grade,
+                    'target': target_price, 'prior_target': None,
+                    'action': '', 'date': date, 'score': score,
+                })
+                if len(targets) >= 6:
+                    break
+    except ImportError:
+        app.logger.warning("beautifulsoup4 not installed; skipping HTML parse")
+    except Exception as e:
+        app.logger.error(f"fetch_kr_analysts HTML: {e}")
+
+    # ── summary 보완 (모바일 API 미제공 시) ────────────────────────────
+    if targets and not summary.get("mean"):
+        prices = [t['target'] for t in targets if t['target']]
+        if prices:
+            summary['mean'] = round(sum(prices) / len(prices))
+            summary['high'] = max(prices)
+            summary['low']  = min(prices)
+        avg_sc = sum(t['score'] for t in targets) / len(targets)
+        summary['recommendation'] = (
+            'strong_buy' if avg_sc >= 4.5 else
+            'buy'        if avg_sc >= 3.5 else
+            'sell'       if avg_sc <  2.5 else 'hold'
+        )
+        summary.setdefault('num_analysts', len(targets))
+
+    return {"targets": targets, "summary": summary}
+
+
 def fetch_analysts(stock, info):
     try:
         ud = stock.upgrades_downgrades
@@ -821,8 +955,14 @@ def analyze():
         stock_data["return_3m"]  = calc_return(63)
         stock_data["return_1y"]  = calc_return(252)
 
-        news_data       = fetch_news(stock)
-        analyst_data    = fetch_analysts(stock, info)
+        news_data    = fetch_news(stock)
+        # 한국 주식(.KS/.KQ)이면 네이버 금융, 아니면 yfinance 애널리스트 데이터
+        is_kr_stock  = ticker.endswith('.KS') or ticker.endswith('.KQ')
+        if is_kr_stock:
+            kr_code      = ticker.split('.')[0]
+            analyst_data = fetch_kr_analysts(kr_code)
+        else:
+            analyst_data = fetch_analysts(stock, info)
         company_overview = fetch_company_overview(
             ticker, stock_data["name"], info,
             stock_data.get("revenue_quarters", []),
