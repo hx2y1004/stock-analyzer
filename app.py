@@ -335,135 +335,131 @@ GRADE_SCORE = {
 }
 
 def fetch_kr_analysts(code):
-    """네이버 금융에서 국내 증권사 애널리스트 데이터 수집."""
+    """네이버 금융 리서치 리포트에서 국내 증권사 목표가·투자의견 수집.
+
+    전략:
+      1) 리서치 목록 페이지에서 nid(리포트ID) / 증권사 / 날짜 수집 (증권사 중복 제거)
+      2) 개별 리포트 페이지를 ThreadPoolExecutor 로 병렬 요청
+         → view_info_1 div 에서 em.money(목표가) + em.coment(투자의견) 파싱
+      3) 수집 결과로 컨센서스 요약 계산
+    """
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    try:
+        from bs4 import BeautifulSoup as _BS
+    except ImportError:
+        app.logger.warning("beautifulsoup4 not installed")
+        return {"targets": [], "summary": {}}
+
+    GRADE_MAP = {
+        '강력매수': 5, '매수': 4, '비중확대': 4, 'Outperform': 4,
+        '중립': 3, '보유': 3, '시장수익률': 3,
+        '비중축소': 2, '매도': 1,
+    }
     hdrs = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept-Language': 'ko-KR,ko;q=0.9',
         'Referer': 'https://finance.naver.com/',
     }
-    targets = []
-    summary = {}
 
-    # ── 1. 네이버 모바일 API → 컨센서스 요약 ───────────────────────────
+    # ── 1. 리서치 목록 파싱 → (nid, 증권사, 날짜) ────────────────────
+    items = []   # [(nid, firm, date)]
     try:
         r = requests.get(
-            f"https://m.stock.naver.com/api/stock/{code}/investment",
-            headers={**hdrs, 'Referer': 'https://m.stock.naver.com/'},
-            timeout=8,
+            f"https://finance.naver.com/research/company_list.naver"
+            f"?searchType=itemCode&itemCode={code}&page=1",
+            headers=hdrs, timeout=10,
         )
-        if r.status_code == 200:
-            d = r.json()
-            tp = d.get("targetPrice") or {}
-            cs = d.get("consensus") or d.get("investmentOpinion") or {}
-            # 목표주가 요약
-            mean_p = tp.get("targetPrice") or tp.get("mean")
-            if mean_p:
-                summary["mean"] = safe_float(mean_p)
-                summary["high"] = safe_float(tp.get("high") or tp.get("max"))
-                summary["low"]  = safe_float(tp.get("low") or tp.get("min"))
-                cnt = tp.get("numberOfAnalystOpinions") or tp.get("analystCount") or tp.get("count")
-                if cnt:
-                    summary["num_analysts"] = int(cnt)
-            # 의견 비율 → 컨센서스
-            sb = int(cs.get("strongBuy", 0) or cs.get("strongbuy", 0) or 0)
-            b  = int(cs.get("buy", 0) or 0)
-            h  = int(cs.get("hold", 0) or cs.get("neutral", 0) or 0)
-            se = int(cs.get("sell", 0) or 0)
-            ss = int(cs.get("strongSell", 0) or cs.get("strongsell", 0) or 0)
-            total = sb + b + h + se + ss
-            if total > 0:
-                buy_r = (sb + b) / total
-                sell_r = (se + ss) / total
-                if buy_r >= 0.6:
-                    summary["recommendation"] = "buy" if buy_r < 0.8 else "strong_buy"
-                elif sell_r >= 0.4:
-                    summary["recommendation"] = "sell"
-                else:
-                    summary["recommendation"] = "hold"
-                summary.setdefault("num_analysts", total)
-    except Exception as e:
-        app.logger.warning(f"Naver mobile API: {e}")
-
-    # ── 2. 네이버 리서치 리포트 목록 → 증권사별 목표가 ─────────────────
-    try:
-        from bs4 import BeautifulSoup as _BS
-        r2 = requests.get(
-            f"https://finance.naver.com/research/company_list.naver?searchType=itemCode&itemCode={code}&page=1",
-            headers=hdrs, timeout=12,
-        )
-        r2.encoding = 'euc-kr'
-        soup = _BS(r2.text, 'html.parser')
+        soup = _BS(r.content, 'html.parser', from_encoding='euc-kr')
         table = soup.find('table', class_='type_1')
         if table:
-            GRADE_MAP = {
-                '강력매수': 5, 'Strong Buy': 5,
-                '매수': 4, 'Buy': 4, 'BUY': 4, 'Outperform': 4,
-                '시장수익률상회': 4, 'Overweight': 4, '비중확대': 4,
-                '중립': 3, 'Hold': 3, 'Neutral': 3,
-                '시장수익률': 3, 'Market Perform': 3, '보유': 3,
-                '비중축소': 2, 'Underweight': 2, 'Underperform': 2,
-                '매도': 1, 'Sell': 1, 'SELL': 1,
-            }
-            seen = set()
+            seen_firms = set()
             for row in table.find_all('tr'):
                 cells = row.find_all('td')
-                if len(cells) < 4:
+                if len(cells) < 5:
                     continue
-                title_td = row.find('td', class_='title')
-                firm_td  = row.find('td', class_='company')
-                date_td  = row.find('td', class_='date')
-                if not title_td or not firm_td:
+                # 구조: [종목명, 제목, 증권사, pdf, 날짜, 조회수]
+                a_tag = cells[1].find('a')
+                if not a_tag:
                     continue
-                title = title_td.get_text(strip=True)
-                firm  = firm_td.get_text(strip=True)
-                date  = date_td.get_text(strip=True) if date_td else ''
-                if not firm or firm in seen:
+                href = a_tag.get('href', '')
+                m = re.search(r'nid=(\d+)', href)
+                if not m:
                     continue
-                # 목표가 파싱 (숫자 셀)
-                target_price = None
-                for cell in cells:
-                    raw = cell.get_text(strip=True).replace(',', '')
-                    try:
-                        v = float(raw)
-                        if 100 <= v <= 100_000_000:
-                            target_price = v
-                            break
-                    except Exception:
-                        pass
-                # 의견 추출 (긴 키워드 우선)
-                grade = '매수'
-                for kw in sorted(GRADE_MAP, key=len, reverse=True):
-                    if kw in title:
-                        grade = kw
-                        break
-                score = GRADE_MAP.get(grade, 3)
-                seen.add(firm)
-                targets.append({
-                    'firm': firm, 'grade': grade,
-                    'target': target_price, 'prior_target': None,
-                    'action': '', 'date': date, 'score': score,
-                })
-                if len(targets) >= 6:
+                nid  = m.group(1)
+                firm = cells[2].get_text(strip=True)
+                date = cells[4].get_text(strip=True)
+                if not firm or firm in seen_firms:
+                    continue
+                seen_firms.add(firm)
+                items.append((nid, firm, date))
+                if len(items) >= 6:
                     break
-    except ImportError:
-        app.logger.warning("beautifulsoup4 not installed; skipping HTML parse")
     except Exception as e:
-        app.logger.error(f"fetch_kr_analysts HTML: {e}")
+        app.logger.error(f"KR analyst list fetch: {e}")
 
-    # ── summary 보완 (모바일 API 미제공 시) ────────────────────────────
-    if targets and not summary.get("mean"):
-        prices = [t['target'] for t in targets if t['target']]
-        if prices:
-            summary['mean'] = round(sum(prices) / len(prices))
-            summary['high'] = max(prices)
-            summary['low']  = min(prices)
+    if not items:
+        return {"targets": [], "summary": {}}
+
+    # ── 2. 개별 리포트 병렬 요청 → 목표가·투자의견 추출 ─────────────
+    def _fetch_detail(item):
+        nid, firm, date = item
+        try:
+            rd = requests.get(
+                f"https://finance.naver.com/research/company_read.naver?nid={nid}",
+                headers=hdrs, timeout=8,
+            )
+            s = _BS(rd.content, 'html.parser', from_encoding='euc-kr')
+            div = s.find('div', class_='view_info_1')
+            target_price, opinion = None, None
+            if div:
+                money = div.find('em', class_='money')
+                if money:
+                    strong = money.find('strong')
+                    if strong:
+                        try:
+                            target_price = float(strong.get_text(strip=True).replace(',', ''))
+                        except ValueError:
+                            pass
+                coment = div.find('em', class_='coment')
+                if coment:
+                    opinion = coment.get_text(strip=True)
+            return firm, date, target_price, opinion
+        except Exception:
+            return firm, date, None, None
+
+    with _TPE(max_workers=4) as ex:
+        details = list(ex.map(_fetch_detail, items))
+
+    # ── 3. 결과 정리 ──────────────────────────────────────────────────
+    targets = []
+    for firm, date, target_price, opinion in details:
+        grade = opinion if opinion in GRADE_MAP else '매수'
+        score = GRADE_MAP.get(grade, 4)
+        targets.append({
+            'firm':        firm,
+            'grade':       grade,
+            'target':      target_price,
+            'prior_target': None,
+            'action':      '',
+            'date':        date,
+            'score':       score,
+        })
+
+    # ── 4. 컨센서스 요약 계산 ─────────────────────────────────────────
+    summary = {}
+    prices = [t['target'] for t in targets if t['target']]
+    if prices:
+        summary['mean'] = round(sum(prices) / len(prices))
+        summary['high'] = max(prices)
+        summary['low']  = min(prices)
+    if targets:
         avg_sc = sum(t['score'] for t in targets) / len(targets)
         summary['recommendation'] = (
             'strong_buy' if avg_sc >= 4.5 else
             'buy'        if avg_sc >= 3.5 else
             'sell'       if avg_sc <  2.5 else 'hold'
         )
-        summary.setdefault('num_analysts', len(targets))
+        summary['num_analysts'] = len(targets)
 
     return {"targets": targets, "summary": summary}
 
