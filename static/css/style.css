@@ -1527,83 +1527,116 @@ body {
   color: var(--accent);
 }
 
-/* ── 분기 매출 차트 ── */
-.revenue-chart-card {
+/* ── 분기 실적 카드 ── */
+.quarterly-card {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 18px;
   margin-bottom: 12px;
 }
-.rev-header {
+.qc-header {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 14px;
+  color: var(--text);
+}
+.qc-section {
+  margin-bottom: 16px;
+}
+.qc-section--eps { margin-bottom: 0; }
+.qc-section-hd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
-.rev-title {
+.qc-section-title {
+  font-size: 13px;
   font-weight: 600;
-  font-size: 14px;
+  color: var(--text2);
 }
 .rev-trend {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 .rev-trend-up   { background: rgba(63,185,80,0.15); color: var(--green); }
 .rev-trend-down { background: rgba(248,81,73,0.12); color: var(--red);   }
 .rev-trend-flat { background: var(--bg3);           color: var(--text2); }
 
-.rev-bars {
+.qc-bars {
   display: flex;
+  gap: 6px;
   align-items: flex-end;
-  gap: 8px;
-  height: 120px;
-  padding-bottom: 0;
+  height: 140px;
 }
-.rev-bar-col {
+.qc-col {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   height: 100%;
 }
-.rev-bar-wrap {
+.qc-bar-wrap {
   flex: 1;
   width: 100%;
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: center;
 }
-.rev-bar {
-  width: 60%;
-  min-height: 4px;
+.qc-bar-actual {
+  width: 55%;
+  min-height: 3px;
   background: var(--accent);
   border-radius: 4px 4px 0 0;
-  opacity: 0.8;
+  opacity: 0.85;
   transition: height 0.4s ease;
 }
-.rev-val {
+.qc-bar-actual.neg {
+  background: var(--red);
+  opacity: 0.75;
+}
+.qc-bar-est-line {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: var(--text2);
+  opacity: 0.5;
+  border-top: 2px dashed var(--text2);
+}
+.qc-actual {
   font-size: 11px;
+  font-weight: 700;
   color: var(--text);
-  font-weight: 600;
-  margin-top: 4px;
+  margin-top: 5px;
   white-space: nowrap;
 }
-.rev-qoq-row {
-  height: 16px;
+.qc-estimate {
+  font-size: 10px;
+  color: var(--text2);
+  white-space: nowrap;
+  min-height: 14px;
+}
+.qc-beat-row {
+  min-height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.rev-qoq {
+.beat-badge {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  white-space: nowrap;
 }
-.rev-qoq.up   { color: var(--green); }
-.rev-qoq.down { color: var(--red);   }
-.rev-period {
+.beat-badge.beat { background: rgba(63,185,80,0.15); color: var(--green); }
+.beat-badge.miss { background: rgba(248,81,73,0.12); color: var(--red);   }
+.qc-period {
   font-size: 10px;
   color: var(--text2);
   margin-top: 2px;
