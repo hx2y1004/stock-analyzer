@@ -334,6 +334,56 @@ GRADE_SCORE = {
     "sell": 1, "strong sell": 1, "reduce": 1,
 }
 
+def fetch_kr_oi_estimates(krx_code):
+    """네이버 금융 분기 컨센서스 API에서 영업이익 추정치를 수집.
+
+    Returns:
+        dict: {"YYYY-MM": oi_in_krw (float), ...}
+    """
+    try:
+        url = f"https://m.stock.naver.com/api/stock/{krx_code}/finance/quarterly"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Referer": f"https://m.stock.naver.com/domestic/stock/{krx_code}/finance/quarterly",
+        }
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code != 200:
+            return {}
+        data = resp.json()
+        fi         = data.get("financeInfo", {})
+        title_list = fi.get("trTitleList", [])
+        row_list   = fi.get("rowList", [])
+
+        # 컨센서스(추정치) 컬럼만 — isConsensus == "Y"
+        est_cols = {t["key"]: t for t in title_list if t.get("isConsensus") == "Y"}
+        if not est_cols:
+            return {}
+
+        result = {}
+        for row in row_list:
+            if row.get("title") not in ("영업이익",):
+                continue
+            cols = row.get("columns", {})
+            for key in est_cols:
+                cell = cols.get(key, {})
+                val  = _clean_num(cell.get("value"))
+                if val is None:
+                    continue
+                # key 형식: "2025.09E" 또는 "2025.06" 등
+                m = re.match(r'(\d{4})\.(\d{2})', key)
+                if m:
+                    period = f"{m.group(1)}-{m.group(2)}"
+                    # 네이버는 억원 단위로 표시 → KRW 변환 (* 1e8)
+                    result[period] = val * 1e8
+        return result
+    except Exception:
+        return {}
+
+
 def fetch_kr_analysts(code):
     """네이버 금융 리서치 리포트에서 국내 증권사 목표가·투자의견 수집.
 
@@ -692,7 +742,7 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
     if revenue_quarters:
         lines = []
         for q in revenue_quarters:
-            v = q.get("value")
+            v = q.get("actual") or q.get("value")
             if v is None:
                 continue
             if is_krw:
@@ -962,6 +1012,47 @@ def analyze():
             revenue_quarters = []
             eps_quarters     = []
 
+        # ── 한국 주식 전용: 분기 영업이익 (발표치 + 추정치) ─────────────
+        oi_quarters = []
+        if is_korean:
+            try:
+                krx_code = ticker.split(".")[0]
+                # 발표치: quarterly_income_stmt["Operating Income"]
+                if qf is not None and not qf.empty:
+                    oi_row = None
+                    for key in ["Operating Income", "OperatingIncome", "EBIT"]:
+                        if key in qf.index:
+                            oi_row = qf.loc[key]
+                            break
+                    if oi_row is not None:
+                        oi_actuals = oi_row.dropna().sort_index(ascending=False)
+                        # 추정치: 네이버 분기 컨센서스
+                        oi_estimates = fetch_kr_oi_estimates(krx_code)
+                        for i, (idx, val) in enumerate(oi_actuals.items()):
+                            if i >= 5:
+                                break
+                            period  = str(idx)[:7]   # "YYYY-MM"
+                            actual  = safe_float(val)
+                            # 추정치 기간 매칭 (±45일 허용)
+                            estimate = oi_estimates.get(period)
+                            if estimate is None:
+                                for p, e in oi_estimates.items():
+                                    try:
+                                        diff = abs((pd.to_datetime(p + '-01') -
+                                                    pd.to_datetime(period + '-01')).days)
+                                        if diff <= 45:
+                                            estimate = e
+                                            break
+                                    except Exception:
+                                        pass
+                            oi_quarters.append({
+                                "period":   period,
+                                "actual":   actual,
+                                "estimate": estimate,
+                            })
+            except Exception as e:
+                app.logger.error(f"oi_quarters fetch: {e}")
+
         stock_data = {
             "ticker": ticker,
             "name": info.get("longName") or info.get("shortName") or ticker,
@@ -986,6 +1077,7 @@ def analyze():
             "business_summary": info.get("longBusinessSummary", ""),
             "revenue_quarters": revenue_quarters,
             "eps_quarters":     eps_quarters,
+            "oi_quarters":      oi_quarters,
         }
 
         def calc_return(days):
