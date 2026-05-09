@@ -675,63 +675,143 @@ function renderFundamental(details, stock) {
     }
   }
 
-  // ── 2. 분기 매출 추이 ──────────────────────────────────
-  const quarters = (stock && stock.revenue_quarters) ? stock.revenue_quarters : [];
-  if (quarters.length >= 2) {
-    const cur = (stock && stock.currency) || 'USD';
+  // ── 2. 분기 실적 추이 (매출 + EPS, 발표치 + 추정치) ─────────────────
+  const revQ = (stock && stock.revenue_quarters) ? stock.revenue_quarters : [];
+  const epsQ = (stock && stock.eps_quarters)     ? stock.eps_quarters     : [];
+  if (revQ.length >= 2 || epsQ.length >= 2) {
+    const cur   = (stock && stock.currency) || 'USD';
     const isKRW = cur === 'KRW';
 
-    // 수치 포맷: 조/억 (KRW) 또는 B/M (USD)
+    // period "YYYY-MM" → "Q? 'YY"
+    function toQLabel(p) {
+      if (!p) return p;
+      const [y, m] = p.split('-').map(Number);
+      const q = Math.ceil(m / 3);
+      return `Q${q} '${String(y).slice(2)}`;
+    }
+
+    // 매출 포맷
     function fmtRev(v) {
       if (v == null) return '—';
       if (isKRW) {
         if (Math.abs(v) >= 1e12) return (v / 1e12).toFixed(1) + '조';
-        if (Math.abs(v) >= 1e8)  return (v / 1e8).toFixed(0) + '억';
+        if (Math.abs(v) >= 1e8)  return Math.round(v / 1e8) + '억';
         return v.toLocaleString('ko-KR');
-      } else {
-        if (Math.abs(v) >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B';
-        if (Math.abs(v) >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
-        return '$' + v.toLocaleString();
       }
+      if (Math.abs(v) >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B';
+      if (Math.abs(v) >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
+      return '$' + v.toLocaleString();
     }
 
-    // 최신순 → 오래된 순으로 뒤집어서 표시 (왼쪽=과거, 오른쪽=최근)
-    const revList = [...quarters].reverse();
-    const maxVal  = Math.max(...revList.map(q => q.value || 0));
+    // EPS 포맷
+    function fmtEps(v) {
+      if (v == null) return '—';
+      const prefix = isKRW ? '' : '$';
+      return prefix + Number(v).toFixed(isKRW ? 0 : 2);
+    }
 
-    // 전체 추세 판단 (가장 오래된 vs 가장 최신)
-    const oldest = revList[0].value;
-    const newest = revList[revList.length - 1].value;
-    const trendLabel = newest > oldest * 1.05 ? '📈 증가 추세'
-                     : newest < oldest * 0.95 ? '📉 감소 추세'
-                     : '➡️ 보합';
-    const trendCls   = newest > oldest * 1.05 ? 'rev-trend-up'
-                     : newest < oldest * 0.95 ? 'rev-trend-down'
-                     : 'rev-trend-flat';
+    // beat/miss 뱃지
+    function beatBadge(actual, estimate) {
+      if (actual == null || estimate == null || estimate === 0) return '';
+      const diff = ((actual - estimate) / Math.abs(estimate) * 100).toFixed(1);
+      const isBeat = parseFloat(diff) >= 0;
+      const sign   = isBeat ? '+' : '';
+      return `<span class="beat-badge ${isBeat ? 'beat' : 'miss'}">${isBeat ? '✅' : '❌'} ${sign}${diff}%</span>`;
+    }
 
-    const bars = revList.map((q, i) => {
-      const pct  = maxVal > 0 ? Math.round((q.value / maxVal) * 100) : 0;
-      const prev = i > 0 ? revList[i - 1].value : null;
-      const qoq  = prev && prev > 0 ? ((q.value - prev) / prev * 100).toFixed(1) : null;
-      const qoqStr = qoq != null ? `<span class="rev-qoq ${parseFloat(qoq) >= 0 ? 'up' : 'down'}">${parseFloat(qoq) >= 0 ? '+' : ''}${qoq}%</span>` : '';
-      return `
-        <div class="rev-bar-col">
-          <div class="rev-bar-wrap">
-            <div class="rev-bar" style="height:${pct}%"></div>
+    // ── 매출 차트 ──
+    let revHtml = '';
+    if (revQ.length >= 2) {
+      const revList = [...revQ].reverse();  // 오래된 순 정렬
+      const maxAct  = Math.max(...revList.map(q => q.actual || 0));
+      const maxEst  = Math.max(...revList.map(q => q.estimate || 0));
+      const maxVal  = Math.max(maxAct, maxEst);
+
+      const oldest = revList[0].actual;
+      const newest = revList[revList.length - 1].actual;
+      const revTrendLbl = newest > oldest * 1.05 ? '📈 증가'
+                        : newest < oldest * 0.95 ? '📉 감소' : '➡️ 보합';
+      const revTrendCls = newest > oldest * 1.05 ? 'rev-trend-up'
+                        : newest < oldest * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
+
+      const revBars = revList.map(q => {
+        const actPct = maxVal > 0 ? Math.round((q.actual || 0) / maxVal * 100) : 0;
+        const estPct = (maxVal > 0 && q.estimate) ? Math.round(q.estimate / maxVal * 100) : null;
+        const badge  = beatBadge(q.actual, q.estimate);
+        return `
+          <div class="qc-col">
+            <div class="qc-bar-wrap">
+              <div class="qc-bar-actual" style="height:${actPct}%"></div>
+              ${estPct != null ? `<div class="qc-bar-est-line" style="bottom:${estPct}%"></div>` : ''}
+            </div>
+            <div class="qc-actual">${fmtRev(q.actual)}</div>
+            ${q.estimate != null ? `<div class="qc-estimate">${fmtRev(q.estimate)} 추정</div>` : '<div class="qc-estimate"></div>'}
+            ${badge ? `<div class="qc-beat-row">${badge}</div>` : '<div class="qc-beat-row"></div>'}
+            <div class="qc-period">${toQLabel(q.period)}</div>
+          </div>`;
+      }).join('');
+
+      revHtml = `
+        <div class="qc-section">
+          <div class="qc-section-hd">
+            <span class="qc-section-title">💰 매출</span>
+            <span class="rev-trend ${revTrendCls}">${revTrendLbl}</span>
           </div>
-          <div class="rev-val">${fmtRev(q.value)}</div>
-          <div class="rev-qoq-row">${qoqStr}</div>
-          <div class="rev-period">${q.period}</div>
+          <div class="qc-bars">${revBars}</div>
         </div>`;
-    }).join('');
+    }
+
+    // ── EPS 차트 ──
+    let epsHtml = '';
+    if (epsQ.length >= 2) {
+      const epsList = [...epsQ].reverse();
+      const actVals = epsList.map(q => q.actual).filter(v => v != null);
+      const estVals = epsList.map(q => q.estimate).filter(v => v != null);
+      const maxEps  = Math.max(...[...actVals, ...estVals].map(Math.abs));
+
+      const epsBars = epsList.map(q => {
+        const actPct = maxEps > 0 && q.actual != null ? Math.round(Math.abs(q.actual) / maxEps * 100) : 0;
+        const estPct = maxEps > 0 && q.estimate != null ? Math.round(Math.abs(q.estimate) / maxEps * 100) : null;
+        const isNeg  = q.actual != null && q.actual < 0;
+        const badge  = q.surprise_pct != null
+          ? `<span class="beat-badge ${q.surprise_pct >= 0 ? 'beat' : 'miss'}">${q.surprise_pct >= 0 ? '✅' : '❌'} ${q.surprise_pct >= 0 ? '+' : ''}${q.surprise_pct.toFixed(1)}%</span>`
+          : beatBadge(q.actual, q.estimate);
+        return `
+          <div class="qc-col">
+            <div class="qc-bar-wrap">
+              <div class="qc-bar-actual ${isNeg ? 'neg' : ''}" style="height:${actPct}%"></div>
+              ${estPct != null ? `<div class="qc-bar-est-line" style="bottom:${estPct}%"></div>` : ''}
+            </div>
+            <div class="qc-actual">${fmtEps(q.actual)}</div>
+            ${q.estimate != null ? `<div class="qc-estimate">${fmtEps(q.estimate)} 추정</div>` : '<div class="qc-estimate"></div>'}
+            ${badge ? `<div class="qc-beat-row">${badge}</div>` : '<div class="qc-beat-row"></div>'}
+            <div class="qc-period">${toQLabel(q.period)}</div>
+          </div>`;
+      }).join('');
+
+      // EPS 추세
+      const epsActuals = epsList.map(q => q.actual).filter(v => v != null);
+      const epsOld = epsActuals[0], epsNew = epsActuals[epsActuals.length - 1];
+      const epsTrendLbl = epsNew > epsOld * 1.05 ? '📈 증가'
+                        : epsNew < epsOld * 0.95 ? '📉 감소' : '➡️ 보합';
+      const epsTrendCls = epsNew > epsOld * 1.05 ? 'rev-trend-up'
+                        : epsNew < epsOld * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
+
+      epsHtml = `
+        <div class="qc-section qc-section--eps">
+          <div class="qc-section-hd">
+            <span class="qc-section-title">📊 주당순이익 (EPS)</span>
+            <span class="rev-trend ${epsTrendCls}">${epsTrendLbl}</span>
+          </div>
+          <div class="qc-bars">${epsBars}</div>
+        </div>`;
+    }
 
     html += `
-      <div class="revenue-chart-card">
-        <div class="rev-header">
-          <span class="rev-title">💰 분기 매출 추이</span>
-          <span class="rev-trend ${trendCls}">${trendLabel}</span>
-        </div>
-        <div class="rev-bars">${bars}</div>
+      <div class="quarterly-card">
+        <div class="qc-header">📋 분기 실적 추이</div>
+        ${revHtml}
+        ${epsHtml}
       </div>`;
   }
 

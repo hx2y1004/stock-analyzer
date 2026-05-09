@@ -886,9 +886,11 @@ def analyze():
         year_high = safe_float(df["High"].tail(252).max())
         year_low = safe_float(df["Low"].tail(252).min())
 
-        # 분기 매출 데이터
+        # ── 분기 실적 (매출 + EPS, 발표치 + 추정치) ──────────────────────
         revenue_quarters = []
+        eps_quarters     = []
         try:
+            # 1. 실제 매출 from quarterly_income_stmt
             qf = None
             try:
                 qf = stock.quarterly_income_stmt
@@ -897,6 +899,7 @@ def analyze():
                     qf = stock.quarterly_financials
                 except Exception:
                     pass
+            rev_by_period = {}          # "YYYY-MM" → actual_revenue
             if qf is not None and not qf.empty:
                 rev_row = None
                 for key in ["Total Revenue", "Revenue", "TotalRevenue"]:
@@ -908,12 +911,60 @@ def analyze():
                     for i, (idx, val) in enumerate(rev.items()):
                         if i >= 5:
                             break
-                        revenue_quarters.append({
-                            "period": str(idx)[:7],
-                            "value": safe_float(val),
+                        rev_by_period[str(idx)[:7]] = safe_float(val)
+
+            # 2. EPS + 추정치 from earnings_dates
+            rev_est_by_period = {}      # "YYYY-MM" → revenue_estimate
+            eps_raw = []
+            try:
+                ed = stock.earnings_dates
+                if ed is not None and not ed.empty:
+                    ed_s = ed.sort_index(ascending=False)
+                    for i, (date, row) in enumerate(ed_s.iterrows()):
+                        if i >= 5:
+                            break
+                        ts = pd.Timestamp(date)
+                        period = (ts - pd.Timedelta(days=30)).strftime('%Y-%m')
+                        eps_est = safe_float(row.get('EPS Estimate'))
+                        eps_act = safe_float(row.get('Reported EPS'))
+                        surp    = safe_float(row.get('Surprise(%)'))
+                        rev_est = safe_float(row.get('Revenue Estimate'))
+                        if rev_est:
+                            rev_est_by_period[period] = rev_est
+                        eps_raw.append({
+                            "period":       period,
+                            "actual":       eps_act,
+                            "estimate":     eps_est,
+                            "surprise_pct": surp,
                         })
-        except Exception:
+            except Exception:
+                pass
+
+            # 3. 매출 리스트 (추정치 매칭, 최신순)
+            for period, actual in sorted(rev_by_period.items(), reverse=True):
+                estimate = rev_est_by_period.get(period)
+                if not estimate:
+                    for p, e in rev_est_by_period.items():
+                        try:
+                            diff = abs((pd.to_datetime(p + '-01') -
+                                        pd.to_datetime(period + '-01')).days)
+                            if diff <= 45:
+                                estimate = e
+                                break
+                        except Exception:
+                            pass
+                revenue_quarters.append({
+                    "period":   period,
+                    "actual":   actual,
+                    "estimate": estimate,
+                })
+
+            eps_quarters = eps_raw
+
+        except Exception as e:
+            app.logger.error(f"quarter_results fetch: {e}")
             revenue_quarters = []
+            eps_quarters     = []
 
         stock_data = {
             "ticker": ticker,
@@ -938,6 +989,7 @@ def analyze():
             "exchange": info.get("exchange"),
             "business_summary": info.get("longBusinessSummary", ""),
             "revenue_quarters": revenue_quarters,
+            "eps_quarters":     eps_quarters,
         }
 
         def calc_return(days):
