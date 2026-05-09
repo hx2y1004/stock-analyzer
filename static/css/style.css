@@ -1451,3 +1451,132 @@ body {
   .modal-box { padding: 28px 20px; }
 }
 
+/* ── 회사 소개 카드 ── */
+.company-overview-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.co-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.co-icon { font-size: 16px; }
+.co-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+.co-sector {
+  font-size: 12px;
+  color: var(--text2);
+  background: var(--bg3);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-left: auto;
+}
+.co-desc {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.7;
+  white-space: pre-line;
+}
+.co-more-btn {
+  margin-top: 8px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.co-more-btn:hover { opacity: 0.8; }
+
+/* ── 분기 매출 차트 ── */
+.revenue-chart-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.rev-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.rev-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.rev-trend {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+.rev-trend-up   { background: rgba(63,185,80,0.15); color: var(--green); }
+.rev-trend-down { background: rgba(248,81,73,0.12); color: var(--red);   }
+.rev-trend-flat { background: var(--bg3);           color: var(--text2); }
+
+.rev-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 120px;
+  padding-bottom: 0;
+}
+.rev-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+.rev-bar-wrap {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.rev-bar {
+  width: 60%;
+  min-height: 4px;
+  background: var(--accent);
+  border-radius: 4px 4px 0 0;
+  opacity: 0.8;
+  transition: height 0.4s ease;
+}
+.rev-val {
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 600;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+.rev-qoq-row {
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rev-qoq {
+  font-size: 10px;
+  font-weight: 600;
+}
+.rev-qoq.up   { color: var(--green); }
+.rev-qoq.down { color: var(--red);   }
+.rev-period {
+  font-size: 10px;
+  color: var(--text2);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+

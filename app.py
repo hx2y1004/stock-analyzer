@@ -654,6 +654,35 @@ def analyze():
         year_high = safe_float(df["High"].tail(252).max())
         year_low = safe_float(df["Low"].tail(252).min())
 
+        # 분기 매출 데이터
+        revenue_quarters = []
+        try:
+            qf = None
+            try:
+                qf = stock.quarterly_income_stmt
+            except Exception:
+                try:
+                    qf = stock.quarterly_financials
+                except Exception:
+                    pass
+            if qf is not None and not qf.empty:
+                rev_row = None
+                for key in ["Total Revenue", "Revenue", "TotalRevenue"]:
+                    if key in qf.index:
+                        rev_row = qf.loc[key]
+                        break
+                if rev_row is not None:
+                    rev = rev_row.dropna().sort_index(ascending=False)
+                    for i, (idx, val) in enumerate(rev.items()):
+                        if i >= 5:
+                            break
+                        revenue_quarters.append({
+                            "period": str(idx)[:7],
+                            "value": safe_float(val),
+                        })
+        except Exception:
+            revenue_quarters = []
+
         stock_data = {
             "ticker": ticker,
             "name": info.get("longName") or info.get("shortName") or ticker,
@@ -667,6 +696,7 @@ def analyze():
             "year_high": year_high,
             "year_low": year_low,
             "pe_ratio": safe_float(info.get("trailingPE")),
+            "forward_pe": safe_float(info.get("forwardPE")),
             "pb_ratio": safe_float(info.get("priceToBook")),
             "eps": safe_float(info.get("trailingEps")),
             "dividend_yield": _calc_dividend_yield(info, current_price),
@@ -674,6 +704,8 @@ def analyze():
             "industry": info.get("industry"),
             "currency": info.get("currency", "USD"),
             "exchange": info.get("exchange"),
+            "business_summary": info.get("longBusinessSummary", ""),
+            "revenue_quarters": revenue_quarters,
         }
 
         def calc_return(days):
