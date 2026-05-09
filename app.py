@@ -778,7 +778,11 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
 
 [주요사업] 이 회사가 주로 어떤 사업으로 돈을 버는지 핵심 매출원 3~5가지를 bullet 형태(• 로 시작)로 간결하게 작성하세요.
 
-[기업분석] 이 기업의 투자 관점에서의 강점, 리스크, 현재 시장 포지션 등을 3~5문장으로 인사이트 있게 작성하세요.
+[기업분석] 아래 4가지를 모두 포함해 5~7문장으로 작성하세요.
+1) 해당 산업({industry}) 내에서 이 기업이 차지하는 시장 지위·경쟁 포지션 (점유율, 경쟁사 대비 강점 등)
+2) 해당 산업의 중장기 전망 (성장 동인, 구조적 트렌드, 리스크 요인)
+3) 이 기업의 향후 전망 (실적 성장 가능성, 신사업·촉매제, 밸류에이션 관점)
+4) 투자 시 주의해야 할 핵심 리스크 1~2가지
 
 모든 답변은 한국어로만 작성하고 불필요한 서론 없이 바로 시작하세요."""
 
@@ -793,7 +797,7 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
                     {"role": "user",   "content": prompt},
                 ],
                 "temperature": 0.4,
-                "max_tokens": 600,
+                "max_tokens": 800,
             },
             timeout=20,
         )
