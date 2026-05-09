@@ -1458,6 +1458,7 @@ body {
   border-radius: var(--radius);
   padding: 16px 18px;
   margin-bottom: 12px;
+  align-self: start;   /* 반대편 카드 높이에 끌려가지 않도록 */
 }
 .co-header {
   display: flex;
@@ -1534,6 +1535,7 @@ body {
   border-radius: var(--radius);
   padding: 16px 18px;
   margin-bottom: 12px;
+  align-self: start;   /* 반대편 카드 높이에 끌려가지 않도록 */
 }
 .qc-header {
   font-weight: 700;
@@ -1601,12 +1603,11 @@ body {
 }
 .qc-bar-est-line {
   position: absolute;
-  left: 10%;
-  right: 10%;
-  height: 2px;
-  background: var(--text2);
-  opacity: 0.5;
-  border-top: 2px dashed var(--text2);
+  left: 5%;
+  right: 5%;
+  height: 0;
+  border-top: 2px dashed rgba(255, 210, 70, 0.85);
+  pointer-events: none;
 }
 .qc-actual {
   font-size: 11px;
