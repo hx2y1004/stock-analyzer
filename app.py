@@ -538,6 +538,104 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=N
     return "관련 뉴스: " + " / ".join(top)
 
 
+def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
+    """Groq으로 기업 소개·주요 사업·분석 인사이트를 한국어로 생성."""
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    is_krw = (currency == "KRW")
+    market = "한국" if is_krw else "미국"
+
+    # 기본 정보 구성
+    sector   = info.get("sector", "") or ""
+    industry = info.get("industry", "") or ""
+    mktcap   = info.get("marketCap")
+    pe       = info.get("trailingPE")
+    fwd_pe   = info.get("forwardPE")
+    eng_desc = (info.get("longBusinessSummary") or "")[:600]
+
+    # 매출 추이 텍스트
+    rev_ctx = ""
+    if revenue_quarters:
+        lines = []
+        for q in revenue_quarters:
+            v = q.get("value")
+            if v is None:
+                continue
+            if is_krw:
+                if abs(v) >= 1e12:
+                    fv = f"{v/1e12:.1f}조원"
+                elif abs(v) >= 1e8:
+                    fv = f"{v/1e8:.0f}억원"
+                else:
+                    fv = f"{v:,.0f}원"
+            else:
+                if abs(v) >= 1e9:
+                    fv = f"${v/1e9:.1f}B"
+                elif abs(v) >= 1e6:
+                    fv = f"${v/1e6:.0f}M"
+                else:
+                    fv = f"${v:,.0f}"
+            lines.append(f"{q['period']}: {fv}")
+        if lines:
+            rev_ctx = "\n분기 매출 (최신순): " + " / ".join(lines)
+
+    prompt = f"""당신은 {market} 주식 시장 전문 애널리스트입니다.
+아래 정보를 바탕으로 {name}({ticker})에 대해 한국어로 분석해 주세요.
+
+[기업 기본 정보]
+- 섹터/산업: {sector} / {industry}
+- 시가총액: {mktcap:,} {currency} (있을 경우)
+- PER: {pe} / 선행PER: {fwd_pe}{rev_ctx}
+- 영문 사업 개요: {eng_desc}
+
+아래 3가지 항목을 각각 작성해 주세요. 각 항목은 해당 레이블로 시작하세요.
+
+[기업소개] 이 회사가 어떤 회사인지 2~3문장으로 쉽고 명확하게 설명하세요. 한국 독자 기준으로 친숙하게 작성하세요.
+
+[주요사업] 이 회사가 주로 어떤 사업으로 돈을 버는지 핵심 매출원 3~5가지를 bullet 형태(• 로 시작)로 간결하게 작성하세요.
+
+[기업분석] 이 기업의 투자 관점에서의 강점, 리스크, 현재 시장 포지션 등을 3~5문장으로 인사이트 있게 작성하세요.
+
+모든 답변은 한국어로만 작성하고 불필요한 서론 없이 바로 시작하세요."""
+
+    try:
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": "당신은 한국어로 답변하는 주식 전문 애널리스트입니다."},
+                    {"role": "user",   "content": prompt},
+                ],
+                "temperature": 0.4,
+                "max_tokens": 600,
+            },
+            timeout=20,
+        )
+        data = resp.json()
+        if "choices" in data:
+            text = data["choices"][0]["message"]["content"].strip()
+            if text:
+                # 파싱: [기업소개], [주요사업], [기업분석] 섹션 분리
+                import re as _re
+                sections = {}
+                for key in ["기업소개", "주요사업", "기업분석"]:
+                    m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
+                    if m:
+                        sections[key] = m.group(1).strip()
+                if sections:
+                    return sections
+                return {"기업소개": text}
+    except Exception as e:
+        app.logger.error(f"fetch_company_overview error: {e}")
+    return None
+
+
 @app.route("/api/analyze", methods=["GET"])
 def analyze():
     ticker = request.args.get("ticker", "").strip().upper()
@@ -723,8 +821,15 @@ def analyze():
         stock_data["return_3m"]  = calc_return(63)
         stock_data["return_1y"]  = calc_return(252)
 
-        news_data    = fetch_news(stock)
-        analyst_data = fetch_analysts(stock, info)
+        news_data       = fetch_news(stock)
+        analyst_data    = fetch_analysts(stock, info)
+        company_overview = fetch_company_overview(
+            ticker, stock_data["name"], info,
+            stock_data.get("revenue_quarters", []),
+            stock_data.get("currency", "USD"),
+        )
+        if company_overview:
+            stock_data["company_overview"] = company_overview
         move_reason  = analyze_move_reason(
             ticker, stock_data["name"],
             stock_data.get("price_change_pct"), news_data,
