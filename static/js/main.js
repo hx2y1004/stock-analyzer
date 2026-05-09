@@ -1352,7 +1352,7 @@ function makeChart(el, height) {
     width,
     height,
     layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
-    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { visible: false } },
     crosshair: { mode: 1 },
     rightPriceScale: { borderColor: '#30363d' },
     timeScale: { borderColor: '#30363d', timeVisible: true },
