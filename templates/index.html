@@ -160,6 +160,7 @@
             <div class="metric-item"><div class="metric-label">RSI (14)</div><div id="rsiValue" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">볼린저밴드 위치</div><div id="bbPosition" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">PER</div><div id="peRatio" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label">선행PER</div><div id="forwardPeRatio" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">PBR</div><div id="pbRatio" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">EPS</div><div id="epsValue" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">배당수익률</div><div id="dividendYield" class="metric-value"></div></div>
@@ -191,7 +192,7 @@
     <!-- 하단 그리드: 애널리스트 + 뉴스 -->
     <div class="bottom-grid">
       <section class="card">
-        <h3 class="card-title">월가 애널리스트 의견</h3>
+        <h3 class="card-title" id="analystCardTitle">애널리스트 의견</h3>
         <div id="analystSection">
           <div id="analystConsensus" class="analyst-consensus"></div>
           <div id="analystTargets" class="analyst-targets"></div>

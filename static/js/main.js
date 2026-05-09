@@ -403,11 +403,11 @@ async function analyze() {
     renderStockInfo(data.stock);
     renderVerdict(data.analysis, data.stock);
     renderDetail(data.analysis.details || []);
-    renderFundamental(data.analysis.fundamental_details || []);
+    renderFundamental(data.analysis.fundamental_details || [], data.stock);
     renderMetrics(data.stock, data.analysis);
     renderPositionCard(data.position || null, data.stock);
     renderZones(data.analysis, data.stock);
-    renderAnalysts(data.analysts, data.stock.currency);
+    renderAnalysts(data.analysts, data.stock);
     renderPriceMoveBanner(data.stock, data.move_reason);
     renderNews(data.news);
 
@@ -491,6 +491,9 @@ function renderMetrics(stock, analysis) {
 
   document.getElementById('peRatio').textContent =
     stock.pe_ratio != null ? stock.pe_ratio.toFixed(1) + 'x' : '—';
+
+  document.getElementById('forwardPeRatio').textContent =
+    stock.forward_pe != null && stock.forward_pe > 0 ? stock.forward_pe.toFixed(1) + 'x' : '—';
 
   document.getElementById('pbRatio').textContent =
     stock.pb_ratio != null ? stock.pb_ratio.toFixed(2) + 'x' : '—';
@@ -619,8 +622,109 @@ function renderDetail(details) {
 }
 
 // ── 투자 판단 카드 ────────────────────────────────────────
-function renderFundamental(details) {
-  document.getElementById('fundamentalList').innerHTML = _buildCards(details);
+function renderFundamental(details, stock) {
+  const el = document.getElementById('fundamentalList');
+  let html = '';
+
+  // ── 1. 회사 소개 ──────────────────────────────────────
+  const summary = (stock && stock.business_summary) ? stock.business_summary.trim() : '';
+  if (summary) {
+    // 첫 2~3 문장만 표시 (최대 300자)
+    const sentences = summary.match(/[^.!?]+[.!?]+/g) || [summary];
+    const shortSummary = sentences.slice(0, 3).join(' ').slice(0, 320).trim();
+    const isLong = summary.length > shortSummary.length;
+    html += `
+      <div class="company-overview-card">
+        <div class="co-header">
+          <span class="co-icon">🏢</span>
+          <span class="co-title">회사 소개</span>
+          ${stock.sector ? `<span class="co-sector">${stock.sector}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
+        </div>
+        <p class="co-desc" id="coDescText">${shortSummary}${isLong ? '<span id="coDescMore">...</span>' : ''}</p>
+        ${isLong ? `<button class="co-more-btn" onclick="toggleCoDesc(${JSON.stringify(summary)})">더보기 ▼</button>` : ''}
+      </div>`;
+  }
+
+  // ── 2. 분기 매출 추이 ──────────────────────────────────
+  const quarters = (stock && stock.revenue_quarters) ? stock.revenue_quarters : [];
+  if (quarters.length >= 2) {
+    const cur = (stock && stock.currency) || 'USD';
+    const isKRW = cur === 'KRW';
+
+    // 수치 포맷: 조/억 (KRW) 또는 B/M (USD)
+    function fmtRev(v) {
+      if (v == null) return '—';
+      if (isKRW) {
+        if (Math.abs(v) >= 1e12) return (v / 1e12).toFixed(1) + '조';
+        if (Math.abs(v) >= 1e8)  return (v / 1e8).toFixed(0) + '억';
+        return v.toLocaleString('ko-KR');
+      } else {
+        if (Math.abs(v) >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B';
+        if (Math.abs(v) >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
+        return '$' + v.toLocaleString();
+      }
+    }
+
+    // 최신순 → 오래된 순으로 뒤집어서 표시 (왼쪽=과거, 오른쪽=최근)
+    const revList = [...quarters].reverse();
+    const maxVal  = Math.max(...revList.map(q => q.value || 0));
+
+    // 전체 추세 판단 (가장 오래된 vs 가장 최신)
+    const oldest = revList[0].value;
+    const newest = revList[revList.length - 1].value;
+    const trendLabel = newest > oldest * 1.05 ? '📈 증가 추세'
+                     : newest < oldest * 0.95 ? '📉 감소 추세'
+                     : '➡️ 보합';
+    const trendCls   = newest > oldest * 1.05 ? 'rev-trend-up'
+                     : newest < oldest * 0.95 ? 'rev-trend-down'
+                     : 'rev-trend-flat';
+
+    const bars = revList.map((q, i) => {
+      const pct  = maxVal > 0 ? Math.round((q.value / maxVal) * 100) : 0;
+      const prev = i > 0 ? revList[i - 1].value : null;
+      const qoq  = prev && prev > 0 ? ((q.value - prev) / prev * 100).toFixed(1) : null;
+      const qoqStr = qoq != null ? `<span class="rev-qoq ${parseFloat(qoq) >= 0 ? 'up' : 'down'}">${parseFloat(qoq) >= 0 ? '+' : ''}${qoq}%</span>` : '';
+      return `
+        <div class="rev-bar-col">
+          <div class="rev-bar-wrap">
+            <div class="rev-bar" style="height:${pct}%"></div>
+          </div>
+          <div class="rev-val">${fmtRev(q.value)}</div>
+          <div class="rev-qoq-row">${qoqStr}</div>
+          <div class="rev-period">${q.period}</div>
+        </div>`;
+    }).join('');
+
+    html += `
+      <div class="revenue-chart-card">
+        <div class="rev-header">
+          <span class="rev-title">💰 분기 매출 추이</span>
+          <span class="rev-trend ${trendCls}">${trendLabel}</span>
+        </div>
+        <div class="rev-bars">${bars}</div>
+      </div>`;
+  }
+
+  // ── 3. 기존 투자 판단 항목들 ──────────────────────────
+  html += _buildCards(details);
+
+  el.innerHTML = html;
+}
+
+function toggleCoDesc(fullText) {
+  const p   = document.getElementById('coDescText');
+  const btn = p ? p.parentElement.querySelector('.co-more-btn') : null;
+  if (!p) return;
+  if (p.dataset.expanded === '1') {
+    const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
+    p.innerHTML = sentences.slice(0, 3).join(' ').slice(0, 320) + '<span>...</span>';
+    p.dataset.expanded = '0';
+    if (btn) btn.textContent = '더보기 ▼';
+  } else {
+    p.innerHTML = fullText;
+    p.dataset.expanded = '1';
+    if (btn) btn.textContent = '접기 ▲';
+  }
 }
 
 // ── 매수/매도 구간 탭 ─────────────────────────────────────
@@ -954,7 +1058,14 @@ function renderSignalSummary(analysis) {
 }
 
 // ── 애널리스트 ────────────────────────────────────────
-function renderAnalysts(analysts, currency) {
+function renderAnalysts(analysts, stock) {
+  const currency = stock ? (stock.currency || 'USD') : 'USD';
+  const isKRW    = currency === 'KRW';
+
+  // 타이틀 동적 변경
+  const titleEl = document.getElementById('analystCardTitle');
+  if (titleEl) titleEl.textContent = isKRW ? '국내 애널리스트 의견' : '애널리스트 의견';
+
   if (!analysts) {
     document.getElementById('analystConsensus').innerHTML = '<p class="no-data">애널리스트 데이터가 없습니다.</p>';
     document.getElementById('analystTargets').innerHTML = '';
