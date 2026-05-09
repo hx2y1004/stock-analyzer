@@ -1025,52 +1025,72 @@ def analyze():
                             break
                         eps_act_by_period[str(idx)[:7]] = safe_float(val)
 
-            # 3. EPS 추정치 + 매출 추정치 from earnings_dates
+            # 3. EPS 추정치 + 매출 추정치 from earnings_dates / earnings_history
             rev_est_by_period = {}   # "YYYY-MM" → revenue_estimate
             eps_est_by_period = {}   # "YYYY-MM" → eps_estimate
             eps_surp_by_period = {}  # "YYYY-MM" → surprise_pct
+
+            def _get_col(r, *keys):
+                """컬럼명 변형 대응: 공백·대소문자 무시 fuzzy match"""
+                for k in keys:
+                    v = safe_float(r.get(k))
+                    if v is not None:
+                        return v
+                    for col in (r.index if hasattr(r, 'index') else []):
+                        if col.strip().lower() == k.strip().lower():
+                            return safe_float(r[col])
+                return None
+
+            def _earnings_period(ts):
+                """earnings 발표일 → 해당 분기 말 월 문자열 (YYYY-MM)"""
+                t = pd.Timestamp(ts)
+                # 발표일 기준 30일 전으로 분기 말 추정 (±45일 tolerance로 매칭)
+                return (t - pd.Timedelta(days=30)).strftime('%Y-%m')
+
+            # --- 소스 1: get_earnings_dates (Yahoo Finance 컨센서스) ---
             try:
-                # limit=20 으로 최대 5년치 데이터 요청
                 try:
                     ed = stock.get_earnings_dates(limit=20)
                 except Exception:
-                    ed = stock.earnings_dates
+                    ed = getattr(stock, 'earnings_dates', None)
 
                 if ed is not None and not ed.empty:
-                    ed_s = ed.sort_index(ascending=False)
-                    for date, row in ed_s.iterrows():
-                        ts = pd.Timestamp(date)
-                        # 발표일 기준으로 해당 분기 말 추정 (발표일 -30일 → 해당 분기 월)
-                        period = (ts - pd.Timedelta(days=30)).strftime('%Y-%m')
-
-                        # 컬럼명 변형 대응 (공백·대소문자)
-                        def _get(r, *keys):
-                            for k in keys:
-                                v = safe_float(r.get(k))
-                                if v is not None:
-                                    return v
-                                # pandas Series는 key가 없으면 None 반환 → 컬럼 직접 검색
-                                for col in r.index:
-                                    if col.strip().lower() == k.strip().lower():
-                                        return safe_float(r[col])
-                            return None
-
-                        eps_est = _get(row, 'EPS Estimate', 'epsestimate')
-                        eps_rep = _get(row, 'Reported EPS', 'epsactual')
-                        surp    = _get(row, 'Surprise(%)', 'epssurprisepct')
-                        rev_est = _get(row, 'Revenue Estimate', 'revenueestimate')
-
+                    for date, row in ed.sort_index(ascending=False).iterrows():
+                        period  = _earnings_period(date)
+                        eps_est = _get_col(row, 'EPS Estimate', 'epsestimate', 'eps estimate')
+                        eps_rep = _get_col(row, 'Reported EPS', 'epsactual', 'reported eps')
+                        surp    = _get_col(row, 'Surprise(%)', 'epssurprisepct', 'surprise(%)')
+                        rev_est = _get_col(row, 'Revenue Estimate', 'revenueestimate')
                         if rev_est:
                             rev_est_by_period[period] = rev_est
                         if eps_est is not None:
                             eps_est_by_period[period] = eps_est
                         if surp is not None:
                             eps_surp_by_period[period] = surp
-                        # earnings_dates 발표치로 보완 (quarterly_income_stmt 미수록 분기)
                         if eps_rep is not None and period not in eps_act_by_period:
                             eps_act_by_period[period] = eps_rep
             except Exception:
                 pass
+
+            # --- 소스 2: earnings_history (epsEstimate/epsActual 컬럼 직접 제공) ---
+            try:
+                eh = getattr(stock, 'earnings_history', None)
+                if eh is not None and not eh.empty:
+                    for date, row in eh.sort_index(ascending=False).iterrows():
+                        period  = _earnings_period(date)
+                        eps_est = _get_col(row, 'epsEstimate', 'eps_estimate', 'EPS Estimate')
+                        eps_rep = _get_col(row, 'epsActual', 'eps_actual', 'Reported EPS')
+                        surp_pct = _get_col(row, 'surprisePercent', 'surprise_percent', 'Surprise(%)')
+                        if eps_est is not None and period not in eps_est_by_period:
+                            eps_est_by_period[period] = eps_est
+                        if surp_pct is not None and period not in eps_surp_by_period:
+                            eps_surp_by_period[period] = round(surp_pct * 100, 1) if abs(surp_pct) < 5 else round(surp_pct, 1)
+                        if eps_rep is not None and period not in eps_act_by_period:
+                            eps_act_by_period[period] = eps_rep
+            except Exception:
+                pass
+
+            app.logger.info(f"[EPS est] {ticker}: est_periods={list(eps_est_by_period.keys())[:6]}")
 
             # 4. 매출 리스트 (추정치 매칭, 최신순)
             def _match_estimate(period, est_dict):
