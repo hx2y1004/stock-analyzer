@@ -724,13 +724,13 @@ function renderFundamental(details, stock) {
       return `<span class="beat-badge ${isBeat ? 'beat' : 'miss'}">${isBeat ? '✅' : '❌'} ${sign}${diff}%</span>`;
     }
 
-    // ── 공통: 바 1개 렌더링 (추정치는 배경 바로 표시) ──
+    // ── 공통: 바 1개 렌더링 (추정치 = 노란 점선 오버레이, 발표치 앞에 표시) ──
     function makeBar(q, actPct, estPct, fmtFn, badge, isNeg) {
       return `
         <div class="qc-col">
           <div class="qc-bar-wrap">
-            ${estPct != null ? `<div class="qc-bar-estimate" style="height:${estPct}%"></div>` : ''}
             <div class="qc-bar-actual${isNeg ? ' neg' : ''}" style="height:${actPct}%"></div>
+            ${estPct != null ? `<div class="qc-bar-estimate" style="height:${estPct}%"></div>` : ''}
           </div>
           <div class="qc-actual">${fmtFn(q.actual)}</div>
           ${q.estimate != null
