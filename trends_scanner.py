@@ -191,8 +191,8 @@ def scan_all(stock_db, market: str = "ALL",
              min_tech_momentum: int = 20,
              top_for_fund: int = 50,
              final_limit: int = 30,
-             max_workers_pass1: int = 8,
-             max_workers_pass2: int = 6,
+             max_workers_pass1: int = 4,   # 이전 8 → 4 (rate limit 회피)
+             max_workers_pass2: int = 3,   # 이전 6 → 3
              progress_cb=None) -> dict:
     """후보 종목 전체 스캔. 2-pass 로 펀더멘털 호출 최소화.
 
@@ -219,8 +219,8 @@ def scan_all(stock_db, market: str = "ALL",
     work_done = [0]   # 리스트로 감싸서 클로저에서 mutation
     def _bump():
         work_done[0] += 1
-        # 매 처리마다 콜백 (가벼운 동작이라 부담 없음)
-        if progress_cb:
+        # 매 5개마다 콜백 (락 경합 줄이기 위해)
+        if progress_cb and (work_done[0] % 3 == 0 or work_done[0] >= est_total):
             progress_cb(work_done[0], est_total)
 
     # ─ Pass 1 ─
