@@ -1,3 +1,5 @@
+// main.js build: pf-tabs-v2 (compact card mode)
+console.log('[StockAnalyzer] main.js loaded — build: pf-tabs-v2');
 let chartData = null;
 let chartType = 'candlestick';
 let indicators = { ma: true, bb: true, ichimoku: true };
