@@ -211,12 +211,12 @@ function _trendCardHTML(item) {
         <div class="pf-stock-name">${item.name || item.ticker}</div>
         <div class="pf-ticker">${item.ticker}</div>
       </div>
-      <div class="trend-compact-score score-${scoreColor}">
-        ${total}<span class="score-suffix">/100</span>
-      </div>
       <div class="trend-compact-price">
         <div class="pf-price-val">${fmtP(item.price, item.currency)}</div>
         <div class="trend-compact-chg pf-${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</div>
+      </div>
+      <div class="trend-compact-score score-${scoreColor}">
+        ${total}<span class="score-suffix">/100</span>
       </div>
     </div>
   </div>`;
