@@ -185,6 +185,25 @@ def index():
     return render_template("index.html")
 
 
+# ── PWA: Service Worker (루트 스코프로 서빙) ─────────────
+@app.route("/service-worker.js")
+def service_worker():
+    """SW를 루트(/)에서 서빙해야 전체 사이트 스코프를 가질 수 있음."""
+    from flask import send_from_directory, make_response
+    resp = make_response(send_from_directory("static", "service-worker.js"))
+    resp.headers["Content-Type"] = "application/javascript"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/manifest.json")
+def manifest():
+    """편의를 위해 루트에서도 manifest 접근 가능."""
+    from flask import send_from_directory
+    return send_from_directory("static", "manifest.json")
+
+
 # ── 종목 DB 로드 (앱 시작 시 1회) ─────────────────────
 import os
 
