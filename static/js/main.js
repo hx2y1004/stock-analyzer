@@ -263,8 +263,11 @@ function _setScanBtn(running, label) {
 
 async function _pollTrendsStatus() {
   try {
-    const resp = await fetch(`/api/trends/status?market=${trendsMarket}`);
+    // 캐시 버스터 (no-store 헤더와 이중 안전장치)
+    const url = `/api/trends/status?market=${trendsMarket}&_=${Date.now()}`;
+    const resp = await fetch(url, { cache: 'no-store' });
     const st = await resp.json();
+    console.log('[trends poll]', st.state, st.progress, '/', st.total);
 
     if (st.state === 'done' && st.result) {
       _renderTrendsResult(st.result, !!st.cached);
@@ -278,10 +281,12 @@ async function _pollTrendsStatus() {
       const prog  = st.progress || 0;
       const total = st.total || 0;
       const pct   = total ? Math.round(prog / total * 100) : 0;
+      const elapsed = st.started_at ? Math.floor((Date.now()/1000 - st.started_at)) : 0;
       cards.innerHTML = `
         <div class="pf-loading">
-          🔍 스캔 중... ${prog}/${total || '?'} (${pct}%)<br/>
-          <small style="color:var(--text2)">887 종목 분석에 1~3분 소요됩니다.</small>
+          🔍 스캔 중... <strong>${prog}/${total || '?'}</strong> (${pct}%) · ${elapsed}초 경과<br/>
+          <div class="trend-progress-bar"><div class="trend-progress-fill" style="width:${pct}%"></div></div>
+          <small style="color:var(--text2)">전체 종목 분석에 1~3분 소요됩니다.</small>
         </div>`;
       return;
     }
@@ -314,9 +319,9 @@ async function scanTrends() {
       _setScanBtn(false, '🔍 다시 스캔');
       return;
     }
-    // running → 폴링 시작
+    // running → 폴링 시작 (1.5초마다)
     if (_trendsPollTimer) clearInterval(_trendsPollTimer);
-    _trendsPollTimer = setInterval(_pollTrendsStatus, 3000);
+    _trendsPollTimer = setInterval(_pollTrendsStatus, 1500);
     _pollTrendsStatus();   // 즉시 한 번
   } catch (e) {
     cards.innerHTML = `<div class="pf-empty">오류: ${e.message || '서버 응답 오류'}</div>`;

@@ -1263,6 +1263,22 @@ body {
   line-height: 1.4; margin-top: 6px;
 }
 
+/* 진행률 바 (스캔 중) */
+.trend-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg3);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 8px 0 6px;
+}
+.trend-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), rgb(120, 200, 255));
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
 /* 추세 카드 종합 점수 */
 .trend-total-score {
   font-size: 18px; font-weight: 800;
