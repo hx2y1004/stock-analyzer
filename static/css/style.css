@@ -1584,6 +1584,13 @@ body {
   .portfolio-cards.collapsed { grid-template-columns: 1fr; }
   .portfolio-cards.collapsed > .pf-card:nth-child(n+3) { display: none; }
   .pf-tab { font-size: 13px; padding: 7px 10px; }
+
+  /* 추세 탭 툴바 - 작은 화면에서 버튼 압축 */
+  #pfTabTrends .portfolio-top { gap: 8px; flex-wrap: wrap; }
+  #pfTabTrends .market-btn { padding: 6px 10px; font-size: 11px; }
+  #pfTabTrends #scanBtn { padding: 6px 12px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+  /* 기준 박스: 모바일 글자 살짝 축소 */
+  .trends-criteria-box { font-size: 11px; padding: 6px 10px; }
 }
 @media (max-width: 480px) {
   .portfolio-cards { grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -1591,6 +1598,18 @@ body {
   .pf-card { padding: 10px 12px; }
   .pf-card-compact { padding: 8px 12px; }
   .modal-box { padding: 28px 20px; }
+
+  /* 추세 탭: 좁은 화면에서 토글/버튼을 세로 스택 */
+  #pfTabTrends .portfolio-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  #pfTabTrends .trends-market-toggle { width: 100%; }
+  #pfTabTrends .market-btn { flex: 1; padding: 8px 6px; font-size: 12px; }
+  #pfTabTrends #scanBtn { width: 100%; padding: 9px; font-size: 13px; }
+  /* 기준 박스: 가독성 위해 한 줄당 strong 강조만 보존 */
+  .trends-criteria-box { font-size: 10.5px; line-height: 1.5; }
 }
 
 /* ── 회사 소개 카드 ── */
