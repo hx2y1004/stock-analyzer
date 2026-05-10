@@ -4,7 +4,7 @@
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v7';
+const CACHE_VERSION = 'sa-v8';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -64,6 +64,12 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => caches.match(req))
     );
+    return;
+  }
+
+  // 폴링용 status 엔드포인트: 절대 캐싱 안 함 (실시간 진행률)
+  if (url.pathname === '/api/trends/status') {
+    event.respondWith(fetch(req));
     return;
   }
 

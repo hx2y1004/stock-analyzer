@@ -224,9 +224,14 @@ def api_trends_scan():
 @app.route("/api/trends/status")
 def api_trends_status():
     """진행 상태/캐시 결과 조회."""
-    from flask import request, jsonify
+    from flask import request, jsonify, make_response
     market = (request.args.get("market") or "ALL").upper()
-    return jsonify(_trends.get_status(market))
+    resp = make_response(jsonify(_trends.get_status(market)))
+    # 절대 캐시되지 않도록 (브라우저 + SW 둘 다)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 # 레거시: 캐시된 결과만 반환 (없으면 안내)

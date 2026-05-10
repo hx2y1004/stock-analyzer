@@ -211,18 +211,24 @@ def scan_all(stock_db, market: str = "ALL",
         candidates.append((sym, s.get("name", sym)))
 
     total_n = len(candidates)
-    log.info(f"[trends scan] market={market} candidates={total_n}")
+    # 전체 작업량 추정: pass1 + pass2 후보 수
+    est_total = total_n + min(top_for_fund, total_n)
+    log.info(f"[trends scan] market={market} candidates={total_n} est_total={est_total}")
     started = time.time()
+
+    work_done = [0]   # 리스트로 감싸서 클로저에서 mutation
+    def _bump():
+        work_done[0] += 1
+        # 매 처리마다 콜백 (가벼운 동작이라 부담 없음)
+        if progress_cb:
+            progress_cb(work_done[0], est_total)
 
     # ─ Pass 1 ─
     pass1 = []
-    done = 0
     with ThreadPoolExecutor(max_workers=max_workers_pass1) as ex:
         futs = {ex.submit(analyze_uptrend, sym, name, False): sym for sym, name in candidates}
         for fut in as_completed(futs):
-            done += 1
-            if progress_cb and done % 10 == 0:
-                progress_cb(done, total_n)
+            _bump()
             try:
                 r = fut.result(timeout=25)
                 if r:
@@ -243,12 +249,17 @@ def scan_all(stock_db, market: str = "ALL",
                 for r in fund_targets
             }
             for fut in as_completed(futs):
+                _bump()
                 try:
                     r = fut.result(timeout=20)
                     if r:
                         enriched[r["ticker"]] = r   # full result로 교체
                 except Exception:
                     pass
+
+    # 마지막 100% 보장
+    if progress_cb:
+        progress_cb(est_total, est_total)
 
     # 최종: 점수 ≥ 기준만 + 정렬 + 컷
     final = [r for r in enriched.values()
