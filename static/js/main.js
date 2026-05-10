@@ -239,6 +239,9 @@ let _trendsPollTimer = null;
 let _trendsAllItems  = [];      // 전체 결과 (최대 30개)
 let _trendsShown     = 0;       // 현재 화면에 표시된 개수
 let _trendsMeta      = null;    // 마지막 응답 메타 정보
+let _trendsStartTime = null;    // 클라이언트 측 스캔 시작 시각
+let _trendsLastProgress = -1;   // 마지막 진행률 (정체 감지용)
+let _trendsStallCount   = 0;    // 같은 진행률이 몇 번 연속
 
 const _TRENDS_PAGE_SIZE = 10;
 
@@ -333,12 +336,23 @@ async function _pollTrendsStatus() {
       const prog  = st.progress || 0;
       const total = st.total || 0;
       const pct   = total ? Math.round(prog / total * 100) : 0;
-      const elapsed = st.started_at ? Math.floor((Date.now()/1000 - st.started_at)) : 0;
+      // 경과 시간은 클라이언트에서 추적 (서버-클라이언트 시계 차이 무시)
+      const elapsed = _trendsStartTime ? Math.floor((Date.now() - _trendsStartTime) / 1000) : 0;
+
+      // 정체 감지: 같은 progress가 5회 연속이면 경고
+      if (prog === _trendsLastProgress) _trendsStallCount++;
+      else { _trendsLastProgress = prog; _trendsStallCount = 0; }
+
+      const stallWarn = _trendsStallCount >= 5
+        ? `<div style="color:var(--red);font-size:11px;margin-top:4px">⚠️ 진행이 느려요 (Yahoo Finance 응답 지연). 잠시만 기다려주세요...</div>`
+        : '';
+
       cards.innerHTML = `
         <div class="pf-loading">
           🔍 스캔 중... <strong>${prog}/${total || '?'}</strong> (${pct}%) · ${elapsed}초 경과<br/>
           <div class="trend-progress-bar"><div class="trend-progress-fill" style="width:${pct}%"></div></div>
-          <small style="color:var(--text2)">전체 종목 분석에 1~3분 소요됩니다.</small>
+          <small style="color:var(--text2)">전체 종목 분석에 1~5분 소요됩니다.</small>
+          ${stallWarn}
         </div>`;
       return;
     }
@@ -359,6 +373,11 @@ async function scanTrends() {
   footer.classList.add('hidden');
   cards.innerHTML = `<div class="pf-loading">스캔 시작...</div>`;
   _setScanBtn(true, '⏳ 스캔 중...');
+
+  // 진행률/경과시간 추적 초기화
+  _trendsStartTime    = Date.now();
+  _trendsLastProgress = -1;
+  _trendsStallCount   = 0;
 
   try {
     // 캐시 사용 (force=1 이면 강제 재스캔)
