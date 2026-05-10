@@ -1290,6 +1290,15 @@ body {
   line-height: 1.4; margin-top: 6px;
 }
 
+/* 추세 결과 그리드: 컴팩트 카드라 1열(좁음) ~ 2열(넓음) */
+#trendsCards {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  #trendsCards { grid-template-columns: 1fr; }
+}
+
 /* 진행률 바 (스캔 중) */
 .trend-progress-bar {
   width: 100%;
@@ -1306,9 +1315,47 @@ body {
   transition: width 0.4s ease;
 }
 
-/* 추세 카드 종합 점수 */
+/* 추세 카드 종합 점수 (컴팩트 한 줄 레이아웃) */
+.trend-compact-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+}
+.trend-compact-name {
+  min-width: 0;
+}
+.trend-compact-name .pf-stock-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trend-compact-score {
+  font-size: 16px; font-weight: 800;
+  padding: 4px 10px; border-radius: 8px;
+  white-space: nowrap;
+}
+.trend-compact-score.score-high { background: rgba(63,185,80,0.18);  color: var(--green); }
+.trend-compact-score.score-mid  { background: rgba(255,185,30,0.15); color: rgb(255,185,30); }
+.trend-compact-score.score-low  { background: rgba(88,166,255,0.12); color: var(--accent); }
+.score-suffix { font-size: 10px; font-weight: 600; opacity: 0.7; margin-left: 1px; }
+
+.trend-compact-price {
+  text-align: right;
+  min-width: 90px;
+}
+.trend-compact-price .pf-price-val {
+  font-size: 14px; font-weight: 700;
+}
+.trend-compact-chg {
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+/* (구) 점수 분해 뱃지 — 컴팩트 레이아웃에선 안 씀, 호환용 */
 .trend-total-score {
-  font-size: 18px; font-weight: 800;
+  font-size: 16px; font-weight: 800;
   padding: 4px 10px; border-radius: 8px;
   white-space: nowrap; flex-shrink: 0;
   margin-left: 8px;
@@ -1316,21 +1363,6 @@ body {
 .trend-total-score.score-high { background: rgba(63,185,80,0.18);  color: var(--green); }
 .trend-total-score.score-mid  { background: rgba(255,185,30,0.15); color: rgb(255,185,30); }
 .trend-total-score.score-low  { background: rgba(88,166,255,0.12); color: var(--accent); }
-.score-suffix { font-size: 10px; font-weight: 600; opacity: 0.7; margin-left: 1px; }
-
-/* 점수 분해 뱃지 (기/모/펀) */
-.trend-score-bars {
-  display: flex; gap: 5px; margin-top: 8px;
-  padding-top: 8px; border-top: 1px solid var(--border);
-}
-.score-tag {
-  font-size: 10px; font-weight: 700;
-  padding: 2px 7px; border-radius: 6px;
-  flex: 1; text-align: center;
-}
-.score-tag.tech { background: rgba(88,166,255,0.1);  color: var(--accent); }
-.score-tag.mom  { background: rgba(255,185,30,0.1); color: rgb(255,185,30); }
-.score-tag.fund { background: rgba(63,185,80,0.1);  color: var(--green); }
 
 /* 추세 탭의 시장 토글 / 기준 박스 (포트폴리오 안 컴팩트 버전) */
 .trends-market-toggle {
@@ -1635,13 +1667,15 @@ body {
   /* 기준 박스: 모바일 글자 살짝 축소 */
   .trends-criteria-box { font-size: 11px; padding: 6px 10px; }
 
-  /* 추세 카드: 모바일에선 시그널/점수분해/이유 숨김 → 핵심만 노출 */
-  .trend-card-item .trend-signals,
-  .trend-card-item .trend-score-bars,
-  .trend-card-item .trend-reason { display: none; }
-  .trend-card-item { padding: 12px 14px; }
-  .trend-card-item .pf-prices { margin-bottom: 0; }
-  .trend-total-score { font-size: 16px; padding: 3px 8px; }
+  /* 추세 카드: 모바일 컴팩트 - 폰트/패딩 조정 */
+  .trend-card-item { padding: 10px 12px; }
+  .trend-compact-row { gap: 8px; grid-template-columns: 1fr auto auto; }
+  .trend-compact-score { font-size: 14px; padding: 3px 7px; }
+  .trend-compact-score .score-suffix { display: none; }   /* 모바일에선 /100 생략 */
+  .trend-compact-price { min-width: 70px; }
+  .trend-compact-price .pf-price-val { font-size: 13px; }
+  .trend-compact-chg { font-size: 11px; }
+  .trend-card-item .pf-stock-name { font-size: 13px; }
 }
 @media (max-width: 480px) {
   .portfolio-cards { grid-template-columns: 1fr 1fr; gap: 8px; }

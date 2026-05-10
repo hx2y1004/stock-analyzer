@@ -202,36 +202,23 @@ function _trendCardHTML(item) {
   const fund  = item.fund_score ?? 0;
   const scoreColor = total >= 70 ? 'high' : total >= 50 ? 'mid' : 'low';
 
+  // 한 줄 컴팩트 레이아웃 (포트폴리오 접힘 카드 스타일)
   return `
-  <div class="pf-card trend-card-item" onclick="quickSearch('${item.ticker}')">
-    <div class="pf-card-top">
-      <div style="min-width:0;flex:1">
+  <div class="pf-card pf-card-compact trend-card-item" onclick="quickSearch('${item.ticker}')"
+       title="기 ${tech} · 모 ${mom} · 펀 ${fund} | ${(item.signals || []).join(' · ')}">
+    <div class="trend-compact-row">
+      <div class="trend-compact-name">
         <div class="pf-stock-name">${item.name || item.ticker}</div>
         <div class="pf-ticker">${item.ticker}</div>
       </div>
-      <div class="trend-total-score score-${scoreColor}" title="기술 ${tech} · 모멘텀 ${mom} · 펀더 ${fund}">
+      <div class="trend-compact-score score-${scoreColor}">
         ${total}<span class="score-suffix">/100</span>
       </div>
-    </div>
-    <div class="pf-prices">
-      <div class="pf-price-item">
-        <div>현재가</div>
+      <div class="trend-compact-price">
         <div class="pf-price-val">${fmtP(item.price, item.currency)}</div>
-      </div>
-      <div class="pf-price-item" style="text-align:right">
-        <div>일변동</div>
-        <div class="pf-price-val pf-${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</div>
+        <div class="trend-compact-chg pf-${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</div>
       </div>
     </div>
-    <div class="trend-score-bars">
-      <span class="score-tag tech" title="기술적">기 ${tech}</span>
-      <span class="score-tag mom"  title="모멘텀">모 ${mom}</span>
-      <span class="score-tag fund" title="펀더멘털">펀 ${fund}</span>
-    </div>
-    ${item.signals && item.signals.length ? `
-      <div class="trend-signals">
-        ${item.signals.map(s => `<span class="trend-signal">${s}</span>`).join('')}
-      </div>` : ''}
   </div>`;
 }
 
@@ -243,7 +230,9 @@ let _trendsStartTime = null;    // 클라이언트 측 스캔 시작 시각
 let _trendsLastProgress = -1;   // 마지막 진행률 (정체 감지용)
 let _trendsStallCount   = 0;    // 같은 진행률이 몇 번 연속
 
-const _TRENDS_PAGE_SIZE = 10;
+function _trendsPageSize() {
+  return window.innerWidth <= 768 ? 5 : 10;  // 모바일 5개씩, 데스크톱 10개씩
+}
 
 function _updateTrendsFooter() {
   const footer = document.getElementById('trendsFooter');
@@ -256,7 +245,7 @@ function _updateTrendsFooter() {
   const remain  = total - _trendsShown;
 
   if (remain > 0) {
-    const next = Math.min(remain, _TRENDS_PAGE_SIZE);
+    const next = Math.min(remain, _trendsPageSize());
     footer.innerHTML = `
       <span class="trends-more-btn">▼ 다음 ${next}개 더보기</span>
       <span class="trends-meta">감지 ${total}개 / 스캔 ${_trendsMeta.scanned_total ?? '—'}개 · ${_trendsMeta.elapsed_sec ?? '?'}초${cached} · ${time}</span>
@@ -276,7 +265,7 @@ function _updateTrendsFooter() {
 function _showMoreTrends() {
   const cards = document.getElementById('trendsCards');
   if (!cards) return;
-  const next = _trendsAllItems.slice(_trendsShown, _trendsShown + _TRENDS_PAGE_SIZE);
+  const next = _trendsAllItems.slice(_trendsShown, _trendsShown + _trendsPageSize());
   if (!next.length) return;
   cards.insertAdjacentHTML('beforeend', next.map(_trendCardHTML).join(''));
   _trendsShown += next.length;
