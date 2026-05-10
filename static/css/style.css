@@ -1096,37 +1096,31 @@ body {
 }
 .portfolio-inner { max-width: 1440px; margin: 0 auto; }
 
-/* 탭 토글 (포트폴리오 / 추세 상승 감지) — 헤더 nav 스타일과 통일 */
+/* 탭 토글 (포트폴리오 / 추세 상승 감지) — 밑줄 스타일 */
 .pf-tabs {
-  display: inline-flex;
+  display: flex;
   gap: 4px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 4px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 .pf-tab {
   background: transparent;
   border: none;
   color: var(--text2);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
-  padding: 8px 18px;
+  padding: 8px 16px;
   cursor: pointer;
-  white-space: nowrap;
-  border-radius: 8px;
-  transition: all 0.18s;
+  position: relative;
+  transition: color 0.15s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
-.pf-tab:hover {
-  color: var(--text);
-  background: rgba(255,255,255,0.04);
-}
+.pf-tab:hover { color: var(--text); }
 .pf-tab.active {
-  background: var(--accent);
-  color: #fff;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
-.pf-tab.active:hover { background: var(--accent); }
 .pf-tab-panel { /* 패널 본문 */ }
 
 .portfolio-title-area {
