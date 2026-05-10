@@ -189,8 +189,8 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
 # ── 전체 스캔 (2-pass) ────────────────────────────────
 def scan_all(stock_db, market: str = "ALL",
              min_tech_momentum: int = 20,
-             top_for_fund: int = 60,
-             final_limit: int = 50,
+             top_for_fund: int = 30,
+             final_limit: int = 10,
              max_workers_pass1: int = 8,
              max_workers_pass2: int = 6,
              progress_cb=None) -> dict:
