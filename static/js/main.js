@@ -55,7 +55,7 @@ async function loadPortfolio() {
   }
 }
 
-function _pfCardHTML(h) {
+function _pfCardHTML(h, compact = false) {
   const hasPrice = h.current_price != null;
   const retPct   = h.return_pct;
   const retAmt   = h.return_amount;
@@ -65,6 +65,25 @@ function _pfCardHTML(h) {
   const fmtPrice = (v, noRound = false) => v == null ? '—' : cur === 'KRW'
     ? (noRound ? Number(v) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
     : '$' + Number(v).toLocaleString();
+
+  // 접힌 상태(컴팩트): 종목명 + 현재가만 노출
+  if (compact) {
+    return `
+    <div class="pf-card pf-card-compact" onclick="quickSearch('${h.ticker}')">
+      <div class="pf-compact-row">
+        <div class="pf-compact-left">
+          <div class="pf-stock-name">${h.name}</div>
+          <div class="pf-ticker">${h.ticker}</div>
+        </div>
+        <div class="pf-compact-right">
+          <div class="pf-compact-label">현재가</div>
+          <div class="pf-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // 펼친 상태(전체): 기존 카드
   return `
   <div class="pf-card" onclick="quickSearch('${h.ticker}')">
     <div class="pf-card-top">
@@ -102,26 +121,34 @@ function renderPortfolioCards(holdings) {
 
   if (!holdings.length) {
     cards.innerHTML = `<div class="pf-empty">보유 종목이 없습니다. 종목을 추가해보세요!</div>`;
+    cards.classList.remove('collapsed');
     footer.classList.add('hidden');
     btn.classList.add('hidden');
     return;
   }
 
-  // 수익률 내림차순 정렬 (접힘: 상위 5개 / 펼침: 전체)
-  const byReturn  = [...holdings].sort((a, b) => (b.return_pct ?? -9999) - (a.return_pct ?? -9999));
-  const displayed = pfCollapsed ? byReturn.slice(0, 5) : byReturn;
+  // 수익률 내림차순 정렬
+  const byReturn = [...holdings].sort((a, b) => (b.return_pct ?? -9999) - (a.return_pct ?? -9999));
 
-  cards.innerHTML = displayed.map(_pfCardHTML).join('');
+  // 접힘: 상위 5개를 컴팩트하게 / 펼침: 전체를 풀카드로
+  const displayed = pfCollapsed ? byReturn.slice(0, 5) : byReturn;
+  cards.innerHTML = displayed.map(h => _pfCardHTML(h, pfCollapsed)).join('');
+
+  // 접힘 상태일 때 컨테이너에 .collapsed 부여 (모바일에서 상위 2개만 보이도록 CSS 처리)
+  if (pfCollapsed) cards.classList.add('collapsed');
+  else             cards.classList.remove('collapsed');
 
   // 토글 버튼 & 푸터 업데이트
-  if (holdings.length <= 5) {
+  if (holdings.length <= 5 && !pfCollapsed) {
     btn.classList.add('hidden');
     footer.classList.add('hidden');
   } else {
     btn.classList.remove('hidden');
     if (pfCollapsed) {
       btn.innerHTML = `펼치기 ▼`;
-      footer.textContent = `수익률 상위 5개 표시 중 · 전체 ${holdings.length}개 보유`;
+      const isMobile = window.innerWidth <= 768;
+      const visibleCount = isMobile ? Math.min(2, displayed.length) : displayed.length;
+      footer.textContent = `간략 표시 ${visibleCount}개 · 전체 ${holdings.length}개 보유 (눌러서 펼치기)`;
       footer.classList.remove('hidden');
     } else {
       btn.innerHTML = `접기 ▲`;
@@ -133,6 +160,93 @@ function renderPortfolioCards(holdings) {
 function togglePortfolio() {
   pfCollapsed = !pfCollapsed;
   renderPortfolioCards(pfAllHoldings);
+}
+
+// ── 포트폴리오 / 추세 탭 전환 ──────────────────────────
+function switchPfTab(tab) {
+  document.querySelectorAll('.pf-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  const pfPanel  = document.getElementById('pfTabPortfolio');
+  const trPanel  = document.getElementById('pfTabTrends');
+  if (tab === 'portfolio') {
+    pfPanel.classList.remove('hidden');
+    trPanel.classList.add('hidden');
+  } else {
+    pfPanel.classList.add('hidden');
+    trPanel.classList.remove('hidden');
+  }
+}
+
+// ── 추세 상승 감지 ────────────────────────────────────
+let trendsMarket = 'ALL';
+
+function selectMarket(btn) {
+  document.querySelectorAll('#marketToggle .market-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  trendsMarket = btn.dataset.market;
+}
+
+function _trendCardHTML(item) {
+  const chg = item.change_pct ?? 0;
+  const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
+  const icon = chg > 0 ? '▲' : chg < 0 ? '▼' : '';
+  const fmtP = (v, cur) => v == null ? '—' :
+    (cur === 'KRW' ? Math.round(v).toLocaleString('ko-KR') + '원' : '$' + Number(v).toFixed(2));
+  return `
+  <div class="pf-card" onclick="quickSearch('${item.ticker}')">
+    <div class="pf-card-top">
+      <div>
+        <div class="pf-stock-name">${item.name || item.ticker}</div>
+        <div class="pf-ticker">${item.ticker}</div>
+      </div>
+    </div>
+    <div class="pf-prices">
+      <div class="pf-price-item">
+        <div>현재가</div>
+        <div class="pf-price-val">${fmtP(item.price, item.currency)}</div>
+      </div>
+      <div class="pf-price-item" style="text-align:right">
+        <div>등락률</div>
+        <div class="pf-price-val pf-${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</div>
+      </div>
+    </div>
+    ${item.signals && item.signals.length ? `
+      <div class="trend-signals">
+        ${item.signals.map(s => `<span class="trend-signal">${s}</span>`).join('')}
+      </div>` : ''}
+    ${item.reason ? `<div class="trend-reason">${item.reason}</div>` : ''}
+  </div>`;
+}
+
+async function scanTrends() {
+  const btn    = document.getElementById('scanBtn');
+  const cards  = document.getElementById('trendsCards');
+  const footer = document.getElementById('trendsFooter');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 스캔 중...';
+  cards.innerHTML = `<div class="pf-loading">스캔 중... (수십~수백 종목 분석에 1~3분 소요)</div>`;
+  footer.classList.add('hidden');
+
+  try {
+    const resp = await fetch(`/api/trends?market=${trendsMarket}`);
+    const data = await resp.json();
+    const items = data.items || [];
+
+    if (!items.length) {
+      cards.innerHTML = `<div class="pf-empty">${data.message || '감지된 종목이 없습니다.'}</div>`;
+    } else {
+      cards.innerHTML = items.map(_trendCardHTML).join('');
+      footer.textContent = `🎯 감지 ${items.length}개 / 스캔 ${data.total ?? '—'}개 · ${new Date(data.scanned_at).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'})}`;
+      footer.classList.remove('hidden');
+    }
+  } catch (e) {
+    cards.innerHTML = `<div class="pf-empty">오류: ${e.message || '서버 응답 오류'}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 스캔';
+  }
 }
 
 async function deleteHolding(event, hid) {

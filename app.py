@@ -204,12 +204,7 @@ def manifest():
     return send_from_directory("static", "manifest.json")
 
 
-# ── 추세 상승 감지 ─────────────────────────────────────
-@app.route("/trends")
-def trends_page():
-    return render_template("trends.html")
-
-
+# ── 추세 상승 감지 (포트폴리오 섹션 내 탭으로 통합) ────
 @app.route("/api/trends")
 def api_trends():
     """추세 상승 종목 스캔 (틀만 구현, 기준은 추후 정의).

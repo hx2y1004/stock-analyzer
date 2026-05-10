@@ -37,7 +37,6 @@
       <div class="logo">📈 StockAnalyzer</div>
       <nav class="nav">
         <a href="/" class="nav-link active">분석</a>
-        <a href="/trends" class="nav-link">추세 상승 감지</a>
         <a href="/trading" class="nav-link">모의투자</a>
       </nav>
       <!-- 로그인/프로필 -->
@@ -50,17 +49,47 @@
   <!-- 포트폴리오 섹션 (로그인 후) -->
   <section id="portfolioSection" class="portfolio-section hidden">
     <div class="portfolio-inner">
-      <div class="portfolio-top">
-        <div class="portfolio-title-area">
-          <h2 class="portfolio-title">📂 내 포트폴리오</h2>
-          <button class="pf-toggle-btn hidden" id="pfToggleBtn" onclick="togglePortfolio()">펼치기 ▼</button>
+
+      <!-- 탭 토글 -->
+      <div class="pf-tabs" role="tablist">
+        <button class="pf-tab active" data-tab="portfolio" onclick="switchPfTab('portfolio')">📂 내 포트폴리오</button>
+        <button class="pf-tab" data-tab="trends" onclick="switchPfTab('trends')">📈 추세 상승 감지</button>
+      </div>
+
+      <!-- 포트폴리오 탭 -->
+      <div id="pfTabPortfolio" class="pf-tab-panel">
+        <div class="portfolio-top">
+          <div class="portfolio-title-area">
+            <button class="pf-toggle-btn hidden" id="pfToggleBtn" onclick="togglePortfolio()">펼치기 ▼</button>
+          </div>
+          <button class="pf-add-btn" onclick="openAddModal()">+ 종목 추가</button>
         </div>
-        <button class="pf-add-btn" onclick="openAddModal()">+ 종목 추가</button>
+        <div id="portfolioCards" class="portfolio-cards">
+          <div class="pf-loading">불러오는 중...</div>
+        </div>
+        <div id="pfMoreFooter" class="pf-more-footer hidden" onclick="togglePortfolio()"></div>
       </div>
-      <div id="portfolioCards" class="portfolio-cards">
-        <div class="pf-loading">불러오는 중...</div>
+
+      <!-- 추세 상승 감지 탭 -->
+      <div id="pfTabTrends" class="pf-tab-panel hidden">
+        <div class="portfolio-top">
+          <div class="trends-market-toggle" id="marketToggle">
+            <button class="market-btn active" data-market="ALL" onclick="selectMarket(this)">전체</button>
+            <button class="market-btn" data-market="KR" onclick="selectMarket(this)">한국</button>
+            <button class="market-btn" data-market="US" onclick="selectMarket(this)">미국</button>
+          </div>
+          <button id="scanBtn" class="pf-add-btn" onclick="scanTrends()">🔍 스캔</button>
+        </div>
+        <div id="trendsCriteria" class="trends-criteria-box">
+          <span class="criteria-label">📋 탐지 기준:</span>
+          <span class="criteria-text">기준 미설정 — 사용자 정의 후 적용 예정</span>
+        </div>
+        <div id="trendsCards" class="portfolio-cards">
+          <div class="pf-empty">아직 스캔 결과가 없습니다. 위 <strong>"🔍 스캔"</strong> 버튼을 눌러주세요.</div>
+        </div>
+        <div id="trendsFooter" class="pf-more-footer hidden"></div>
       </div>
-      <div id="pfMoreFooter" class="pf-more-footer hidden" onclick="togglePortfolio()"></div>
+
     </div>
   </section>
 
