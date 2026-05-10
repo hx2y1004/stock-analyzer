@@ -1095,6 +1095,34 @@ body {
   padding: 20px 24px;
 }
 .portfolio-inner { max-width: 1440px; margin: 0 auto; }
+
+/* 탭 토글 (포트폴리오 / 추세 상승 감지) */
+.pf-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.pf-tab {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  font-size: 15px;
+  font-weight: 700;
+  padding: 8px 16px;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.pf-tab:hover { color: var(--text); }
+.pf-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.pf-tab-panel { /* 패널 본문 */ }
+
 .portfolio-title-area {
   display: flex;
   align-items: center;
@@ -1146,6 +1174,11 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
 }
+/* 접힌(컴팩트) 상태: 더 빽빽하게 한 줄당 여러 개 */
+.portfolio-cards.collapsed {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
 .pf-loading { color: var(--text2); font-size: 13px; padding: 12px 0; }
 .pf-empty {
   color: var(--text2);
@@ -1180,6 +1213,83 @@ body {
   transition: opacity 0.15s, color 0.15s;
 }
 .pf-card:hover .pf-delete-btn { opacity: 1; }
+
+/* 컴팩트 카드 (접힌 상태: 종목명 + 현재가) */
+.pf-card-compact {
+  padding: 10px 14px;
+}
+.pf-compact-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.pf-compact-left {
+  min-width: 0;
+  flex: 1;
+}
+.pf-compact-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+.pf-compact-label {
+  font-size: 10px;
+  color: var(--text2);
+  margin-bottom: 1px;
+}
+.pf-card-compact .pf-stock-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pf-card-compact .pf-price-val {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* 등락률 색상 (추세 카드용) */
+.pf-up   { color: var(--green); }
+.pf-down { color: var(--red);   }
+
+/* 추세 카드의 시그널/이유 (포트폴리오 카드 안에서 사용) */
+.trend-signals { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.trend-signal {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 8px; border-radius: 8px;
+  background: rgba(88,166,255,0.12); color: var(--accent);
+}
+.trend-reason {
+  font-size: 12px; color: var(--text2);
+  line-height: 1.4; margin-top: 6px;
+}
+
+/* 추세 탭의 시장 토글 / 기준 박스 (포트폴리오 안 컴팩트 버전) */
+.trends-market-toggle {
+  display: inline-flex;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.market-btn {
+  background: transparent; border: none;
+  color: var(--text2); font-size: 12px; font-weight: 600;
+  padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+}
+.market-btn:hover  { color: var(--text); }
+.market-btn.active { background: var(--accent); color: #fff; }
+
+.trends-criteria-box {
+  background: var(--bg3);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.criteria-label { color: var(--text2); font-weight: 600; flex-shrink: 0; }
+.criteria-text  { color: var(--text);  font-weight: 500; }
 .pf-delete-btn:hover { color: var(--red); }
 .pf-prices { display: flex; justify-content: space-between; margin-bottom: 8px; }
 .pf-price-item { font-size: 11px; color: var(--text2); }
@@ -1444,10 +1554,16 @@ body {
 @media (max-width: 768px) {
   .portfolio-section { padding: 16px; }
   .portfolio-cards { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  /* 접힌 상태: 모바일에서는 상위 2개만 노출 */
+  .portfolio-cards.collapsed { grid-template-columns: 1fr; }
+  .portfolio-cards.collapsed > .pf-card:nth-child(n+3) { display: none; }
+  .pf-tab { font-size: 13px; padding: 7px 10px; }
 }
 @media (max-width: 480px) {
   .portfolio-cards { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .portfolio-cards.collapsed { grid-template-columns: 1fr; gap: 6px; }
   .pf-card { padding: 10px 12px; }
+  .pf-card-compact { padding: 8px 12px; }
   .modal-box { padding: 28px 20px; }
 }
 
