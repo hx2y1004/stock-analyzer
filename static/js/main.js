@@ -236,6 +236,49 @@ function _trendCardHTML(item) {
 }
 
 let _trendsPollTimer = null;
+let _trendsAllItems  = [];      // 전체 결과 (최대 30개)
+let _trendsShown     = 0;       // 현재 화면에 표시된 개수
+let _trendsMeta      = null;    // 마지막 응답 메타 정보
+
+const _TRENDS_PAGE_SIZE = 10;
+
+function _updateTrendsFooter() {
+  const footer = document.getElementById('trendsFooter');
+  if (!footer || !_trendsMeta) return;
+
+  const total   = _trendsAllItems.length;
+  const cached  = _trendsMeta.cached ? ' (캐시)' : '';
+  const time    = new Date(_trendsMeta.scanned_at).toLocaleString('ko-KR',
+                    {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+  const remain  = total - _trendsShown;
+
+  if (remain > 0) {
+    const next = Math.min(remain, _TRENDS_PAGE_SIZE);
+    footer.innerHTML = `
+      <span class="trends-more-btn">▼ 다음 ${next}개 더보기</span>
+      <span class="trends-meta">감지 ${total}개 / 스캔 ${_trendsMeta.scanned_total ?? '—'}개 · ${_trendsMeta.elapsed_sec ?? '?'}초${cached} · ${time}</span>
+    `;
+    footer.classList.add('clickable');
+    footer.onclick = _showMoreTrends;
+  } else {
+    footer.innerHTML = `
+      <span class="trends-meta">🎯 감지 ${total}개 / 스캔 ${_trendsMeta.scanned_total ?? '—'}개 · ${_trendsMeta.elapsed_sec ?? '?'}초${cached} · ${time}</span>
+    `;
+    footer.classList.remove('clickable');
+    footer.onclick = null;
+  }
+  footer.classList.remove('hidden');
+}
+
+function _showMoreTrends() {
+  const cards = document.getElementById('trendsCards');
+  if (!cards) return;
+  const next = _trendsAllItems.slice(_trendsShown, _trendsShown + _TRENDS_PAGE_SIZE);
+  if (!next.length) return;
+  cards.insertAdjacentHTML('beforeend', next.map(_trendCardHTML).join(''));
+  _trendsShown += next.length;
+  _updateTrendsFooter();
+}
 
 function _renderTrendsResult(data, cached) {
   const cards  = document.getElementById('trendsCards');
@@ -247,11 +290,20 @@ function _renderTrendsResult(data, cached) {
     footer.classList.add('hidden');
     return;
   }
-  cards.innerHTML = items.map(_trendCardHTML).join('');
-  const time = new Date(data.scanned_at).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
-  const cachedTag = cached ? ' (캐시)' : '';
-  footer.textContent = `🎯 감지 ${items.length}개 / 스캔 ${data.total ?? '—'}개 · ${data.elapsed_sec ?? '?'}초${cachedTag} · ${time}`;
-  footer.classList.remove('hidden');
+
+  // 상태 저장
+  _trendsAllItems = items;
+  _trendsShown    = 0;
+  _trendsMeta     = {
+    cached:         cached,
+    scanned_at:     data.scanned_at,
+    scanned_total:  data.total,
+    elapsed_sec:    data.elapsed_sec,
+  };
+
+  // 첫 페이지 (10개) 렌더
+  cards.innerHTML = '';
+  _showMoreTrends();
 }
 
 function _setScanBtn(running, label) {
