@@ -4,7 +4,7 @@
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v5';
+const CACHE_VERSION = 'sa-v6';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -49,6 +49,23 @@ self.addEventListener('fetch', (event) => {
 
   // 외부 도메인은 패스 (CDN 등)
   if (url.origin !== self.location.origin) return;
+
+  // 핵심 정적 자산(JS/CSS): network-first (배포 시 즉시 반영되도록)
+  // 오프라인이거나 네트워크 실패 시에만 캐시 사용
+  if (url.pathname === '/static/js/main.js'
+      || url.pathname === '/static/css/style.css'
+      || url.pathname === '/static/manifest.json') {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(STATIC_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
 
   // API 경로: network-first (실시간성 중요)
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/analyze')) {
