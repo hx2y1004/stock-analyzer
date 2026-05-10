@@ -1150,6 +1150,33 @@ body {
   cursor: pointer;
 }
 .pf-more-footer:hover { color: var(--accent); }
+.pf-more-footer.clickable {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+}
+.pf-more-footer .trends-more-btn {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  padding: 4px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 18px;
+  background: rgba(88,166,255,0.06);
+  align-self: center;
+  transition: all 0.15s;
+}
+.pf-more-footer.clickable:hover .trends-more-btn {
+  background: var(--accent);
+  color: #fff;
+}
+.pf-more-footer .trends-meta {
+  font-size: 11px;
+  color: var(--text2);
+  opacity: 0.85;
+}
 .portfolio-top {
   display: flex;
   align-items: center;
