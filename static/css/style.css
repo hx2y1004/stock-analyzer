@@ -1607,6 +1607,14 @@ body {
   #pfTabTrends #scanBtn { padding: 6px 12px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
   /* 기준 박스: 모바일 글자 살짝 축소 */
   .trends-criteria-box { font-size: 11px; padding: 6px 10px; }
+
+  /* 추세 카드: 모바일에선 시그널/점수분해/이유 숨김 → 핵심만 노출 */
+  .trend-card-item .trend-signals,
+  .trend-card-item .trend-score-bars,
+  .trend-card-item .trend-reason { display: none; }
+  .trend-card-item { padding: 12px 14px; }
+  .trend-card-item .pf-prices { margin-bottom: 0; }
+  .trend-total-score { font-size: 16px; padding: 3px 8px; }
 }
 @media (max-width: 480px) {
   .portfolio-cards { grid-template-columns: 1fr 1fr; gap: 8px; }
