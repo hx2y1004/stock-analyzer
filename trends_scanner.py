@@ -262,10 +262,16 @@ def scan_all(stock_db, market: str = "ALL",
         progress_cb(est_total, est_total)
 
     # 최종: 점수 ≥ 기준만 + 정렬 + 컷
-    final = [r for r in enriched.values()
-             if (r["tech_score"] + r["momentum_score"] + r["fund_score"]) >= 25]
-    # 정렬 우선순위: 기술 → 모멘텀 → 펀더 (사용자 요청대로)
-    final.sort(key=lambda x: (x["tech_score"], x["momentum_score"], x["fund_score"]), reverse=True)
+    # total_score 는 모듈에서 setting 안 했을 수 있으니 일관되게 재계산
+    for r in enriched.values():
+        r["total_score"] = r["tech_score"] + r["momentum_score"] + r["fund_score"]
+
+    final = [r for r in enriched.values() if r["total_score"] >= 25]
+    # 1차: 총점 desc, 2차: 기술 desc, 3차: 모멘텀 desc, 4차: 펀더 desc
+    final.sort(
+        key=lambda x: (x["total_score"], x["tech_score"], x["momentum_score"], x["fund_score"]),
+        reverse=True,
+    )
     final = final[:final_limit]
 
     elapsed = time.time() - started
