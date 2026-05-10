@@ -204,6 +204,61 @@ def manifest():
     return send_from_directory("static", "manifest.json")
 
 
+# ── 추세 상승 감지 ─────────────────────────────────────
+@app.route("/trends")
+def trends_page():
+    return render_template("trends.html")
+
+
+@app.route("/api/trends")
+def api_trends():
+    """추세 상승 종목 스캔 (틀만 구현, 기준은 추후 정의).
+
+    Query Params:
+        market: ALL | KR | US (기본 ALL)
+
+    Returns:
+        {
+            "scanned_at": ISO timestamp,
+            "market": str,
+            "total": int (스캔 대상 종목 수),
+            "items": [
+                {
+                    "ticker": str,
+                    "name": str,
+                    "price": float,
+                    "change_pct": float,
+                    "signals": [str, ...],   # ex: ["골든크로스", "거래량↑"]
+                    "reason": str            # 한 줄 요약
+                },
+                ...
+            ],
+            "message": str (선택)
+        }
+    """
+    from flask import request, jsonify
+    from datetime import datetime
+
+    market = (request.args.get("market") or "ALL").upper()
+    if market not in ("ALL", "KR", "US"):
+        market = "ALL"
+
+    # TODO: 사용자가 기준 정의 후 실제 스캔 로직 구현
+    #   - 후보 종목 리스트 (KOSPI200 / S&P500 / 사용자 포트폴리오 등)
+    #   - 각 종목 yfinance 데이터 조회 → 기준 적용
+    #   - 통과한 종목만 items 에 추가
+    #
+    # 현재는 빈 결과 반환 (UI 동작 확인용).
+
+    return jsonify({
+        "scanned_at": datetime.utcnow().isoformat() + "Z",
+        "market":     market,
+        "total":      0,
+        "items":      [],
+        "message":    "탐지 기준이 아직 설정되지 않았습니다. 기준 정의 후 스캔 로직이 활성화됩니다.",
+    })
+
+
 # ── 종목 DB 로드 (앱 시작 시 1회) ─────────────────────
 import os
 
