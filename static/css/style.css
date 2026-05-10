@@ -1676,3 +1676,33 @@ body {
   flex-shrink: 0;
 }
 
+/* ── 모바일: 분기 실적 차트 높이 확대 (찌그러짐 방지) ── */
+@media (max-width: 768px) {
+  .quarterly-card {
+    min-height: 520px;
+  }
+  .qc-sections-wrap {
+    gap: 18px;
+  }
+  .qc-bars {
+    min-height: 160px;
+  }
+  .qc-col {
+    gap: 2px;
+  }
+}
+@media (max-width: 480px) {
+  .quarterly-card {
+    min-height: 560px;
+    padding: 14px 12px;
+  }
+  .qc-bars {
+    min-height: 180px;
+    gap: 4px;
+  }
+  .qc-actual { font-size: 10px; }
+  .qc-estimate { font-size: 9px; }
+  .qc-period { font-size: 9px; }
+  .beat-badge { font-size: 9px; padding: 1px 4px; }
+}
+
