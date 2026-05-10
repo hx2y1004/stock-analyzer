@@ -1263,6 +1263,32 @@ body {
   line-height: 1.4; margin-top: 6px;
 }
 
+/* 추세 카드 종합 점수 */
+.trend-total-score {
+  font-size: 18px; font-weight: 800;
+  padding: 4px 10px; border-radius: 8px;
+  white-space: nowrap; flex-shrink: 0;
+  margin-left: 8px;
+}
+.trend-total-score.score-high { background: rgba(63,185,80,0.18);  color: var(--green); }
+.trend-total-score.score-mid  { background: rgba(255,185,30,0.15); color: rgb(255,185,30); }
+.trend-total-score.score-low  { background: rgba(88,166,255,0.12); color: var(--accent); }
+.score-suffix { font-size: 10px; font-weight: 600; opacity: 0.7; margin-left: 1px; }
+
+/* 점수 분해 뱃지 (기/모/펀) */
+.trend-score-bars {
+  display: flex; gap: 5px; margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.score-tag {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 6px;
+  flex: 1; text-align: center;
+}
+.score-tag.tech { background: rgba(88,166,255,0.1);  color: var(--accent); }
+.score-tag.mom  { background: rgba(255,185,30,0.1); color: rgb(255,185,30); }
+.score-tag.fund { background: rgba(63,185,80,0.1);  color: var(--green); }
+
 /* 추세 탭의 시장 토글 / 기준 박스 (포트폴리오 안 컴팩트 버전) */
 .trends-market-toggle {
   display: inline-flex;

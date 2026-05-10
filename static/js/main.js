@@ -195,12 +195,22 @@ function _trendCardHTML(item) {
   const icon = chg > 0 ? '▲' : chg < 0 ? '▼' : '';
   const fmtP = (v, cur) => v == null ? '—' :
     (cur === 'KRW' ? Math.round(v).toLocaleString('ko-KR') + '원' : '$' + Number(v).toFixed(2));
+
+  const total = item.total_score ?? 0;
+  const tech  = item.tech_score ?? 0;
+  const mom   = item.momentum_score ?? 0;
+  const fund  = item.fund_score ?? 0;
+  const scoreColor = total >= 70 ? 'high' : total >= 50 ? 'mid' : 'low';
+
   return `
-  <div class="pf-card" onclick="quickSearch('${item.ticker}')">
+  <div class="pf-card trend-card-item" onclick="quickSearch('${item.ticker}')">
     <div class="pf-card-top">
-      <div>
+      <div style="min-width:0;flex:1">
         <div class="pf-stock-name">${item.name || item.ticker}</div>
         <div class="pf-ticker">${item.ticker}</div>
+      </div>
+      <div class="trend-total-score score-${scoreColor}" title="기술 ${tech} · 모멘텀 ${mom} · 펀더 ${fund}">
+        ${total}<span class="score-suffix">/100</span>
       </div>
     </div>
     <div class="pf-prices">
@@ -209,47 +219,120 @@ function _trendCardHTML(item) {
         <div class="pf-price-val">${fmtP(item.price, item.currency)}</div>
       </div>
       <div class="pf-price-item" style="text-align:right">
-        <div>등락률</div>
+        <div>일변동</div>
         <div class="pf-price-val pf-${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</div>
       </div>
+    </div>
+    <div class="trend-score-bars">
+      <span class="score-tag tech" title="기술적">기 ${tech}</span>
+      <span class="score-tag mom"  title="모멘텀">모 ${mom}</span>
+      <span class="score-tag fund" title="펀더멘털">펀 ${fund}</span>
     </div>
     ${item.signals && item.signals.length ? `
       <div class="trend-signals">
         ${item.signals.map(s => `<span class="trend-signal">${s}</span>`).join('')}
       </div>` : ''}
-    ${item.reason ? `<div class="trend-reason">${item.reason}</div>` : ''}
   </div>`;
 }
 
-async function scanTrends() {
-  const btn    = document.getElementById('scanBtn');
+let _trendsPollTimer = null;
+
+function _renderTrendsResult(data, cached) {
   const cards  = document.getElementById('trendsCards');
   const footer = document.getElementById('trendsFooter');
+  const items  = data.items || [];
 
-  btn.disabled = true;
-  btn.textContent = '⏳ 스캔 중...';
-  cards.innerHTML = `<div class="pf-loading">스캔 중... (수십~수백 종목 분석에 1~3분 소요)</div>`;
-  footer.classList.add('hidden');
+  if (!items.length) {
+    cards.innerHTML = `<div class="pf-empty">감지된 종목이 없습니다 (스캔 ${data.total ?? '—'}개).</div>`;
+    footer.classList.add('hidden');
+    return;
+  }
+  cards.innerHTML = items.map(_trendCardHTML).join('');
+  const time = new Date(data.scanned_at).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+  const cachedTag = cached ? ' (캐시)' : '';
+  footer.textContent = `🎯 감지 ${items.length}개 / 스캔 ${data.total ?? '—'}개 · ${data.elapsed_sec ?? '?'}초${cachedTag} · ${time}`;
+  footer.classList.remove('hidden');
+}
 
+function _setScanBtn(running, label) {
+  const btn = document.getElementById('scanBtn');
+  if (!btn) return;
+  btn.disabled = !!running;
+  btn.textContent = label;
+}
+
+async function _pollTrendsStatus() {
   try {
-    const resp = await fetch(`/api/trends?market=${trendsMarket}`);
-    const data = await resp.json();
-    const items = data.items || [];
+    const resp = await fetch(`/api/trends/status?market=${trendsMarket}`);
+    const st = await resp.json();
 
-    if (!items.length) {
-      cards.innerHTML = `<div class="pf-empty">${data.message || '감지된 종목이 없습니다.'}</div>`;
-    } else {
-      cards.innerHTML = items.map(_trendCardHTML).join('');
-      footer.textContent = `🎯 감지 ${items.length}개 / 스캔 ${data.total ?? '—'}개 · ${new Date(data.scanned_at).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'})}`;
-      footer.classList.remove('hidden');
+    if (st.state === 'done' && st.result) {
+      _renderTrendsResult(st.result, !!st.cached);
+      _setScanBtn(false, '🔍 다시 스캔');
+      if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
+      return;
+    }
+
+    if (st.state === 'running') {
+      const cards = document.getElementById('trendsCards');
+      const prog  = st.progress || 0;
+      const total = st.total || 0;
+      const pct   = total ? Math.round(prog / total * 100) : 0;
+      cards.innerHTML = `
+        <div class="pf-loading">
+          🔍 스캔 중... ${prog}/${total || '?'} (${pct}%)<br/>
+          <small style="color:var(--text2)">887 종목 분석에 1~3분 소요됩니다.</small>
+        </div>`;
+      return;
+    }
+
+    if (st.state === 'error') {
+      document.getElementById('trendsCards').innerHTML = `<div class="pf-empty">오류: ${st.message || '스캔 실패'}</div>`;
+      _setScanBtn(false, '🔍 다시 스캔');
+      if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
     }
   } catch (e) {
-    cards.innerHTML = `<div class="pf-empty">오류: ${e.message || '서버 응답 오류'}</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🔍 스캔';
+    console.warn('[trends] poll failed:', e);
   }
 }
+
+async function scanTrends() {
+  const cards  = document.getElementById('trendsCards');
+  const footer = document.getElementById('trendsFooter');
+  footer.classList.add('hidden');
+  cards.innerHTML = `<div class="pf-loading">스캔 시작...</div>`;
+  _setScanBtn(true, '⏳ 스캔 중...');
+
+  try {
+    // 캐시 사용 (force=1 이면 강제 재스캔)
+    const force = false;
+    const resp  = await fetch(`/api/trends/scan?market=${trendsMarket}${force ? '&force=1' : ''}`, { method: 'POST' });
+    const data  = await resp.json();
+
+    if (data.state === 'done' && data.result) {
+      _renderTrendsResult(data.result, !!data.cached);
+      _setScanBtn(false, '🔍 다시 스캔');
+      return;
+    }
+    // running → 폴링 시작
+    if (_trendsPollTimer) clearInterval(_trendsPollTimer);
+    _trendsPollTimer = setInterval(_pollTrendsStatus, 3000);
+    _pollTrendsStatus();   // 즉시 한 번
+  } catch (e) {
+    cards.innerHTML = `<div class="pf-empty">오류: ${e.message || '서버 응답 오류'}</div>`;
+    _setScanBtn(false, '🔍 스캔');
+  }
+}
+
+// 탭 전환 시 폴링 정리
+const _origSwitch = switchPfTab;
+switchPfTab = function(tab) {
+  _origSwitch(tab);
+  if (tab !== 'trends' && _trendsPollTimer) {
+    clearInterval(_trendsPollTimer);
+    _trendsPollTimer = null;
+  }
+};
 
 async function deleteHolding(event, hid) {
   event.stopPropagation();

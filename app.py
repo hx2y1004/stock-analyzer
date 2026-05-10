@@ -204,53 +204,46 @@ def manifest():
     return send_from_directory("static", "manifest.json")
 
 
-# ── 추세 상승 감지 (포트폴리오 섹션 내 탭으로 통합) ────
-@app.route("/api/trends")
-def api_trends():
-    """추세 상승 종목 스캔 (틀만 구현, 기준은 추후 정의).
+# ── 추세 상승 감지 ─────────────────────────────────────
+import trends_scanner as _trends
 
-    Query Params:
-        market: ALL | KR | US (기본 ALL)
 
-    Returns:
-        {
-            "scanned_at": ISO timestamp,
-            "market": str,
-            "total": int (스캔 대상 종목 수),
-            "items": [
-                {
-                    "ticker": str,
-                    "name": str,
-                    "price": float,
-                    "change_pct": float,
-                    "signals": [str, ...],   # ex: ["골든크로스", "거래량↑"]
-                    "reason": str            # 한 줄 요약
-                },
-                ...
-            ],
-            "message": str (선택)
-        }
+@app.route("/api/trends/scan", methods=["POST", "GET"])
+def api_trends_scan():
+    """스캔 시작 (또는 캐시 반환). 폴링은 /api/trends/status 로.
+
+    Query: market=ALL|KR|US, force=1 (캐시 무시)
     """
     from flask import request, jsonify
-    from datetime import datetime
-
     market = (request.args.get("market") or "ALL").upper()
-    if market not in ("ALL", "KR", "US"):
-        market = "ALL"
+    force  = request.args.get("force") == "1"
+    res = _trends.start_scan(STOCK_DB, market, force=force)
+    return jsonify(res)
 
-    # TODO: 사용자가 기준 정의 후 실제 스캔 로직 구현
-    #   - 후보 종목 리스트 (KOSPI200 / S&P500 / 사용자 포트폴리오 등)
-    #   - 각 종목 yfinance 데이터 조회 → 기준 적용
-    #   - 통과한 종목만 items 에 추가
-    #
-    # 현재는 빈 결과 반환 (UI 동작 확인용).
 
+@app.route("/api/trends/status")
+def api_trends_status():
+    """진행 상태/캐시 결과 조회."""
+    from flask import request, jsonify
+    market = (request.args.get("market") or "ALL").upper()
+    return jsonify(_trends.get_status(market))
+
+
+# 레거시: 캐시된 결과만 반환 (없으면 안내)
+@app.route("/api/trends")
+def api_trends():
+    from flask import request, jsonify
+    from datetime import datetime
+    market = (request.args.get("market") or "ALL").upper()
+    st = _trends.get_status(market)
+    if st.get("state") == "done" and st.get("result"):
+        return jsonify(st["result"])
     return jsonify({
         "scanned_at": datetime.utcnow().isoformat() + "Z",
         "market":     market,
         "total":      0,
         "items":      [],
-        "message":    "탐지 기준이 아직 설정되지 않았습니다. 기준 정의 후 스캔 로직이 활성화됩니다.",
+        "message":    "스캔이 실행되지 않았습니다. /api/trends/scan 으로 시작하세요.",
     })
 
 
