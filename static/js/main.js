@@ -894,7 +894,7 @@ function quickSearch(ticker) {
   analyze();
 }
 
-async function setInterval(interval) {
+async function setChartInterval(interval) {
   currentInterval = interval;
   document.querySelectorAll('.interval-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.interval === interval);
