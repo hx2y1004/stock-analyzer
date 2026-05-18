@@ -13,17 +13,37 @@ import yfinance as yf
 try:
     from deep_translator import GoogleTranslator as _GTrans
     from concurrent.futures import ThreadPoolExecutor as _TPE
-    def _translate_ko(text, max_chars=2000):
-        if not text or not text.strip(): return text
-        try:
-            return _GTrans(source='auto', target='ko').translate(text[:max_chars])
-        except Exception:
+
+    def _has_korean(text):
+        """문자열에 한글 문자가 일정 비율 이상 포함됐는지."""
+        if not text:
+            return False
+        ko_chars = sum(1 for c in text[:200] if '가' <= c <= '힯')
+        return ko_chars >= 10   # 200자 중 10자 이상이면 이미 한글
+
+    def _translate_ko(text, max_chars=2000, timeout=4):
+        """영문 → 한글 번역. timeout 초과 시 원문 반환."""
+        if not text or not text.strip():
             return text
+        # 이미 한글이면 번역 스킵 (불필요한 외부 호출 방지)
+        if _has_korean(text):
+            return text
+        # ThreadPoolExecutor 로 timeout 강제 (deep_translator 자체엔 timeout 없음)
+        with _TPE(max_workers=1) as ex:
+            fut = ex.submit(
+                lambda: _GTrans(source='auto', target='ko').translate(text[:max_chars])
+            )
+            try:
+                return fut.result(timeout=timeout)
+            except Exception as e:
+                # timeout 또는 네트워크 에러 → 원문 그대로
+                return text
+
     def _translate_batch(texts):
         with _TPE(max_workers=6) as ex:
             return list(ex.map(_translate_ko, texts))
 except ImportError:
-    def _translate_ko(text): return text
+    def _translate_ko(text, max_chars=2000, timeout=4): return text
     def _translate_batch(texts): return texts
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
