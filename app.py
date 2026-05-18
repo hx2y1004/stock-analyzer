@@ -1198,8 +1198,20 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=N
     return "관련 뉴스: " + " / ".join(top)
 
 
+# ── Groq 응답 캐시 (rate limit 회피) ──
+_OVERVIEW_CACHE = {}              # ticker → (timestamp, sections)
+_OVERVIEW_TTL   = 60 * 60 * 6     # 6시간 캐시
+
+
 def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
-    """Groq으로 기업 소개·주요 사업·분석 인사이트를 한국어로 생성."""
+    """Groq으로 기업 소개·주요 사업·분석 인사이트를 한국어로 생성 (6h 캐시 + 재시도)."""
+    # ── 캐시 hit ──
+    now = time.time()
+    cached = _OVERVIEW_CACHE.get(ticker)
+    if cached and (now - cached[0]) < _OVERVIEW_TTL:
+        app.logger.info(f"[company_overview] {ticker}: cache hit")
+        return cached[1]
+
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -1269,37 +1281,93 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
 
 모든 답변은 한국어로만 작성하고 불필요한 서론 없이 바로 시작하세요."""
 
-    try:
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {"role": "system", "content": "당신은 한국어로 답변하는 주식 전문 애널리스트입니다."},
-                    {"role": "user",   "content": prompt},
-                ],
-                "temperature": 0.4,
-                "max_tokens": 800,
-            },
-            timeout=20,
-        )
-        data = resp.json()
-        if "choices" in data:
-            text = data["choices"][0]["message"]["content"].strip()
-            if text:
-                # 파싱: [기업소개], [주요사업], [기업분석] 섹션 분리
-                import re as _re
-                sections = {}
-                for key in ["기업소개", "주요사업", "기업분석"]:
-                    m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
-                    if m:
-                        sections[key] = m.group(1).strip()
-                if sections:
-                    return sections
-                return {"기업소개": text}
-    except Exception as e:
-        app.logger.error(f"fetch_company_overview error: {e}")
+    # ── Groq 호출 (최대 2회 재시도) ──
+    request_body = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": "당신은 한국어로 답변하는 주식 전문 애널리스트입니다."},
+            {"role": "user",   "content": prompt},
+        ],
+        "temperature": 0.4,
+        "max_tokens": 800,
+    }
+
+    last_err = None
+    for attempt in range(3):           # 최대 3회 시도 (초기 + 재시도 2회)
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=request_body,
+                timeout=30,            # 20 → 30s
+            )
+
+            # rate limit 또는 5xx → 재시도
+            if resp.status_code == 429:
+                wait = 2 ** attempt    # 1, 2, 4초 백오프
+                app.logger.warning(
+                    f"[company_overview] {ticker} rate limit (429), retry in {wait}s"
+                )
+                time.sleep(wait)
+                last_err = "rate_limit_429"
+                continue
+            if 500 <= resp.status_code < 600:
+                wait = 2 ** attempt
+                app.logger.warning(
+                    f"[company_overview] {ticker} server error {resp.status_code}, retry in {wait}s"
+                )
+                time.sleep(wait)
+                last_err = f"server_{resp.status_code}"
+                continue
+
+            data = resp.json()
+
+            # 응답 에러 체크
+            if "error" in data:
+                err = data["error"]
+                msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                app.logger.error(f"[company_overview] {ticker} Groq error: {msg}")
+                last_err = msg
+                break
+
+            if "choices" not in data or not data["choices"]:
+                app.logger.error(
+                    f"[company_overview] {ticker} no choices in response: {str(data)[:200]}"
+                )
+                last_err = "no_choices"
+                break
+
+            text = (data["choices"][0].get("message", {}).get("content") or "").strip()
+            if not text:
+                app.logger.error(f"[company_overview] {ticker} empty content")
+                last_err = "empty_content"
+                break
+
+            # 파싱: [기업소개], [주요사업], [기업분석] 섹션 분리
+            import re as _re
+            sections = {}
+            for key in ["기업소개", "주요사업", "기업분석"]:
+                m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
+                if m:
+                    sections[key] = m.group(1).strip()
+            result = sections if sections else {"기업소개": text}
+
+            # 캐시 저장 후 반환
+            _OVERVIEW_CACHE[ticker] = (now, result)
+            app.logger.info(
+                f"[company_overview] {ticker} OK (attempt {attempt+1}) — cached for 6h"
+            )
+            return result
+
+        except requests.exceptions.Timeout:
+            last_err = "timeout"
+            app.logger.warning(f"[company_overview] {ticker} timeout (attempt {attempt+1})")
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            app.logger.error(f"[company_overview] {ticker} error: {last_err}")
+            break   # 알 수 없는 에러는 재시도 안 함
+
+    app.logger.warning(f"[company_overview] {ticker} 최종 실패: {last_err}")
     return None
 
 
