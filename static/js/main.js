@@ -286,37 +286,13 @@ function _updateTrendsFooter() {
   const cached  = _trendsMeta.cached ? ' (캐시)' : '';
   const time    = new Date(_trendsMeta.scanned_at).toLocaleString('ko-KR',
                     {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
-  const remain  = total - _trendsShown;
-
-  if (remain > 0) {
-    const next = Math.min(remain, _trendsPageSize());
-    footer.innerHTML = `
-      <span class="trends-more-btn">▼ 다음 ${next}개 더보기</span>
-      <span class="trends-meta">감지 ${total}개 / 스캔 ${_trendsMeta.scanned_total ?? '—'}개 · ${_trendsMeta.elapsed_sec ?? '?'}초${cached} · ${time}</span>
-    `;
-    footer.classList.add('clickable');
-    footer.onclick = _showMoreTrends;
-  } else {
-    footer.innerHTML = `
-      <span class="trends-meta">🎯 감지 ${total}개 / 스캔 ${_trendsMeta.scanned_total ?? '—'}개 · ${_trendsMeta.elapsed_sec ?? '?'}초${cached} · ${time}</span>
-    `;
-    footer.classList.remove('clickable');
-    footer.onclick = null;
-  }
+  // 더보기 버튼 없이 메타 정보만 표시 (내부 스크롤로 전체 보기)
+  footer.innerHTML = `
+    <span class="trends-meta">🎯 감지 ${total}개 / 스캔 ${_trendsMeta.scanned_total ?? '—'}개 · ${_trendsMeta.elapsed_sec ?? '?'}초${cached} · ${time}</span>
+  `;
+  footer.classList.remove('clickable');
+  footer.onclick = null;
   footer.classList.remove('hidden');
-}
-
-function _showMoreTrends() {
-  const cards = document.getElementById('trendsCards');
-  if (!cards) return;
-  const next = _trendsAllItems.slice(_trendsShown, _trendsShown + _trendsPageSize());
-  if (!next.length) return;
-  // rank: 1부터 시작하는 전체 순위 (페이지네이션에 무관하게 누적)
-  cards.insertAdjacentHTML('beforeend',
-    next.map((it, idx) => _trendCardHTML(it, _trendsShown + idx + 1)).join('')
-  );
-  _trendsShown += next.length;
-  _updateTrendsFooter();
 }
 
 function _renderTrendsResult(data, cached) {
@@ -347,7 +323,7 @@ function _renderTrendsResult(data, cached) {
 
   // 상태 저장
   _trendsAllItems = items;
-  _trendsShown    = 0;
+  _trendsShown    = items.length;
   _trendsMeta     = {
     cached:         cached,
     scanned_at:     data.scanned_at,
@@ -355,9 +331,9 @@ function _renderTrendsResult(data, cached) {
     elapsed_sec:    data.elapsed_sec,
   };
 
-  // 첫 페이지 (10개) 렌더
-  cards.innerHTML = '';
-  _showMoreTrends();
+  // 모든 결과를 한 번에 렌더 (내부 스크롤로 노출)
+  cards.innerHTML = items.map((it, idx) => _trendCardHTML(it, idx + 1)).join('');
+  _updateTrendsFooter();
 }
 
 function _setScanBtn(running, label) {
