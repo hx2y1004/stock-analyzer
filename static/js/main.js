@@ -949,6 +949,8 @@ async function analyze() {
     renderFundamental(data.analysis.fundamental_details || [], data.stock);
     renderMetrics(data.stock, data.analysis);
     renderPositionCard(data.position || null, data.stock);
+    renderMarketContext(data.stock.market_context, data.stock.currency === 'KRW');
+    renderUpcomingEvents(data.stock.upcoming_events);
     renderZones(data.analysis, data.stock);
     renderAnalysts(data.analysts, data.stock);
     renderPriceMoveBanner(data.stock, data.move_reason);
@@ -1775,6 +1777,71 @@ function renderSignalSummary(analysis) {
       <span class="signal-total-label" style="color:${textMap[vcls]}">${analysis.verdict}</span>
       <span class="signal-total-score" style="color:${textMap[vcls]}">${score > 0 ? '+' : ''}${score}</span>
     </div>`;
+}
+
+// ── 시장 컨텍스트 ─────────────────────────────────────
+function renderMarketContext(market, isKRW) {
+  const card = document.getElementById('marketContextCard');
+  const list = document.getElementById('marketContextList');
+  if (!card || !list) return;
+  if (!market || !Object.keys(market).length) {
+    card.classList.add('hidden');
+    return;
+  }
+  // 값 포맷 (지수는 정수 천단위, 환율은 원, VIX는 소수점)
+  const fmtVal = (label, v) => {
+    if (v == null) return '—';
+    if (label === '환율') return Math.round(v).toLocaleString() + '원';
+    if (label === 'VIX')  return v.toFixed(2);
+    return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  };
+  const rows = Object.entries(market).map(([label, m]) => {
+    const chg = m.change_pct ?? 0;
+    const cls  = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
+    const icon = chg > 0 ? '▲' : chg < 0 ? '▼' : '·';
+    // VIX 는 낮은 게 좋고 높은 게 위험 → 반전 색상
+    const isVix = label === 'VIX';
+    const vixHint = isVix
+      ? (m.value < 20 ? ' <span class="mc-tag safe">안정</span>'
+                      : m.value < 30 ? ' <span class="mc-tag mid">경계</span>'
+                                     : ' <span class="mc-tag danger">위험</span>')
+      : '';
+    return `
+      <div class="mc-row">
+        <span class="mc-label">${label}</span>
+        <div class="mc-right">
+          <span class="mc-val">${fmtVal(label, m.value)}</span>
+          <span class="mc-chg ${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</span>${vixHint}
+        </div>
+      </div>`;
+  }).join('');
+  list.innerHTML = rows;
+  card.classList.remove('hidden');
+}
+
+// ── 다가오는 이벤트 ───────────────────────────────────
+function renderUpcomingEvents(events) {
+  const card = document.getElementById('eventsCard');
+  const list = document.getElementById('eventsList');
+  if (!card || !list) return;
+  if (!events || !events.length) {
+    card.classList.add('hidden');
+    return;
+  }
+  const rows = events.map(e => {
+    const urgent = e.days <= 7 ? ' urgent' : (e.days <= 30 ? ' soon' : '');
+    return `
+      <div class="event-row${urgent}">
+        <div class="event-icon">${e.icon || '📌'}</div>
+        <div class="event-body">
+          <div class="event-label">${e.label}</div>
+          <div class="event-date">${e.date}</div>
+        </div>
+        <div class="event-days">D-${e.days}</div>
+      </div>`;
+  }).join('');
+  list.innerHTML = rows;
+  card.classList.remove('hidden');
 }
 
 // ── 애널리스트 ────────────────────────────────────────

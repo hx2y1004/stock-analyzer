@@ -1916,6 +1916,71 @@ body {
 #positionCard .card-title { flex-shrink: 0; }
 #positionContent { display: flex; flex-direction: column; }
 
+/* ── 시장 컨텍스트 카드 ── */
+.market-context-card .mc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--bg3);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.mc-label { color: var(--text2); font-weight: 600; }
+.mc-right { display: flex; align-items: center; gap: 8px; }
+.mc-val   { font-weight: 700; color: var(--text); }
+.mc-chg   { font-size: 12px; font-weight: 700; }
+.mc-chg.up   { color: var(--green); }
+.mc-chg.down { color: var(--red); }
+.mc-chg.flat { color: var(--text2); }
+.mc-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 2px;
+}
+.mc-tag.safe   { background: rgba(63,185,80,0.15);  color: var(--green); }
+.mc-tag.mid    { background: rgba(255,185,30,0.15); color: rgb(255,185,30); }
+.mc-tag.danger { background: rgba(248,81,73,0.15); color: var(--red); }
+
+/* ── 다가오는 이벤트 카드 ── */
+.events-card .events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.event-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--bg3);
+  border-radius: 8px;
+  border-left: 3px solid var(--border);
+  transition: all 0.15s;
+}
+.event-row.soon   { border-left-color: rgb(255,185,30); }
+.event-row.urgent { border-left-color: var(--red); background: rgba(248,81,73,0.06); }
+.event-icon { font-size: 18px; flex-shrink: 0; }
+.event-body { flex: 1; min-width: 0; }
+.event-label { font-size: 12px; font-weight: 700; color: var(--text); }
+.event-date  { font-size: 10.5px; color: var(--text2); margin-top: 1px; }
+.event-days {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.event-row.urgent .event-days { color: var(--red); }
+.event-row.soon   .event-days { color: rgb(255,185,30); }
+
 /* ── 차트 아래 거래 버튼 ── */
 .trade-actions {
   display: flex;
