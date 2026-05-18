@@ -283,7 +283,22 @@ function _renderTrendsResult(data, cached) {
   const items  = data.items || [];
 
   if (!items.length) {
-    cards.innerHTML = `<div class="pf-empty">감지된 종목이 없습니다 (스캔 ${data.total ?? '—'}개).</div>`;
+    const dist = data.score_dist || {};
+    const distLine = Object.keys(dist).length
+      ? `<div style="font-size:11px;color:var(--text2);margin-top:8px">점수 분포: 50점↑ ${dist['≥50'] || 0}개 · 30점↑ ${dist['≥30'] || 0}개 · 15점↑ ${dist['≥15'] || 0}개 · 5점↑ ${dist['≥5'] || 0}개</div>`
+      : '';
+    const dataLine = data.data_ok != null
+      ? `<div style="font-size:11px;color:var(--text2)">데이터 수신 성공: ${data.data_ok}/${data.total}개</div>`
+      : '';
+    cards.innerHTML = `
+      <div class="pf-empty">
+        <div>감지된 종목이 없습니다 (스캔 ${data.total ?? '—'}개)</div>
+        ${dataLine}
+        ${distLine}
+        <div style="font-size:11px;color:var(--text2);margin-top:6px">
+          ※ Yahoo Finance 응답이 느려 데이터 수신이 적었거나, 현재 시장 조건이 기준을 만족하는 종목이 적은 상태일 수 있습니다.
+        </div>
+      </div>`;
     footer.classList.add('hidden');
     return;
   }
