@@ -172,17 +172,28 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
 
         total = tech + momentum + fund
 
-        # 일변동률
+        # 가격 NaN 체크
+        if pd.isna(last_d):
+            return None
+        last_d = float(last_d)
+
+        # 일변동률 (NaN 방지)
         change_pct = 0.0
         if len(df_d) >= 2:
             prev = df_d["Close"].iloc[-2]
-            if prev:
-                change_pct = (df_d["Close"].iloc[-1] / prev - 1) * 100
+            if pd.notna(prev) and prev != 0:
+                try:
+                    cp = (last_d / float(prev) - 1) * 100
+                    if pd.notna(cp):
+                        change_pct = float(cp)
+                except Exception:
+                    change_pct = 0.0
 
         # 스파크라인용: 최근 30일 종가, 0..1 정규화 (작은 SVG 차트)
         sparkline = []
         try:
-            closes = df_d["Close"].tail(30).dropna().tolist()
+            closes = [float(c) for c in df_d["Close"].tail(30).dropna().tolist()
+                      if pd.notna(c)]
             if len(closes) >= 5:
                 mn, mx = min(closes), max(closes)
                 if mx > mn:
@@ -195,8 +206,8 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
         return {
             "ticker": symbol,
             "name":   name,
-            "price":  float(last_d),
-            "change_pct": float(change_pct),
+            "price":  last_d,
+            "change_pct": change_pct,
             "currency": "KRW" if _is_korean(symbol) else "USD",
             "tech_score":     tech,
             "momentum_score": momentum,
