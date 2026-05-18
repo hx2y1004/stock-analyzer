@@ -1525,8 +1525,21 @@ def analyze():
                 user_id=current_user.id, ticker=ticker
             ).first()
             if holding:
+                # ticker 기준 정확한 통화 (사용자가 잘못 저장한 경우 자동 교정)
+                correct_currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else \
+                                   holding.currency or "USD"
+                # DB 값이 잘못된 경우 silent 마이그레이션
+                if holding.currency != correct_currency:
+                    try:
+                        holding.currency = correct_currency
+                        db.session.commit()
+                        app.logger.info(f"[currency] {ticker} {holding.currency} → {correct_currency}")
+                    except Exception:
+                        db.session.rollback()
+
                 position_data = {
                     **holding.to_dict(),
+                    "currency":         correct_currency,
                     "current_price":    current_price,
                     "current_value":    round(current_price * holding.quantity, 2) if current_price else None,
                     "purchase_value":   round(holding.purchase_price * holding.quantity, 2),
@@ -1704,6 +1717,21 @@ def get_portfolio():
             if p:
                 prices[t] = p
 
+    # 통화 자동 보정 (잘못 저장된 KRW 종목 USD 표시 방지)
+    needs_migration = False
+    for h in holdings:
+        correct = "KRW" if (h.ticker.endswith(".KS") or h.ticker.endswith(".KQ")) else \
+                  (h.currency or "USD")
+        if h.currency != correct:
+            h.currency = correct
+            needs_migration = True
+    if needs_migration:
+        try:
+            db.session.commit()
+            app.logger.info("[currency] portfolio migration applied")
+        except Exception:
+            db.session.rollback()
+
     result = []
     for h in holdings:
         d = h.to_dict()
@@ -1727,7 +1755,9 @@ def add_holding():
     name     = data.get("name", ticker)
     qty      = float(data.get("quantity", 0))
     price    = float(data.get("purchase_price", 0))
-    currency = data.get("currency", "USD")
+    # 통화는 ticker 기준으로 강제 보정 (클라이언트 오류 방지)
+    currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else \
+               (data.get("currency") or "USD")
 
     if not ticker or qty <= 0 or price <= 0:
         return jsonify({"error": "티커·수량·매입가를 올바르게 입력해주세요"}), 400
