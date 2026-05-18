@@ -231,6 +231,9 @@ let _trendsLastProgress = -1;   // 마지막 진행률 (정체 감지용)
 let _trendsStallCount   = 0;    // 같은 진행률이 몇 번 연속
 let _trendsLastPollAt   = null; // 마지막 성공 폴링 시각 (Date.now)
 let _trendsPollOk       = 0;    // 성공 폴링 누적 횟수 (라이브 펄스 트리거용)
+let _trendsPollFail     = 0;    // 실패 폴링 누적 횟수
+let _trendsPolling      = false; // 폴링 루프 활성 여부
+let _trendsStopRequested = false;
 
 function _trendsPageSize() {
   return window.innerWidth <= 768 ? 5 : 10;  // 모바일 5개씩, 데스크톱 10개씩
@@ -333,8 +336,9 @@ function _renderTrendsProgress(prog, total, pct, indeterminate) {
 
   // 마지막 폴링 갱신 시각
   const sinceLastPoll = _trendsLastPollAt ? ((Date.now() - _trendsLastPollAt) / 1000).toFixed(1) : '?';
+  const failTag = _trendsPollFail > 0 ? ` · ⚠️${_trendsPollFail}실패` : '';
   const liveTag = !indeterminate
-    ? `<span class="trend-live-tag">📡 ${_trendsPollOk}회 갱신 · ${sinceLastPoll}초 전</span>`
+    ? `<span class="trend-live-tag">📡 ${_trendsPollOk}회 갱신 · ${sinceLastPoll}초 전${failTag}</span>`
     : '';
 
   cards.innerHTML = `
@@ -362,7 +366,7 @@ async function abortTrendScan() {
   } catch (e) {
     console.warn('abort failed:', e);
   }
-  if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
+  _trendsStopRequested = true;
   _stopElapsedTicker();
   _setScanBtn(false, '🔍 스캔');
   document.getElementById('trendsCards').innerHTML = `<div class="pf-empty">스캔이 중단되었습니다.</div>`;
@@ -396,15 +400,25 @@ function _stopElapsedTicker() {
 
 let _trendsLastServerNow = null;
 
+// AbortController 로 타임아웃 처리한 fetch
+async function _fetchWithTimeout(url, opts = {}, timeoutMs = 5000) {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(tid);
+  }
+}
+
 async function _pollTrendsStatus() {
   try {
-    // 캐시 버스터 (no-store 헤더와 이중 안전장치)
+    // 캐시 버스터 + 5초 타임아웃
     const url = `/api/trends/status?market=${trendsMarket}&_=${Date.now()}`;
-    const resp = await fetch(url, { cache: 'no-store' });
+    const resp = await _fetchWithTimeout(url, { cache: 'no-store' }, 5000);
     const st = await resp.json();
     _trendsLastPollAt = Date.now();
     _trendsPollOk += 1;
-    // 서버 시각이 매번 달라야 정상 (같으면 캐시됨!)
     const isCachedResp = (st.server_now != null && st.server_now === _trendsLastServerNow);
     _trendsLastServerNow = st.server_now;
     console.log('[trends poll #' + _trendsPollOk + ']', st.state, st.progress, '/', st.total,
@@ -412,11 +426,11 @@ async function _pollTrendsStatus() {
                 isCachedResp ? '⚠️ CACHED!' : 'fresh');
 
     if (st.state === 'done' && st.result) {
+      _trendsStopRequested = true;
       _renderTrendsResult(st.result, !!st.cached);
       _setScanBtn(false, '🔍 다시 스캔');
-      if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
       _stopElapsedTicker();
-      return;
+      return 'done';
     }
 
     if (st.state === 'running') {
@@ -424,18 +438,35 @@ async function _pollTrendsStatus() {
       const total = st.total || 0;
       const pct   = total ? Math.round(prog / total * 100) : 0;
       _renderTrendsProgress(prog, total, pct, st.total === 0);
-      return;
+      return 'running';
     }
 
     if (st.state === 'error') {
+      _trendsStopRequested = true;
       document.getElementById('trendsCards').innerHTML = `<div class="pf-empty">오류: ${st.message || '스캔 실패'}</div>`;
       _setScanBtn(false, '🔍 다시 스캔');
-      if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
       _stopElapsedTicker();
+      return 'error';
     }
+    return 'idle';
   } catch (e) {
-    console.warn('[trends] poll failed:', e);
+    _trendsPollFail += 1;
+    console.warn('[trends] poll #' + _trendsPollOk + ' failed (fail count: ' + _trendsPollFail + '):', e);
+    return 'failed';
   }
+}
+
+// setTimeout 체이닝 폴링 루프 (setInterval 보다 안정적)
+async function _trendsPollLoop() {
+  if (_trendsPolling) return;   // 중복 방지
+  _trendsPolling = true;
+  while (!_trendsStopRequested) {
+    const result = await _pollTrendsStatus();
+    if (result === 'done' || result === 'error') break;
+    // 다음 폴링까지 1초 대기
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  _trendsPolling = false;
 }
 
 async function scanTrends() {
@@ -450,16 +481,21 @@ async function scanTrends() {
   _trendsStallCount   = 0;
   _trendsLastPollAt   = null;
   _trendsPollOk       = 0;
+  _trendsPollFail     = 0;
   _trendsLastServerNow = null;
+  _trendsStopRequested = false;
 
-  // 즉시 indeterminate progress UI 노출 (서버 응답 기다리지 않음)
+  // 즉시 indeterminate progress UI 노출
   _renderTrendsProgress(0, 0, 0, true);
   _startElapsedTicker();
 
   try {
-    // 캐시 사용 (force=1 이면 강제 재스캔)
     const force = false;
-    const resp  = await fetch(`/api/trends/scan?market=${trendsMarket}${force ? '&force=1' : ''}`, { method: 'POST' });
+    const resp  = await _fetchWithTimeout(
+      `/api/trends/scan?market=${trendsMarket}${force ? '&force=1' : ''}`,
+      { method: 'POST' },
+      8000
+    );
     const data  = await resp.json();
 
     if (data.state === 'done' && data.result) {
@@ -468,10 +504,8 @@ async function scanTrends() {
       _setScanBtn(false, '🔍 다시 스캔');
       return;
     }
-    // running → 폴링 시작 (1초마다)
-    if (_trendsPollTimer) clearInterval(_trendsPollTimer);
-    _trendsPollTimer = setInterval(_pollTrendsStatus, 1000);
-    _pollTrendsStatus();   // 즉시 한 번
+    // running → setTimeout 체이닝 폴링 시작 (setInterval 보다 안정)
+    _trendsPollLoop();
   } catch (e) {
     _stopElapsedTicker();
     cards.innerHTML = `<div class="pf-empty">오류: ${e.message || '서버 응답 오류'}</div>`;
@@ -483,9 +517,9 @@ async function scanTrends() {
 const _origSwitch = switchPfTab;
 switchPfTab = function(tab) {
   _origSwitch(tab);
-  if (tab !== 'trends' && _trendsPollTimer) {
-    clearInterval(_trendsPollTimer);
-    _trendsPollTimer = null;
+  if (tab !== 'trends') {
+    _trendsStopRequested = true;
+    _stopElapsedTicker();
   }
 };
 
