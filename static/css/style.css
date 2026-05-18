@@ -1198,12 +1198,7 @@ body {
 .pf-add-btn:hover { border-color: var(--accent); background: rgba(88,166,255,0.08); }
 .portfolio-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-}
-/* 접힌(컴팩트) 상태: 더 빽빽하게 한 줄당 여러 개 */
-.portfolio-cards.collapsed {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: 1fr;   /* 리더보드 1열 */
   gap: 8px;
 }
 .pf-loading { color: var(--text2); font-size: 13px; padding: 12px 0; }
@@ -1577,6 +1572,7 @@ body {
 .trend-score-v2.score-high { background: rgba(63,185,80,0.18);  color: var(--green); }
 .trend-score-v2.score-mid  { background: rgba(255,185,30,0.15); color: rgb(255,185,30); }
 .trend-score-v2.score-low  { background: rgba(88,166,255,0.12); color: var(--accent); }
+.trend-score-v2.score-neg  { background: rgba(248,81,73,0.15);  color: var(--red); }
 .score-suffix { font-size: 10px; font-weight: 600; opacity: 0.7; margin-left: 1px; }
 
 /* 시그널 칩 (top 3) */
@@ -1612,6 +1608,42 @@ body {
 .trend-card-v2:hover {
   border-color: var(--accent);
   transform: translateY(-1px);
+}
+
+/* 포트폴리오 풀모드 추가 정보 행 (매입가 / 수량 / 삭제) */
+.pf-meta-row {
+  margin-top: 10px;
+  padding-left: 66px;       /* 순위 칸과 시각 정렬 */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text2);
+}
+.pf-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--bg3);
+}
+.pf-meta-row .pf-delete-btn {
+  margin-left: auto;
+  opacity: 0.4;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pf-meta-row .pf-delete-btn:hover {
+  opacity: 1;
+  border-color: var(--red);
+  color: var(--red);
 }
 
 /* (구) 점수 분해 뱃지 — 컴팩트 레이아웃에선 안 씀, 호환용 */
@@ -1951,6 +1983,13 @@ body {
     padding: 4px 8px;
   }
   .trend-score-v2 .score-suffix { display: none; }
+  /* 포트폴리오 메타 행: 패딩 줄임 */
+  .pf-meta-row {
+    padding-left: 42px;
+    gap: 8px;
+    font-size: 10px;
+  }
+  .pf-meta-item { padding: 1px 6px; }
 }
 @media (max-width: 480px) {
   .portfolio-cards { grid-template-columns: 1fr 1fr; gap: 8px; }

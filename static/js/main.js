@@ -57,7 +57,7 @@ async function loadPortfolio() {
   }
 }
 
-function _pfCardHTML(h, compact = false) {
+function _pfCardHTML(h, rank, compact = false) {
   const hasPrice = h.current_price != null;
   const retPct   = h.return_pct;
   const retAmt   = h.return_amount;
@@ -68,49 +68,67 @@ function _pfCardHTML(h, compact = false) {
     ? (noRound ? Number(v) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
     : '$' + Number(v).toLocaleString();
 
-  // 접힌 상태(컴팩트): 종목명 + 현재가만 노출
+  // 순위 + 메달 (수익률 양수일 때만 메달)
+  const medals = ['🥇', '🥈', '🥉'];
+  const showMedal = rank <= 3 && retPct != null && retPct > 0;
+  const rankBlock = showMedal
+    ? `<div class="trend-rank trend-rank-medal">${medals[rank - 1]}</div>`
+    : `<div class="trend-rank trend-rank-num">#${rank}</div>`;
+  const tierClass = showMedal ? `trend-tier-${rank}` : '';
+
+  // 수익률 뱃지 색상
+  const retBadgeColor =
+    retPct == null ? 'low' :
+    retPct >= 30   ? 'high' :
+    retPct >= 5    ? 'mid' :
+    retPct >= -5   ? 'low' : 'neg';
+
+  // 수익률 뱃지 콘텐츠 (% 큰 글씨, 변화 없으면 dash)
+  const retBadgeText = retPct != null
+    ? `${retIcon} ${Math.abs(retPct).toFixed(1)}<span class="score-suffix">%</span>`
+    : '—';
+
+  // 가격 / 일변동 (포트폴리오는 일변동 없으니 매입가 표시)
+  const priceBlock = `
+    <div class="trend-price-block">
+      <div class="trend-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
+      <div class="trend-chg pf-${retClass}">${retAmt != null ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt)) : ''}</div>
+    </div>`;
+
+  // 컴팩트: 한 줄 (순위, 종목명, 현재가, 수익률뱃지)
   if (compact) {
     return `
-    <div class="pf-card pf-card-compact" onclick="quickSearch('${h.ticker}')">
-      <div class="pf-compact-row">
-        <div class="pf-compact-left">
+    <div class="pf-card trend-card-v2 ${tierClass}" onclick="quickSearch('${h.ticker}')">
+      <div class="trend-card-row">
+        ${rankBlock}
+        <div class="trend-name-block">
           <div class="pf-stock-name">${h.name}</div>
           <div class="pf-ticker">${h.ticker}</div>
         </div>
-        <div class="pf-compact-right">
-          <div class="pf-compact-label">현재가</div>
-          <div class="pf-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
-        </div>
+        <div class="trend-spark-wrap"></div>
+        ${priceBlock}
+        <div class="trend-score-v2 score-${retBadgeColor}">${retBadgeText}</div>
       </div>
     </div>`;
   }
 
-  // 펼친 상태(전체): 기존 카드
+  // 풀: 보유수량 + 매입가 + 삭제 버튼 추가
   return `
-  <div class="pf-card" onclick="quickSearch('${h.ticker}')">
-    <div class="pf-card-top">
-      <div>
+  <div class="pf-card trend-card-v2 ${tierClass}" onclick="quickSearch('${h.ticker}')">
+    <div class="trend-card-row">
+      ${rankBlock}
+      <div class="trend-name-block">
         <div class="pf-stock-name">${h.name}</div>
         <div class="pf-ticker">${h.ticker}</div>
       </div>
+      <div class="trend-spark-wrap"></div>
+      ${priceBlock}
+      <div class="trend-score-v2 score-${retBadgeColor}">${retBadgeText}</div>
+    </div>
+    <div class="pf-meta-row">
+      <span class="pf-meta-item">📌 매입 ${fmtPrice(h.purchase_price, true)}</span>
+      <span class="pf-meta-item">📦 ${h.quantity}주</span>
       <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제">✕</button>
-    </div>
-    <div class="pf-prices">
-      <div class="pf-price-item">
-        <div>매입가</div>
-        <div class="pf-price-val">${fmtPrice(h.purchase_price, true)}</div>
-      </div>
-      <div class="pf-price-item" style="text-align:right">
-        <div>현재가</div>
-        <div class="pf-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
-      </div>
-    </div>
-    <div class="pf-return ${retClass}">
-      <div>
-        <div class="pf-return-pct">${retPct != null ? `${retIcon} ${Math.abs(retPct).toFixed(2)}%` : '—'}</div>
-        <div class="pf-qty">${h.quantity}주</div>
-      </div>
-      <div class="pf-return-amt">${retAmt != null ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt)) : ''}</div>
     </div>
   </div>`;
 }
@@ -134,7 +152,7 @@ function renderPortfolioCards(holdings) {
 
   // 접힘: 상위 5개를 컴팩트하게 / 펼침: 전체를 풀카드로
   const displayed = pfCollapsed ? byReturn.slice(0, 5) : byReturn;
-  cards.innerHTML = displayed.map(h => _pfCardHTML(h, pfCollapsed)).join('');
+  cards.innerHTML = displayed.map((h, idx) => _pfCardHTML(h, idx + 1, pfCollapsed)).join('');
 
   // 접힘 상태일 때 컨테이너에 .collapsed 부여 (모바일에서 상위 2개만 보이도록 CSS 처리)
   if (pfCollapsed) cards.classList.add('collapsed');
