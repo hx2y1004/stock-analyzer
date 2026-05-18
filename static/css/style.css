@@ -1285,8 +1285,9 @@ body {
   line-height: 1.4; margin-top: 6px;
 }
 
-/* 추세 결과: 리더보드 스타일 1열 + 내부 스크롤 (상위 4개 노출) */
-#trendsCards {
+/* 추세/포트폴리오 결과: 리더보드 스타일 1열 + 내부 스크롤 (상위 4개 노출) */
+#trendsCards,
+#portfolioCards {
   grid-template-columns: 1fr;
   gap: 8px;
   max-height: 440px;          /* 데스크톱: TOP 3 (~110px×3) + 1개 (~75px) ≈ 4개 노출 */
@@ -1301,25 +1302,31 @@ body {
 }
 
 /* WebKit (Chrome/Safari/Edge) 스크롤바 커스텀 */
-#trendsCards::-webkit-scrollbar {
+#trendsCards::-webkit-scrollbar,
+#portfolioCards::-webkit-scrollbar {
   width: 6px;
 }
-#trendsCards::-webkit-scrollbar-track {
+#trendsCards::-webkit-scrollbar-track,
+#portfolioCards::-webkit-scrollbar-track {
   background: transparent;
 }
-#trendsCards::-webkit-scrollbar-thumb {
+#trendsCards::-webkit-scrollbar-thumb,
+#portfolioCards::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
   transition: background 0.2s;
 }
-#trendsCards::-webkit-scrollbar-thumb:hover {
+#trendsCards::-webkit-scrollbar-thumb:hover,
+#portfolioCards::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
 }
 
 /* 스크롤 영역이 짧을 때 (로딩 / 빈 상태)는 마스크 해제 */
 #trendsCards:has(.trend-scanning),
 #trendsCards:has(.pf-empty),
-#trendsCards:has(.pf-loading) {
+#trendsCards:has(.pf-loading),
+#portfolioCards:has(.pf-empty),
+#portfolioCards:has(.pf-loading) {
   max-height: none;
   overflow-y: visible;
   mask-image: none;
@@ -1960,8 +1967,9 @@ body {
   /* 기준 박스: 모바일 글자 살짝 축소 */
   .trends-criteria-box { font-size: 11px; padding: 6px 10px; }
 
-  /* 추세 결과 영역: 모바일에선 상위 ~5개 노출 후 스크롤 */
-  #trendsCards {
+  /* 추세/포트폴리오 결과 영역: 모바일에선 상위 ~5개 노출 후 스크롤 */
+  #trendsCards,
+  #portfolioCards {
     max-height: 60vh;
   }
 
