@@ -1290,10 +1290,46 @@ body {
   line-height: 1.4; margin-top: 6px;
 }
 
-/* 추세 결과: 리더보드 스타일 1열 */
+/* 추세 결과: 리더보드 스타일 1열 + 내부 스크롤 (상위 4개 노출) */
 #trendsCards {
   grid-template-columns: 1fr;
   gap: 8px;
+  max-height: 440px;          /* 데스크톱: TOP 3 (~110px×3) + 1개 (~75px) ≈ 4개 노출 */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;  /* iOS 부드러운 스크롤 */
+  scrollbar-width: thin;       /* Firefox */
+  scrollbar-color: var(--border) transparent;
+  padding-right: 4px;          /* 스크롤바 옆 여백 */
+  /* 스크롤 영역 시각 힌트 (그라데이션 페이드 마스크) */
+  mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 32px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 32px), transparent 100%);
+}
+
+/* WebKit (Chrome/Safari/Edge) 스크롤바 커스텀 */
+#trendsCards::-webkit-scrollbar {
+  width: 6px;
+}
+#trendsCards::-webkit-scrollbar-track {
+  background: transparent;
+}
+#trendsCards::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+#trendsCards::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* 스크롤 영역이 짧을 때 (로딩 / 빈 상태)는 마스크 해제 */
+#trendsCards:has(.trend-scanning),
+#trendsCards:has(.pf-empty),
+#trendsCards:has(.pf-loading) {
+  max-height: none;
+  overflow-y: visible;
+  mask-image: none;
+  -webkit-mask-image: none;
+  padding-right: 0;
 }
 
 /* ── 추세 스캔 진행 UI ─────────────────────────────── */
@@ -1891,6 +1927,11 @@ body {
   #pfTabTrends #scanBtn { padding: 6px 12px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
   /* 기준 박스: 모바일 글자 살짝 축소 */
   .trends-criteria-box { font-size: 11px; padding: 6px 10px; }
+
+  /* 추세 결과 영역: 모바일에선 상위 ~5개 노출 후 스크롤 */
+  #trendsCards {
+    max-height: 60vh;
+  }
 
   /* 추세 카드 v2: 모바일 컴팩트 (스파크라인/시그널 숨김) */
   .trend-card-v2 { padding: 10px 12px; }
