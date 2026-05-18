@@ -574,6 +574,78 @@ function _updateAddCurrencyLabel(cur) {
   document.getElementById('addCurrencyLabel').textContent = `(${cur})`;
 }
 
+// 통화에 따라 매입가 스텝/십진수 정책 결정
+function _addModalCurrency() {
+  return document.getElementById('addCurrency').value || 'USD';
+}
+
+// 스테퍼 버튼(▲/▼) — 통화별 step 적용
+function _stepAddNum(inputId, direction) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const isKRW = _addModalCurrency() === 'KRW';
+  let step = 1;
+  if (inputId === 'addPrice') step = isKRW ? 100 : 1;
+  else if (inputId === 'addQty') step = 1;
+
+  let cur = parseFloat(input.value);
+  if (isNaN(cur)) cur = 0;
+  let next = cur + direction * step;
+  if (next < 0) next = 0;
+
+  // KRW 매입가 / 수량 → 정수 강제
+  if ((inputId === 'addPrice' && isKRW) || inputId === 'addQty') {
+    next = Math.round(next);
+  } else {
+    // USD 매입가: 소수점 2자리까지
+    next = Math.round(next * 100) / 100;
+  }
+  input.value = next;
+}
+
+// 가격 입력: 음수 차단, KRW 시 소수점 제거
+function _onAddPriceInput(e) {
+  const isKRW = _addModalCurrency() === 'KRW';
+  let v = e.target.value;
+  // 음수 부호 제거
+  if (v.startsWith('-')) v = v.replace(/^-+/, '');
+  // KRW: 소수점 이하 제거
+  if (isKRW) v = v.replace(/[.,].*$/, '');
+  if (v !== e.target.value) e.target.value = v;
+}
+
+// 수량: 음수 / 소수점 차단 (정수 주수)
+function _onAddQtyInput(e) {
+  let v = e.target.value;
+  if (v.startsWith('-')) v = v.replace(/^-+/, '');
+  v = v.replace(/[.,].*$/, '');
+  if (v !== e.target.value) e.target.value = v;
+}
+
+// 키보드 화살표도 통화별 step 적용
+function _onAddNumKeydown(e) {
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _stepAddNum(e.target.id, 1);
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _stepAddNum(e.target.id, -1);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const priceInput = document.getElementById('addPrice');
+  const qtyInput   = document.getElementById('addQty');
+  if (priceInput) {
+    priceInput.addEventListener('input', _onAddPriceInput);
+    priceInput.addEventListener('keydown', _onAddNumKeydown);
+  }
+  if (qtyInput) {
+    qtyInput.addEventListener('input', _onAddQtyInput);
+    qtyInput.addEventListener('keydown', _onAddNumKeydown);
+  }
+});
+
 function openAddModal(ticker, name, currency) {
   if (!currentUser) { openLoginModal(); return; }
   const hasTickerFromCtx = !!ticker;
@@ -612,10 +684,14 @@ async function submitAddHolding() {
   const ticker   = document.getElementById('addTicker').value;
   const name     = document.getElementById('addName').value || ticker;
   const currency = document.getElementById('addCurrency').value || 'USD';
-  const price    = parseFloat(document.getElementById('addPrice').value);
-  const qty      = parseFloat(document.getElementById('addQty').value);
+  let price      = parseFloat(document.getElementById('addPrice').value);
+  let qty        = parseFloat(document.getElementById('addQty').value);
   if (!ticker) { alert('종목을 검색해서 선택해주세요'); return; }
   if (!price || !qty) { alert('매입가와 수량을 입력해주세요'); return; }
+  if (price <= 0 || qty <= 0) { alert('매입가와 수량은 0보다 커야 합니다'); return; }
+  // KRW 매입가는 정수로
+  if (currency === 'KRW') price = Math.round(price);
+  qty = Math.floor(qty);  // 수량은 정수
   const res = await fetch('/api/portfolio', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
