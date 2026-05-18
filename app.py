@@ -225,12 +225,16 @@ def api_trends_scan():
 def api_trends_status():
     """진행 상태/캐시 결과 조회."""
     from flask import request, jsonify, make_response
+    import time as _time
     market = (request.args.get("market") or "ALL").upper()
     resp = make_response(jsonify(_trends.get_status(market)))
-    # 절대 캐시되지 않도록 (브라우저 + SW 둘 다)
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
+    # 모든 캐시 계층 차단: 브라우저 / 프록시 / Service Worker
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+    resp.headers["Pragma"]        = "no-cache"
+    resp.headers["Expires"]       = "0"
+    resp.headers["X-Accel-Expires"] = "0"
+    # ETag 무효화 (매번 다른 값)
+    resp.headers["ETag"]          = f'W/"{_time.time_ns()}"'
     return resp
 
 

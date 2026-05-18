@@ -217,9 +217,9 @@ def scan_all(stock_db, market: str = "ALL",
              min_tech_momentum: int = 20,
              top_for_fund: int = 50,
              final_limit: int = 30,
-             max_workers_pass1: int = 2,   # 4 → 2 (rate limit / hang 회피)
-             max_workers_pass2: int = 2,   # 3 → 2
-             per_call_timeout: int = 12,   # 단일 종목 분석 timeout
+             max_workers_pass1: int = 5,   # 2 → 5 (timeout이 짧으니 좀더 공격적)
+             max_workers_pass2: int = 3,
+             per_call_timeout: int = 10,   # 12 → 10 으로 더 짧게
              progress_cb=None) -> dict:
     """후보 종목 전체 스캔. 2-pass 로 펀더멘털 호출 최소화.
 
@@ -246,8 +246,8 @@ def scan_all(stock_db, market: str = "ALL",
     work_done = [0]   # 리스트로 감싸서 클로저에서 mutation
     def _bump():
         work_done[0] += 1
-        # 매 5개마다 콜백 (락 경합 줄이기 위해)
-        if progress_cb and (work_done[0] % 3 == 0 or work_done[0] >= est_total):
+        # 매번 콜백 (서버 측 진행률을 즉시 반영)
+        if progress_cb:
             progress_cb(work_done[0], est_total)
 
     # ─ Pass 1 ─
@@ -400,17 +400,21 @@ def get_status(market: str) -> dict:
     if market not in ("ALL", "KR", "US"):
         market = "ALL"
 
+    server_now = time.time()  # 서버 응답 시각 (캐시 진단용)
+
     with _LOCK:
         # 캐시 우선
         if market in _CACHE:
             ts, data = _CACHE[market]
-            if time.time() - ts < _CACHE_TTL:
+            if server_now - ts < _CACHE_TTL:
                 return {
                     "state":  "done",
                     "cached": True,
                     "cached_at": datetime.fromtimestamp(ts).isoformat() + "Z",
                     "result": data,
+                    "server_now": server_now,
                 }
         # 진행 상태
-        st = _STATUS.get(market, {"state": "idle"})
-        return dict(st)
+        st = dict(_STATUS.get(market, {"state": "idle"}))
+        st["server_now"] = server_now
+        return st
