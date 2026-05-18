@@ -724,56 +724,104 @@ function renderPositionCard(position, stock) {
   if (!currentUser) {
     el.innerHTML = `
       <div class="position-empty">
-        <div>🔐 로그인하면 보유 주식 기준<br>매매 타이밍을 분석해 드려요</div>
+        <div class="position-empty-icon">🔐</div>
+        <div class="position-empty-msg">로그인하면 보유 주식 기준<br>매매 타이밍을 분석해 드려요</div>
         <button class="position-login-btn" onclick="openLoginModal()">로그인하기</button>
       </div>`;
     renderTradeActions(null);
     return;
   }
 
-  // 보유 없음
+  // 보유 없음 — 진입 추천 정보를 함께 노출
   if (!position) {
     const ticker = currentAnalysisTicker;
     const name   = stock ? stock.name : ticker;
-    const cur    = stock ? stock.currency : 'USD';
+    const cur    = (stock && stock.currency) || 'USD';
+    const price  = stock ? stock.price : null;
+    const fmtP_ = (v) => v == null ? '—' : cur === 'KRW'
+      ? Math.round(v / 10) * 10 + '원'
+      : '$' + Number(v).toFixed(2);
+    // 최근 analysis 가 있으면 진입 추천가 노출 (윈도우 변수에서 가져오거나 stock 안에서)
+    const analysis = (window._lastAnalysis) || null;
+    let recBlock = '';
+    if (analysis && analysis.entry_price != null) {
+      const rec = analysis.trade_recommendation;
+      const recIcon = { strong: '🔥', neutral: '⚖️', avoid: '⚠️' }[rec] || '⚖️';
+      const recText = { strong: '진입 추천', neutral: '풀백 대기', avoid: '진입 비추천' }[rec] || '';
+      recBlock = `
+        <div class="position-empty-rec rec-${rec || 'neutral'}">
+          <span class="rec-mini-icon">${recIcon}</span>
+          <span class="rec-mini-text">${recText}</span>
+          ${rec !== 'avoid' ? `<span class="rec-mini-price">진입가 ${fmtP_(analysis.entry_price)}</span>` : ''}
+        </div>`;
+    }
     el.innerHTML = `
       <div class="position-empty">
-        <div>이 종목을 보유하고 계신가요?</div>
+        ${price != null ? `<div class="position-empty-price">${fmtP_(price)}</div>` : ''}
+        ${recBlock}
+        <div class="position-empty-msg">이 종목을 보유하고 계신가요?</div>
         <button class="position-add-btn" onclick="openAddModal('${ticker}','${name}','${cur}')">+ 포트폴리오에 추가</button>
       </div>`;
     renderTradeActions(null);
     return;
   }
 
-  // 보유 중
+  // 보유 중 — 비주얼 강조된 카드
   const cur = position.currency || 'USD';
   const fmtP = (v, noRound = false) => v == null ? '—' : cur === 'KRW'
     ? (noRound ? Number(v) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
-    : '$' + Number(v).toLocaleString();
-  const rec  = position.recommendation;
-  const pct  = rec ? rec.return_pct : null;
+    : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const rec      = position.recommendation;
+  const pct      = rec ? rec.return_pct : null;
   const pctStr   = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—';
-  const pctColor = pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : 'var(--text)';
+  const pctClass = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+  const pctIcon  = pct > 0 ? '▲' : pct < 0 ? '▼' : '';
+
+  // 손익 금액 계산
+  const profitAmt = (position.current_price && position.purchase_price)
+    ? (position.current_price - position.purchase_price) * position.quantity
+    : null;
+  const profitStr = profitAmt != null
+    ? `${profitAmt >= 0 ? '+' : ''}${fmtP(Math.round(profitAmt))}`
+    : '';
+
+  // 매입→현재→목표 진행률 (analysis 있으면)
+  const analysis = window._lastAnalysis || null;
+  let progressBar = '';
+  if (analysis && analysis.target_price && position.purchase_price && position.current_price) {
+    const min  = Math.min(position.purchase_price, analysis.stop_loss || position.purchase_price);
+    const max  = Math.max(analysis.target_price, position.current_price);
+    const span = max - min || 1;
+    const curPct = Math.min(100, Math.max(0, (position.current_price - min) / span * 100));
+    const tgtPct = Math.min(100, Math.max(0, (analysis.target_price - min) / span * 100));
+    const buyPct = Math.min(100, Math.max(0, (position.purchase_price - min) / span * 100));
+    progressBar = `
+      <div class="position-progress">
+        <div class="pp-track">
+          <div class="pp-fill" style="width:${curPct}%"></div>
+          <div class="pp-marker pp-buy"     style="left:${buyPct}%" title="매입가 ${fmtP(position.purchase_price)}">매입</div>
+          <div class="pp-marker pp-current" style="left:${curPct}%" title="현재가 ${fmtP(position.current_price)}">현재</div>
+          <div class="pp-marker pp-target"  style="left:${tgtPct}%" title="목표가 ${fmtP(analysis.target_price)}">목표</div>
+        </div>
+      </div>`;
+  }
 
   el.innerHTML = `
     <div class="position-holding">
-      <div class="position-row">
-        <span class="position-label">보유 수량</span>
-        <span class="position-value">${position.quantity}주</span>
+      <!-- 큰 손익 헤드 -->
+      <div class="position-head pct-${pctClass}">
+        <div class="ph-pct">${pctIcon} ${pctStr === '—' ? '—' : pctStr.replace(/^[+\-]/, '')}</div>
+        <div class="ph-amt">${profitStr}</div>
       </div>
-      <div class="position-row">
-        <span class="position-label">매입 평균가</span>
-        <span class="position-value">${fmtP(position.purchase_price, true)}</span>
+
+      ${progressBar}
+
+      <div class="position-grid">
+        <div class="pg-item"><div class="pg-label">보유</div><div class="pg-val">${position.quantity}주</div></div>
+        <div class="pg-item"><div class="pg-label">매입</div><div class="pg-val">${fmtP(position.purchase_price, true)}</div></div>
+        <div class="pg-item"><div class="pg-label">현재</div><div class="pg-val">${fmtP(position.current_price)}</div></div>
       </div>
-      <div class="position-row">
-        <span class="position-label">현재가</span>
-        <span class="position-value">${fmtP(position.current_price)}</span>
-      </div>
-      <div class="position-row">
-        <span class="position-label">평가 손익</span>
-        <span class="position-value" style="color:${pctColor}">${pctStr}</span>
-      </div>
-      <hr class="position-divider" />
+
       ${rec ? `
       <div class="position-rec ${rec.color}">
         <div class="position-rec-action">${rec.action}</div>
@@ -894,6 +942,7 @@ async function analyze() {
 
     currentAnalysisTicker = data.stock.ticker;
     chartData = data.chart;
+    window._lastAnalysis = data.analysis;     // 포지션 카드에서 참조용
     renderStockInfo(data.stock);
     renderVerdict(data.analysis, data.stock);
     renderDetail(data.analysis.details || []);

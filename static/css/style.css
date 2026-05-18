@@ -530,7 +530,7 @@ body {
   .chart-controls { flex-wrap: wrap; gap: 8px; }
   .indicator-toggles { margin-left: 0; flex-wrap: wrap; gap: 6px; width: 100%; }
   .main-chart { height: 380px; }     /* 340 → 380 */
-  .sub-chart  { height: 110px; }
+  .sub-chart  { height: 110px; margin-top: 0; }   /* 차트끼리 붙임 */
 
   /* 종합판단 */
   .verdict-content { gap: 16px; }
@@ -601,7 +601,7 @@ body {
   .chart-controls { gap: 6px; margin-bottom: 10px; }
   .chart-btn, .interval-btn { padding: 5px 10px; font-size: 12px; }
   .main-chart { height: 360px; }     /* 260 → 360px 확대 */
-  .sub-chart  { height: 100px; margin-top: 4px; }
+  .sub-chart  { height: 100px; margin-top: 0; }   /* 간격 제거, 차트 붙임 */
   .ind-chip { padding: 5px 10px; font-size: 11px; }
   .indicator-toggles { gap: 5px; width: 100%; margin-left: 0; }
   /* 차트 카드 모바일 좌우 여백 줄임 (차트 가로 폭 확보) */
@@ -864,7 +864,7 @@ body {
   color: var(--accent);
 }
 .main-chart { height: 420px; border-radius: 8px; overflow: hidden; }
-.sub-chart { height: 140px; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+.sub-chart { height: 140px; border-radius: 8px; overflow: hidden; margin-top: 2px; }   /* 8 → 2px */
 
 /* ── 모의투자 ── */
 .trading-main { max-width: 1200px; margin: 24px auto; padding: 0 24px 48px; }
@@ -1936,20 +1936,37 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 16px 0;
+  gap: 10px;
+  padding: 20px 8px;
   color: var(--text2);
   font-size: 13px;
   text-align: center;
 }
+.position-empty-icon  { font-size: 32px; line-height: 1; }
+.position-empty-price { font-size: 22px; font-weight: 800; color: var(--text); }
+.position-empty-msg   { font-size: 13px; line-height: 1.5; }
+.position-empty-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.position-empty-rec.rec-strong  { background: rgba(63,185,80,0.12);  color: var(--green); }
+.position-empty-rec.rec-neutral { background: rgba(255,185,30,0.10); color: rgb(255,185,30); }
+.position-empty-rec.rec-avoid   { background: rgba(248,81,73,0.10);  color: var(--red); }
+.position-empty-rec .rec-mini-price { color: var(--text); font-weight: 700; font-size: 11.5px; }
+
 .position-login-btn, .position-add-btn {
   background: var(--bg3);
   border: 1px solid var(--accent);
   color: var(--accent);
   border-radius: 8px;
-  padding: 8px 18px;
+  padding: 9px 22px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
   text-decoration: none;
@@ -1958,7 +1975,81 @@ body {
 .position-login-btn:hover, .position-add-btn:hover {
   background: rgba(88,166,255,0.12);
 }
-.position-holding { display: flex; flex-direction: column; gap: 10px; }
+
+/* 보유 중: 큰 손익 헤드 */
+.position-holding { display: flex; flex-direction: column; gap: 12px; }
+.position-head {
+  text-align: center;
+  padding: 14px 12px;
+  border-radius: 10px;
+  background: var(--bg3);
+}
+.position-head.pct-up   { background: rgba(63,185,80,0.10); }
+.position-head.pct-down { background: rgba(248,81,73,0.10); }
+.position-head.pct-flat { background: var(--bg3); }
+.position-head .ph-pct {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+.position-head.pct-up   .ph-pct { color: var(--green); }
+.position-head.pct-down .ph-pct { color: var(--red); }
+.position-head.pct-flat .ph-pct { color: var(--text); }
+.position-head .ph-amt {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+  color: var(--text2);
+}
+.position-head.pct-up   .ph-amt { color: var(--green); }
+.position-head.pct-down .ph-amt { color: var(--red); }
+
+/* 매입→현재→목표 진행률 바 */
+.position-progress { padding: 8px 4px 16px; }
+.pp-track {
+  height: 6px;
+  background: var(--bg3);
+  border-radius: 3px;
+  position: relative;
+}
+.pp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+.pp-marker {
+  position: absolute;
+  top: 100%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+}
+.pp-marker.pp-buy     { color: var(--text2); }
+.pp-marker.pp-current { color: var(--accent); border-color: var(--accent); top: -18px; }
+.pp-marker.pp-target  { color: var(--green); }
+
+/* 보유/매입/현재 그리드 */
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 8px;
+}
+.pg-item { text-align: center; padding: 4px; }
+.pg-label { font-size: 10px; color: var(--text2); margin-bottom: 2px; }
+.pg-val   { font-size: 12px; font-weight: 700; color: var(--text); }
+
+/* 호환용 */
 .position-row {
   display: flex;
   justify-content: space-between;
