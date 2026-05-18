@@ -189,7 +189,27 @@ function selectMarket(btn) {
   trendsMarket = btn.dataset.market;
 }
 
-function _trendCardHTML(item) {
+// 스파크라인 SVG 렌더링 (0..1 정규화 배열)
+function _renderSparkline(values) {
+  if (!values || values.length < 2) return '';
+  const w = 90, h = 28, pad = 2;
+  const step = (w - pad * 2) / (values.length - 1);
+  const pts = values.map((v, i) =>
+    `${(pad + i * step).toFixed(1)},${(pad + (1 - v) * (h - pad * 2)).toFixed(1)}`
+  ).join(' ');
+  const isUp = values[values.length - 1] >= values[0];
+  const stroke = isUp ? '#3FB950' : '#F85149';
+  const fill   = isUp ? 'rgba(63,185,80,0.10)' : 'rgba(248,81,73,0.10)';
+  // area path
+  const areaPts = pts + ` ${(w - pad).toFixed(1)},${(h - pad).toFixed(1)} ${pad},${(h - pad).toFixed(1)}`;
+  return `
+    <svg class="trend-sparkline" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <polygon points="${areaPts}" fill="${fill}" />
+      <polyline points="${pts}" fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>`;
+}
+
+function _trendCardHTML(item, rank) {
   const chg = item.change_pct ?? 0;
   const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'neutral';
   const icon = chg > 0 ? '▲' : chg < 0 ? '▼' : '';
@@ -202,23 +222,42 @@ function _trendCardHTML(item) {
   const fund  = item.fund_score ?? 0;
   const scoreColor = total >= 70 ? 'high' : total >= 50 ? 'mid' : 'low';
 
-  // 한 줄 컴팩트 레이아웃 (포트폴리오 접힘 카드 스타일)
+  // 순위 + 메달 (top 3)
+  const medals = ['🥇', '🥈', '🥉'];
+  const rankBlock = rank <= 3
+    ? `<div class="trend-rank trend-rank-medal">${medals[rank - 1]}</div>`
+    : `<div class="trend-rank trend-rank-num">#${rank}</div>`;
+  const tierClass = rank <= 3 ? `trend-tier-${rank}` : '';
+
+  // 스파크라인
+  const sparkline = _renderSparkline(item.sparkline);
+
+  // 시그널 칩 (top 3만, 데스크톱에서만)
+  const sigChips = (rank <= 3 && item.signals && item.signals.length)
+    ? `<div class="trend-card-signals">
+         ${item.signals.slice(0, 4).map(s => `<span class="trend-sig-chip">${s}</span>`).join('')}
+       </div>`
+    : '';
+
   return `
-  <div class="pf-card pf-card-compact trend-card-item" onclick="quickSearch('${item.ticker}')"
+  <div class="pf-card trend-card-v2 ${tierClass}" onclick="quickSearch('${item.ticker}')"
        title="기 ${tech} · 모 ${mom} · 펀 ${fund} | ${(item.signals || []).join(' · ')}">
-    <div class="trend-compact-row">
-      <div class="trend-compact-name">
+    <div class="trend-card-row">
+      ${rankBlock}
+      <div class="trend-name-block">
         <div class="pf-stock-name">${item.name || item.ticker}</div>
         <div class="pf-ticker">${item.ticker}</div>
       </div>
-      <div class="trend-compact-price">
-        <div class="pf-price-val">${fmtP(item.price, item.currency)}</div>
-        <div class="trend-compact-chg pf-${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</div>
+      <div class="trend-spark-wrap">${sparkline}</div>
+      <div class="trend-price-block">
+        <div class="trend-price-val">${fmtP(item.price, item.currency)}</div>
+        <div class="trend-chg pf-${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</div>
       </div>
-      <div class="trend-compact-score score-${scoreColor}">
+      <div class="trend-score-v2 score-${scoreColor}">
         ${total}<span class="score-suffix">/100</span>
       </div>
     </div>
+    ${sigChips}
   </div>`;
 }
 
@@ -272,7 +311,10 @@ function _showMoreTrends() {
   if (!cards) return;
   const next = _trendsAllItems.slice(_trendsShown, _trendsShown + _trendsPageSize());
   if (!next.length) return;
-  cards.insertAdjacentHTML('beforeend', next.map(_trendCardHTML).join(''));
+  // rank: 1부터 시작하는 전체 순위 (페이지네이션에 무관하게 누적)
+  cards.insertAdjacentHTML('beforeend',
+    next.map((it, idx) => _trendCardHTML(it, _trendsShown + idx + 1)).join('')
+  );
   _trendsShown += next.length;
   _updateTrendsFooter();
 }

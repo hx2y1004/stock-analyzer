@@ -179,6 +179,19 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
             if prev:
                 change_pct = (df_d["Close"].iloc[-1] / prev - 1) * 100
 
+        # 스파크라인용: 최근 30일 종가, 0..1 정규화 (작은 SVG 차트)
+        sparkline = []
+        try:
+            closes = df_d["Close"].tail(30).dropna().tolist()
+            if len(closes) >= 5:
+                mn, mx = min(closes), max(closes)
+                if mx > mn:
+                    sparkline = [round((c - mn) / (mx - mn), 3) for c in closes]
+                else:
+                    sparkline = [0.5] * len(closes)
+        except Exception:
+            sparkline = []
+
         return {
             "ticker": symbol,
             "name":   name,
@@ -191,6 +204,7 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
             "total_score":    total,
             "signals":        signals[:6],
             "reason":         " · ".join(signals[:4]) if signals else "",
+            "sparkline":      sparkline,
         }
 
     except Exception as e:

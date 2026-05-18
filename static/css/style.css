@@ -1290,13 +1290,10 @@ body {
   line-height: 1.4; margin-top: 6px;
 }
 
-/* 추세 결과 그리드: 컴팩트 카드라 1열(좁음) ~ 2열(넓음) */
+/* 추세 결과: 리더보드 스타일 1열 */
 #trendsCards {
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
-}
-@media (max-width: 600px) {
-  #trendsCards { grid-template-columns: 1fr; }
 }
 
 /* ── 추세 스캔 진행 UI ─────────────────────────────── */
@@ -1461,42 +1458,124 @@ body {
   background: rgba(248,81,73,0.08);
 }
 
-/* 추세 카드 종합 점수 (컴팩트 한 줄 레이아웃) */
-.trend-compact-row {
+/* ═══════════════════════════════════════════════════════
+   추세 카드 v2 — 순위 + 메달 + 스파크라인 + 시그널
+   ═══════════════════════════════════════════════════════ */
+.trend-card-v2 {
+  padding: 14px 16px;
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+.trend-card-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 12px;
+  grid-template-columns: 52px minmax(0, 1.6fr) 100px minmax(95px, 1fr) auto;
+  gap: 14px;
   align-items: center;
 }
-.trend-compact-name {
-  min-width: 0;
+
+/* 순위/메달 */
+.trend-rank {
+  text-align: center;
+  font-weight: 800;
 }
-.trend-compact-name .pf-stock-name {
+.trend-rank-medal { font-size: 24px; line-height: 1; }
+.trend-rank-num   { font-size: 17px; color: var(--text2); }
+
+/* 종목명 블록 */
+.trend-name-block { min-width: 0; }
+.trend-name-block .pf-stock-name {
+  font-size: 14px;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.trend-compact-score {
-  font-size: 16px; font-weight: 800;
-  padding: 4px 10px; border-radius: 8px;
+.trend-name-block .pf-ticker {
+  font-size: 11px;
+  color: var(--accent);
+  font-family: monospace;
+  margin-top: 1px;
+}
+
+/* 스파크라인 */
+.trend-spark-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+}
+.trend-sparkline {
+  display: block;
+  width: 90px;
+  height: 28px;
+}
+
+/* 가격/등락 */
+.trend-price-block {
+  text-align: right;
+  min-width: 0;
+}
+.trend-price-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
   white-space: nowrap;
 }
-.trend-compact-score.score-high { background: rgba(63,185,80,0.18);  color: var(--green); }
-.trend-compact-score.score-mid  { background: rgba(255,185,30,0.15); color: rgb(255,185,30); }
-.trend-compact-score.score-low  { background: rgba(88,166,255,0.12); color: var(--accent); }
-.score-suffix { font-size: 10px; font-weight: 600; opacity: 0.7; margin-left: 1px; }
-
-.trend-compact-price {
-  text-align: right;
-  min-width: 90px;
-}
-.trend-compact-price .pf-price-val {
-  font-size: 14px; font-weight: 700;
-}
-.trend-compact-chg {
+.trend-chg {
   font-size: 12px;
   font-weight: 700;
   margin-top: 1px;
+  white-space: nowrap;
+}
+
+/* 점수 뱃지 */
+.trend-score-v2 {
+  font-size: 18px;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 10px;
+  white-space: nowrap;
+  letter-spacing: -0.3px;
+}
+.trend-score-v2.score-high { background: rgba(63,185,80,0.18);  color: var(--green); }
+.trend-score-v2.score-mid  { background: rgba(255,185,30,0.15); color: rgb(255,185,30); }
+.trend-score-v2.score-low  { background: rgba(88,166,255,0.12); color: var(--accent); }
+.score-suffix { font-size: 10px; font-weight: 600; opacity: 0.7; margin-left: 1px; }
+
+/* 시그널 칩 (top 3) */
+.trend-card-signals {
+  margin-top: 10px;
+  padding-left: 66px;       /* 순위 칸과 시각 정렬 */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.trend-sig-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: rgba(88,166,255,0.14);
+  color: var(--accent);
+}
+
+/* 티어별 보더/배경 강조 */
+.trend-card-v2.trend-tier-1 {
+  border-left: 4px solid #FFD700;
+  background: linear-gradient(90deg, rgba(255,215,0,0.08), rgba(255,215,0,0.01) 30%, var(--bg2));
+}
+.trend-card-v2.trend-tier-2 {
+  border-left: 4px solid #C0C0C0;
+  background: linear-gradient(90deg, rgba(192,192,192,0.08), rgba(192,192,192,0.01) 30%, var(--bg2));
+}
+.trend-card-v2.trend-tier-3 {
+  border-left: 4px solid #CD7F32;
+  background: linear-gradient(90deg, rgba(205,127,50,0.10), rgba(205,127,50,0.01) 30%, var(--bg2));
+}
+.trend-card-v2:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
 }
 
 /* (구) 점수 분해 뱃지 — 컴팩트 레이아웃에선 안 씀, 호환용 */
@@ -1813,15 +1892,24 @@ body {
   /* 기준 박스: 모바일 글자 살짝 축소 */
   .trends-criteria-box { font-size: 11px; padding: 6px 10px; }
 
-  /* 추세 카드: 모바일 컴팩트 - 폰트/패딩 조정 */
-  .trend-card-item { padding: 10px 12px; }
-  .trend-compact-row { gap: 8px; grid-template-columns: 1fr auto auto; }
-  .trend-compact-score { font-size: 14px; padding: 3px 7px; }
-  .trend-compact-score .score-suffix { display: none; }   /* 모바일에선 /100 생략 */
-  .trend-compact-price { min-width: 70px; }
-  .trend-compact-price .pf-price-val { font-size: 13px; }
-  .trend-compact-chg { font-size: 11px; }
-  .trend-card-item .pf-stock-name { font-size: 13px; }
+  /* 추세 카드 v2: 모바일 컴팩트 (스파크라인/시그널 숨김) */
+  .trend-card-v2 { padding: 10px 12px; }
+  .trend-card-row {
+    grid-template-columns: 32px 1fr minmax(70px, auto) auto;
+    gap: 8px;
+  }
+  .trend-spark-wrap { display: none; }     /* 스파크라인 숨김 */
+  .trend-card-signals { display: none; }    /* 시그널 칩 숨김 */
+  .trend-rank-medal { font-size: 18px; }
+  .trend-rank-num   { font-size: 13px; }
+  .trend-name-block .pf-stock-name { font-size: 13px; }
+  .trend-price-val { font-size: 13px; }
+  .trend-chg { font-size: 11px; }
+  .trend-score-v2 {
+    font-size: 14px;
+    padding: 4px 8px;
+  }
+  .trend-score-v2 .score-suffix { display: none; }
 }
 @media (max-width: 480px) {
   .portfolio-cards { grid-template-columns: 1fr 1fr; gap: 8px; }
