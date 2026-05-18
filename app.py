@@ -972,8 +972,27 @@ def fetch_kr_analysts(code):
         except Exception:
             return firm, date, None, None
 
+    # 개별 fetch 8s, 전체 25s 안에 안 끝나면 강제 종료
+    details = []
+    from concurrent.futures import as_completed as _as_completed
     with _TPE(max_workers=4) as ex:
-        details = list(ex.map(_fetch_detail, items))
+        futures = {ex.submit(_fetch_detail, it): it for it in items}
+        try:
+            for fut in _as_completed(futures, timeout=25):
+                try:
+                    details.append(fut.result(timeout=8))
+                except Exception as e:
+                    it = futures[fut]
+                    app.logger.warning(f"[kr_analysts] {it[1]} {it[2]} failed: {e}")
+                    details.append((it[1], it[2], None, None))
+        except Exception as e:
+            app.logger.warning(f"[kr_analysts] overall timeout/error: {e}")
+            # 남은 futures 의 결과는 (firm, date, None, None) 으로 채움
+            for fut in futures:
+                if fut.done():
+                    continue
+                it = futures[fut]
+                details.append((it[1], it[2], None, None))
 
     # ── 3. 결과 정리 ──────────────────────────────────────────────────
     targets = []

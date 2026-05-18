@@ -1,0 +1,9 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+# gthread 워커로 변경 (sync 워커는 백그라운드 스레드 점유 시 status 응답 못함)
+# threads 8 로 병행 요청 처리, timeout 120s 로 분석 / 스캔 여유 확보
+startCommand = "gunicorn app:app --workers 1 --threads 8 --worker-class gthread --timeout 120 --graceful-timeout 30"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
