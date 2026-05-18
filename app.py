@@ -686,6 +686,151 @@ def fetch_kr_quarterly_estimates(krx_code):
     return data["rev_est"], data["oi_est"]
 
 
+# ── DART (전자공시시스템) 통합 ─────────────────────────────────
+# 금융감독원 공식 공시 데이터 — 가장 빠르고 정확
+# 사용 조건: DART_API_KEY 환경변수 설정 (https://opendart.fss.or.kr 무료 발급)
+
+_DART_CORP_CODE_MAP = None   # {stock_code: corp_code} 캐시
+_DART_LOAD_LOCK = threading.Lock()
+
+
+def _load_dart_corp_codes():
+    """DART corpCode.xml → {KRX_종목코드: DART_corp_code} 캐싱."""
+    global _DART_CORP_CODE_MAP
+    if _DART_CORP_CODE_MAP is not None:
+        return _DART_CORP_CODE_MAP
+    with _DART_LOAD_LOCK:
+        if _DART_CORP_CODE_MAP is not None:
+            return _DART_CORP_CODE_MAP
+        api_key = os.environ.get("DART_API_KEY", "").strip()
+        if not api_key:
+            _DART_CORP_CODE_MAP = {}
+            return _DART_CORP_CODE_MAP
+        try:
+            import zipfile, io, xml.etree.ElementTree as ET
+            url = "https://opendart.fss.or.kr/api/corpCode.xml"
+            resp = requests.get(url, params={"crtfc_key": api_key}, timeout=20)
+            if resp.status_code != 200:
+                app.logger.warning(f"[DART] corp_code download failed: {resp.status_code}")
+                _DART_CORP_CODE_MAP = {}
+                return _DART_CORP_CODE_MAP
+            mapping = {}
+            with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+                with z.open(z.namelist()[0]) as f:
+                    tree = ET.parse(f)
+                    for c in tree.getroot().findall("list"):
+                        sc = (c.findtext("stock_code") or "").strip()
+                        cc = (c.findtext("corp_code") or "").strip()
+                        if sc and cc:
+                            mapping[sc] = cc
+            _DART_CORP_CODE_MAP = mapping
+            app.logger.info(f"[DART] corp_code map loaded: {len(mapping)} stocks")
+            return _DART_CORP_CODE_MAP
+        except Exception as e:
+            app.logger.error(f"[DART] corp_code load error: {e}")
+            _DART_CORP_CODE_MAP = {}
+            return _DART_CORP_CODE_MAP
+
+
+def _dart_parse_amount(text):
+    """DART 금액 문자열(억원 단위 X — KRW 그대로) → float."""
+    if not text:
+        return None
+    text = str(text).replace(",", "").strip()
+    if text in ("-", "", "—"):
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def fetch_dart_quarterly(krx_code: str) -> dict:
+    """DART API → 최근 2~3년 분기 매출·영업이익 (단일 분기 기준).
+
+    DART 는 보고서가 누적이므로 단일 분기 = 현재 분기 - 직전 분기.
+
+    Returns:
+        {"rev_act": {"YYYY-MM": KRW}, "oi_act": {"YYYY-MM": KRW}}
+    """
+    api_key = os.environ.get("DART_API_KEY", "").strip()
+    if not api_key:
+        return {"rev_act": {}, "oi_act": {}}
+
+    corp_codes = _load_dart_corp_codes()
+    corp_code = corp_codes.get(krx_code)
+    if not corp_code:
+        app.logger.info(f"[DART] {krx_code}: corp_code 매핑 없음")
+        return {"rev_act": {}, "oi_act": {}}
+
+    rev_cum = {}   # (year, qtr_idx) → cumulative revenue
+    oi_cum  = {}
+
+    # 분기 보고서 코드: Q1, 반기, Q3, 사업보고서
+    quarters = [(1, "11013", "03"), (2, "11012", "06"),
+                (3, "11014", "09"), (4, "11011", "12")]
+
+    today = datetime.now()
+    cur_year = today.year
+    # 최근 3년 데이터 시도 (작년 + 올해)
+    for y in (cur_year - 1, cur_year):
+        for qi, reprt, month in quarters:
+            try:
+                resp = requests.get(
+                    "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json",
+                    params={
+                        "crtfc_key": api_key,
+                        "corp_code": corp_code,
+                        "bsns_year": str(y),
+                        "reprt_code": reprt,
+                        "fs_div":     "CFS",
+                    },
+                    timeout=12,
+                )
+                d = resp.json()
+                if d.get("status") != "000":
+                    # 발표 안 된 분기일 수 있음 (정상)
+                    continue
+                for item in d.get("list", []):
+                    nm = item.get("account_nm", "")
+                    amt = _dart_parse_amount(item.get("thstrm_amount", ""))
+                    if amt is None:
+                        continue
+                    if nm in ("매출액", "수익(매출액)", "영업수익"):
+                        rev_cum[(y, qi)] = amt
+                    elif nm == "영업이익":
+                        oi_cum[(y, qi)] = amt
+            except Exception as e:
+                app.logger.warning(f"[DART] {krx_code} {y}Q{qi} fetch error: {e}")
+
+    # 누적 → 단일 분기 변환
+    def _to_quarterly(cum_map):
+        out = {}
+        for (y, qi), v in cum_map.items():
+            month = {1: "03", 2: "06", 3: "09", 4: "12"}[qi]
+            period = f"{y}-{month}"
+            if qi == 1:
+                out[period] = v   # Q1 은 이미 단일
+            else:
+                prev = cum_map.get((y, qi - 1))
+                if prev is not None:
+                    out[period] = v - prev
+                else:
+                    # 직전 분기 데이터 없으면 누적 그대로 (마지막 보고서면 ≈ 전체)
+                    out[period] = v
+        return out
+
+    result = {
+        "rev_act": _to_quarterly(rev_cum),
+        "oi_act":  _to_quarterly(oi_cum),
+    }
+    app.logger.info(
+        f"[DART] {krx_code}: rev_periods={sorted(result['rev_act'].keys())[-4:]} "
+        f"oi_periods={sorted(result['oi_act'].keys())[-4:]}"
+    )
+    return result
+
+
 def fetch_kr_analysts(code):
     """네이버 금융 리서치 리포트에서 국내 증권사 목표가·투자의견 수집.
 
@@ -1729,9 +1874,20 @@ def analyze():
                 kr_oi_act  = kr_data["oi_act"]
                 kr_rev_est = kr_data["rev_est"]
                 kr_oi_est  = kr_data["oi_est"]
+
+                # DART (전자공시) 데이터 머지 (가장 빠르고 정확, API key 있을 때만)
+                dart_data = fetch_dart_quarterly(krx_code)
+                if dart_data["rev_act"]:
+                    # DART 값으로 덮어쓰기 (가장 신뢰)
+                    for p, v in dart_data["rev_act"].items():
+                        kr_rev_act[p] = v
+                    for p, v in dart_data["oi_act"].items():
+                        kr_oi_act[p] = v
+                    app.logger.info(f"[KR qtr] DART merged for {krx_code}")
+
                 app.logger.info(
-                    f"[KR qtr] {krx_code}: act_periods={list(kr_rev_act.keys())[:6]} "
-                    f"est_periods={list(kr_rev_est.keys())[:4]}"
+                    f"[KR qtr] {krx_code}: act_periods={sorted(kr_rev_act.keys())} "
+                    f"est_periods={sorted(kr_rev_est.keys())}"
                 )
 
                 # ── 매출: 네이버 actuals 우선 머지 (yfinance 보다 최신) ──
