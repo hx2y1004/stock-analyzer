@@ -1911,10 +1911,30 @@ body {
 }
 .add-submit-btn:hover { opacity: 0.85; }
 
-/* 포지션 카드 (col-chart 내부 - 일반 카드 동작) */
-#positionCard { display: flex; flex-direction: column; }
+/* 포지션 카드 (col-chart 내부)
+   — 차트/트레이드 아래 남은 공간을 카드가 모두 차지하도록 stretch */
+.col-chart > #positionCard {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+}
 #positionCard .card-title { flex-shrink: 0; }
-#positionContent { display: flex; flex-direction: column; }
+#positionCard #positionContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+/* 미보유: 콘텐츠 세로 가운데 정렬 → 빈 공간 자연스럽게 채움 */
+#positionContent .position-empty {
+  flex: 1;
+  justify-content: center;
+}
+/* 보유 중: 콘텐츠는 자연스럽게 위에서 채움 (필요 시 stretch) */
+#positionContent .position-holding {
+  flex: 1;
+  justify-content: flex-start;
+}
 
 /* ── 시장 컨텍스트 카드 ── */
 .market-context-card .mc-list {
