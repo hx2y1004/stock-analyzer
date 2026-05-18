@@ -780,10 +780,69 @@ def _norm_dt(d):
         return None
 
 
-def fetch_upcoming_events(stock, info: dict) -> list:
-    """다음 실적 발표 / 배당락일 등 향후 이벤트 (여러 소스 시도)."""
+# ── 매크로 이벤트 스케줄 (FOMC / CPI / 한국 금통위) ──
+# 2026년 일정 (필요 시 매년 업데이트)
+_FOMC_DATES = [
+    "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+    "2026-07-29", "2026-09-16", "2026-11-04", "2026-12-16",
+]
+_CPI_DATES = [   # 미국 노동통계국 CPI 발표 (월간)
+    "2026-01-13", "2026-02-11", "2026-03-11", "2026-04-14",
+    "2026-05-13", "2026-06-10", "2026-07-15", "2026-08-12",
+    "2026-09-10", "2026-10-15", "2026-11-12", "2026-12-10",
+]
+_BOK_DATES = [   # 한국 금통위
+    "2026-01-22", "2026-02-26", "2026-04-09", "2026-05-28",
+    "2026-07-09", "2026-08-27", "2026-10-22", "2026-11-26",
+]
+# 한국 분기/반기/사업 보고서 마감일
+_KR_REPORT_DATES = [
+    ("2026-03-31", "사업보고서 마감"),
+    ("2026-05-15", "1분기 보고서 마감"),
+    ("2026-08-14", "반기 보고서 마감"),
+    ("2026-11-14", "3분기 보고서 마감"),
+]
+
+
+def _add_macro_events(events: list, is_kr: bool, today: pd.Timestamp) -> None:
+    """매크로/시장 이벤트 추가 (가까운 1개씩만 부착)."""
+    def _push_first(dates: list, icon: str, label: str, window_days: int):
+        for d_str in dates:
+            ts = pd.Timestamp(d_str)
+            days = (ts.normalize() - today).days
+            if 0 <= days <= window_days:
+                events.append({
+                    'type':  'macro', 'icon': icon, 'label': label,
+                    'date':  d_str, 'days': int(days),
+                })
+                return
+
+    # FOMC (모든 주식에 영향 - 미국 금리)
+    _push_first(_FOMC_DATES, '🏦', 'FOMC 회의 (미국 금리)', 90)
+
+    if is_kr:
+        # 한국 금통위
+        _push_first(_BOK_DATES, '🏦', '한국 금통위 (기준금리)', 90)
+        # 분기 보고서 마감 (가장 가까운 것)
+        for d_str, label in _KR_REPORT_DATES:
+            ts = pd.Timestamp(d_str)
+            days = (ts.normalize() - today).days
+            if 0 <= days <= 60:
+                events.append({
+                    'type':  'filing', 'icon': '📑', 'label': label,
+                    'date':  d_str, 'days': int(days),
+                })
+                break
+    else:
+        # 미국 CPI 발표
+        _push_first(_CPI_DATES, '📊', '미국 CPI 발표', 45)
+
+
+def fetch_upcoming_events(stock, info: dict, ticker: str = "") -> list:
+    """다음 실적 발표 / 배당 / 매크로 이벤트 (여러 소스 시도)."""
     events = []
     today = pd.Timestamp.utcnow().tz_localize(None).normalize()
+    is_kr = ticker.endswith(".KS") or ticker.endswith(".KQ")
     next_earnings_ts = None
 
     # ── 1) get_earnings_dates ──
@@ -868,8 +927,31 @@ def fetch_upcoming_events(stock, info: dict) -> list:
     except Exception as e:
         app.logger.warning(f"[events] ex-dividend failed: {e}")
 
+    # ── 배당 지급일 ──
+    try:
+        div_pay = info.get('dividendDate') or info.get('lastDividendDate')
+        ts = _norm_dt(div_pay)
+        if ts is not None:
+            days = (ts.normalize() - today).days
+            if 0 <= days <= 180:
+                events.append({
+                    'type':  'dividend-pay',
+                    'icon':  '💵',
+                    'label': '배당 지급일',
+                    'date':  ts.strftime('%Y-%m-%d'),
+                    'days':  int(days),
+                })
+    except Exception as e:
+        app.logger.warning(f"[events] dividend pay failed: {e}")
+
+    # ── 매크로 이벤트 (FOMC / CPI / 금통위 / 보고서 마감) ──
+    try:
+        _add_macro_events(events, is_kr, today)
+    except Exception as e:
+        app.logger.warning(f"[events] macro events failed: {e}")
+
     events.sort(key=lambda e: e.get('days', 999))
-    return events
+    return events[:7]   # 너무 많으면 잘림 (가까운 7개만)
 
 
 def fetch_news(stock):
@@ -1495,7 +1577,7 @@ def analyze():
         except Exception as e:
             app.logger.warning(f"market_context: {e}")
         try:
-            stock_data["upcoming_events"] = fetch_upcoming_events(stock, info)
+            stock_data["upcoming_events"] = fetch_upcoming_events(stock, info, ticker)
         except Exception as e:
             app.logger.warning(f"upcoming_events: {e}")
 

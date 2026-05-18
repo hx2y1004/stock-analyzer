@@ -1953,7 +1953,16 @@ body {
 .events-card .events-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.events-card .events-list::-webkit-scrollbar { width: 4px; }
+.events-card .events-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
 }
 .event-row {
   display: flex;
