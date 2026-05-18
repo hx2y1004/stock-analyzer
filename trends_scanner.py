@@ -18,29 +18,11 @@ from typing import Optional
 
 import yfinance as yf
 import pandas as pd
-import requests
 
 log = logging.getLogger(__name__)
 
-# 공유 세션 (yfinance 가 매번 새로 만드는 것보다 효율적, 타임아웃 강제)
-_SESSION_LOCK = threading.Lock()
-_SESSION = None
-
-def _get_session():
-    """타임아웃이 강제된 공유 requests.Session."""
-    global _SESSION
-    with _SESSION_LOCK:
-        if _SESSION is None:
-            s = requests.Session()
-            s.headers.update({"User-Agent": "Mozilla/5.0 (compatible; StockAnalyzer/1.0)"})
-            # 모든 요청에 timeout 적용 (yfinance 내부에서 호출 시)
-            _orig_request = s.request
-            def _timed_request(method, url, **kwargs):
-                kwargs.setdefault("timeout", 15)  # 8 → 15 (데이터 받을 시간 확보)
-                return _orig_request(method, url, **kwargs)
-            s.request = _timed_request
-            _SESSION = s
-    return _SESSION
+# yfinance 기본 동작 사용 (커스텀 세션이 Yahoo 봇 차단 유발 가능성)
+# Future timeout 으로 행 방지
 
 # ── 캐시/상태 (모듈 전역) ─────────────────────────────
 _LOCK    = threading.Lock()
@@ -71,11 +53,15 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
         # 약간의 지터 (rate limit 분산)
         time.sleep(random.uniform(0.02, 0.10))
 
-        stock = yf.Ticker(symbol, session=_get_session())
+        stock = yf.Ticker(symbol)  # 기본 세션 (Yahoo 봇 차단 회피)
 
         # 1년 일봉
         df_d = stock.history(period="1y", interval="1d", auto_adjust=False)
-        if df_d is None or df_d.empty or len(df_d) < 60:
+        if df_d is None or df_d.empty:
+            log.debug(f"[no data] {symbol}")
+            return None
+        if len(df_d) < 60:
+            log.debug(f"[short data] {symbol} only {len(df_d)} rows")
             return None
 
         # 주봉 (일봉 리샘플)
