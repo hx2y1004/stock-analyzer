@@ -643,21 +643,39 @@ def analyze_signals(df, info, df_weekly=None):
         trend_score += 20                                 # 거래량 급증
 
     # ── 추세 강도별 진입·손절·목표 산출 ─────────────────
+    # 52주 신고가 돌파 여부 (0.5% 이내 = 진짜 돌파)
+    is_breakout = _year_high > 0 and close >= _year_high * 0.995
+    # RSI 과열 여부 (>70 이면 매수 신중)
+    rsi_overheated = (not np.isnan(rsi)) and rsi > 70
+
     if trend_score >= 60:
-        # 🔥 강한 상승추세: 즉시 진입, 타이트 손절, R:R 1:3
-        entry_price = round(close, 2)
+        # 🔥 강한 상승추세
+        if is_breakout and not rsi_overheated:
+            # 신고가 돌파 + 과열 아님 → 즉시 진입 (breakout buy)
+            entry_price = round(close, 2)
+        elif rsi_overheated:
+            # 과열: 1.5 ATR 풀백까지 보수적으로 기다림
+            entry_price = round(close - atr_use * 1.5, 2)
+        else:
+            # 일반 강세: 0.5 ATR 얕은 풀백 (limit order 권장)
+            entry_price = round(close - atr_use * 0.5, 2)
+
+        # 손절: max(5일 swing low, MA20) - 0.3 ATR
         base_stop   = max(_swing_low_5, _ma20 or _swing_low_5)
         stop_loss   = round(base_stop - atr_use * 0.3, 2)
+        # 목표: R:R 1:3 (진입가가 손절보다 낮으면 fallback)
         risk        = entry_price - stop_loss
         target_price = round(entry_price + risk * 3, 2) if risk > 0 \
                        else round(entry_price + atr_use * 4, 2)
         trade_recommendation = "strong"
+
     elif trend_score >= 30:
         # ⚖️ 약한 추세/횡보: MA20 풀백 대기, R:R 1:2
-        entry_price = round(close - atr_use * 1.0, 2)
+        entry_price = round(close - atr_use * 1.5, 2)   # 더 깊은 풀백
         stop_loss   = round(entry_price - atr_use * 2.0, 2)
         target_price = round(entry_price + atr_use * 4.0, 2)
         trade_recommendation = "neutral"
+
     else:
         # ⚠️ 약세/하락: 진입 비추천
         entry_price  = None
