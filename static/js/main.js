@@ -1269,14 +1269,11 @@ function renderFundamental(details, stock) {
         ${analysis ? `<div class="co-section-label">기업 분석</div><p class="co-desc">${analysis}</p>` : ''}
       </div>`;
   } else {
-    // 폴백: 영문 business_summary
+    // 폴백: 영문/번역된 business_summary — 전체 그대로 표시 (더보기 없음)
     const summary = (stock && stock.business_summary) ? stock.business_summary.trim() : '';
     if (summary) {
-      const sentences = summary.match(/[^.!?]+[.!?]+/g) || [summary];
-      const shortSummary = sentences.slice(0, 3).join(' ').slice(0, 320).trim();
-      const isLong = summary.length > shortSummary.length;
-      // 전체 텍스트를 window 변수로 저장 (HTML 속성 escape 문제 회피)
-      window._lastCoSummary = summary;
+      // 줄바꿈 보존
+      const formatted = summary.replace(/\n/g, '<br>');
       html += `
         <div class="company-overview-card">
           <div class="co-header">
@@ -1284,8 +1281,7 @@ function renderFundamental(details, stock) {
             <span class="co-title">회사 소개</span>
             ${stock.sector ? `<span class="co-sector">${stock.sector}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
           </div>
-          <p class="co-desc" id="coDescText">${shortSummary}${isLong ? '<span>...</span>' : ''}</p>
-          ${isLong ? `<button class="co-more-btn" onclick="toggleCoDesc()">더보기 ▼</button>` : ''}
+          <p class="co-desc">${formatted}</p>
         </div>`;
     }
   }

@@ -534,13 +534,12 @@ def fetch_kr_quarterly_data(krx_code):
     except Exception as e:
         app.logger.error(f"[KR qtr] mobile quarterly error: {e}")
 
-    # ── 시도 2: integration 엔드포인트 (더 많은 데이터 보유 케이스) ──
+    # ── 시도 2: integration 엔드포인트 ──
     if not rev_act:
         try:
             url2 = f"https://m.stock.naver.com/api/stock/{krx_code}/integration"
             r2 = requests.get(url2, headers=_hdrs, timeout=8)
             if r2.status_code == 200:
-                # 'finance' → 'quarterly' 또는 유사 구조
                 payload = r2.json()
                 fi = (payload.get("financeInfo")
                       or payload.get("quarterly")
@@ -550,6 +549,66 @@ def fetch_kr_quarterly_data(krx_code):
                     app.logger.info(f"[KR qtr] integration fallback used")
         except Exception as e:
             app.logger.warning(f"[KR qtr] integration fallback failed: {e}")
+
+    # ── 시도 3: wisereport (네이버 PC 가 내부적으로 사용, 가장 최신) ──
+    if not rev_act:
+        try:
+            # cF1002: 재무제표(분기), freq_typ=Q (분기)
+            url3 = (
+                f"https://navercomp.wisereport.co.kr/v2/company/cF1002.aspx"
+                f"?cmp_cd={krx_code}&fin_typ=4&freq_typ=Q&encparam=&id="
+            )
+            r3 = requests.get(url3, headers={**_hdrs,
+                "Referer": f"https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={krx_code}",
+                "Accept": "text/html,application/xhtml+xml",
+            }, timeout=8)
+            if r3.status_code == 200:
+                # HTML 파싱 — 분기 컬럼 + 행 매출액/영업이익 추출
+                try:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(r3.text, "html.parser")
+                    # 표 헤더에서 컬럼명(분기) 추출
+                    table = soup.find("table")
+                    if table:
+                        # 첫 헤더 행에서 컬럼명 (예: 2024/12, 2025/03, 2025/06, 2025/09, 2025/12, 2026/03)
+                        headers = []
+                        thead = table.find("thead") or table
+                        for th in thead.find_all("th"):
+                            txt = th.get_text(strip=True)
+                            m = re.match(r'(\d{4})[./](\d{2})', txt)
+                            if m:
+                                headers.append(f"{m.group(1)}-{m.group(2)}")
+                            else:
+                                headers.append(None)
+
+                        for tr in table.find_all("tr"):
+                            th = tr.find("th")
+                            if not th:
+                                continue
+                            label = th.get_text(strip=True)
+                            is_rev = label in ("매출액", "매출", "수익")
+                            is_oi  = label in ("영업이익", "영업이익(손실)")
+                            if not (is_rev or is_oi):
+                                continue
+                            tds = tr.find_all("td")
+                            # td 인덱스 = headers의 첫 None 제외 인덱스
+                            data_cols = [h for h in headers if h]
+                            for i, td in enumerate(tds):
+                                if i >= len(data_cols):
+                                    break
+                                period = data_cols[i]
+                                raw = td.get_text(strip=True)
+                                val = _clean_num(raw)
+                                if val is None:
+                                    continue
+                                krw_val = val * 1e8
+                                if is_rev: rev_act[period] = krw_val
+                                else:      oi_act[period]  = krw_val
+                        app.logger.info(f"[KR qtr] wisereport parsed: {sorted(rev_act.keys())}")
+                except Exception as e:
+                    app.logger.warning(f"[KR qtr] wisereport parse failed: {e}")
+        except Exception as e:
+            app.logger.warning(f"[KR qtr] wisereport fetch failed: {e}")
 
     return {
         "rev_act": rev_act, "oi_act":  oi_act,
@@ -1145,6 +1204,9 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
     if not api_key:
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
+        app.logger.warning(
+            f"[company_overview] {ticker}: GROQ_API_KEY 미설정 — Render 환경변수 확인 필요"
+        )
         return None
 
     is_krw = (currency == "KRW")
