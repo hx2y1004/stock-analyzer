@@ -86,6 +86,24 @@ class NumpyEncoder(json.JSONEncoder):
         return obj
 
 
+# Flask 3 JSON provider 로 NumpyEncoder 등록 (NaN → null 자동 변환)
+try:
+    from flask.json.provider import DefaultJSONProvider
+
+    class _SafeJSONProvider(DefaultJSONProvider):
+        ensure_ascii = False   # 한글 그대로
+
+        def dumps(self, obj, **kwargs):
+            return json.dumps(obj, cls=NumpyEncoder, ensure_ascii=False)
+
+        def loads(self, s, **kwargs):
+            return json.loads(s, **kwargs)
+
+    app.json = _SafeJSONProvider(app)
+except Exception as _e:
+    app.logger.warning(f"JSON provider registration failed: {_e}")
+
+
 def safe_float(val):
     try:
         if val is None or (isinstance(val, float) and np.isnan(val)):
