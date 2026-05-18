@@ -1525,20 +1525,37 @@ def analyze():
                 user_id=current_user.id, ticker=ticker
             ).first()
             if holding:
-                # ticker 기준 정확한 통화 (사용자가 잘못 저장한 경우 자동 교정)
+                # ticker 기준 정확한 통화
                 correct_currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else \
                                    holding.currency or "USD"
-                # DB 값이 잘못된 경우 silent 마이그레이션
+                # 이름이 티커로 저장된 경우 stock_data 또는 STOCK_DB에서 교정
+                correct_name = holding.name
+                if (not correct_name) or correct_name == ticker:
+                    correct_name = stock_data.get("name") or correct_name
+                    if (not correct_name) or correct_name == ticker:
+                        for s in STOCK_DB:
+                            if s.get("symbol") == ticker:
+                                correct_name = s.get("name") or correct_name
+                                break
+
+                # 변경 사항 silent 마이그레이션
+                changed = False
                 if holding.currency != correct_currency:
+                    holding.currency = correct_currency
+                    changed = True
+                if correct_name and holding.name != correct_name:
+                    holding.name = correct_name
+                    changed = True
+                if changed:
                     try:
-                        holding.currency = correct_currency
                         db.session.commit()
-                        app.logger.info(f"[currency] {ticker} {holding.currency} → {correct_currency}")
+                        app.logger.info(f"[holding] {ticker} migrated → {correct_name}/{correct_currency}")
                     except Exception:
                         db.session.rollback()
 
                 position_data = {
                     **holding.to_dict(),
+                    "name":             correct_name,
                     "currency":         correct_currency,
                     "current_price":    current_price,
                     "current_value":    round(current_price * holding.quantity, 2) if current_price else None,
@@ -1717,18 +1734,28 @@ def get_portfolio():
             if p:
                 prices[t] = p
 
-    # 통화 자동 보정 (잘못 저장된 KRW 종목 USD 표시 방지)
+    # 통화·이름 자동 보정 (잘못 저장된 KRW 종목 USD 표시 / 이름이 티커로 저장된 경우)
+    # STOCK_DB lookup helper
+    db_name_map = {s.get("symbol"): s.get("name") for s in STOCK_DB if s.get("symbol")}
+
     needs_migration = False
     for h in holdings:
-        correct = "KRW" if (h.ticker.endswith(".KS") or h.ticker.endswith(".KQ")) else \
-                  (h.currency or "USD")
-        if h.currency != correct:
-            h.currency = correct
+        # 통화
+        correct_cur = "KRW" if (h.ticker.endswith(".KS") or h.ticker.endswith(".KQ")) else \
+                      (h.currency or "USD")
+        if h.currency != correct_cur:
+            h.currency = correct_cur
             needs_migration = True
+        # 이름 (티커와 같으면 STOCK_DB에서 찾아 교체)
+        if (not h.name) or h.name == h.ticker:
+            db_name = db_name_map.get(h.ticker)
+            if db_name and db_name != h.ticker:
+                h.name = db_name
+                needs_migration = True
     if needs_migration:
         try:
             db.session.commit()
-            app.logger.info("[currency] portfolio migration applied")
+            app.logger.info("[portfolio] migration applied (currency/name)")
         except Exception:
             db.session.rollback()
 
@@ -1752,12 +1779,19 @@ def get_portfolio():
 def add_holding():
     data = request.get_json()
     ticker   = data.get("ticker", "").strip().upper()
-    name     = data.get("name", ticker)
+    name     = (data.get("name") or "").strip() or ticker
     qty      = float(data.get("quantity", 0))
     price    = float(data.get("purchase_price", 0))
-    # 통화는 ticker 기준으로 강제 보정 (클라이언트 오류 방지)
+    # 통화는 ticker 기준으로 강제 보정
     currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else \
                (data.get("currency") or "USD")
+
+    # 이름이 티커와 같으면(자동완성 미사용 등) STOCK_DB 에서 조회
+    if name == ticker:
+        for s in STOCK_DB:
+            if s.get("symbol") == ticker:
+                name = s.get("name") or name
+                break
 
     if not ticker or qty <= 0 or price <= 0:
         return jsonify({"error": "티커·수량·매입가를 올바르게 입력해주세요"}), 400
