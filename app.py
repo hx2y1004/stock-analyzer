@@ -534,81 +534,78 @@ def fetch_kr_quarterly_data(krx_code):
     except Exception as e:
         app.logger.error(f"[KR qtr] mobile quarterly error: {e}")
 
-    # ── 시도 2: integration 엔드포인트 ──
-    if not rev_act:
-        try:
-            url2 = f"https://m.stock.naver.com/api/stock/{krx_code}/integration"
-            r2 = requests.get(url2, headers=_hdrs, timeout=8)
-            if r2.status_code == 200:
-                payload = r2.json()
-                fi = (payload.get("financeInfo")
-                      or payload.get("quarterly")
-                      or {})
-                if fi:
-                    _parse_naver_finance(fi)
-                    app.logger.info(f"[KR qtr] integration fallback used")
-        except Exception as e:
-            app.logger.warning(f"[KR qtr] integration fallback failed: {e}")
+    # ── 시도 2: integration 엔드포인트 (항상 시도, 데이터 머지) ──
+    try:
+        url2 = f"https://m.stock.naver.com/api/stock/{krx_code}/integration"
+        r2 = requests.get(url2, headers=_hdrs, timeout=8)
+        if r2.status_code == 200:
+            payload = r2.json()
+            fi = (payload.get("financeInfo")
+                  or payload.get("quarterly")
+                  or {})
+            if fi:
+                before = len(rev_act)
+                _parse_naver_finance(fi)
+                after = len(rev_act)
+                app.logger.info(f"[KR qtr] integration: {before}→{after} periods")
+    except Exception as e:
+        app.logger.warning(f"[KR qtr] integration failed: {e}")
 
-    # ── 시도 3: wisereport (네이버 PC 가 내부적으로 사용, 가장 최신) ──
-    if not rev_act:
-        try:
-            # cF1002: 재무제표(분기), freq_typ=Q (분기)
-            url3 = (
-                f"https://navercomp.wisereport.co.kr/v2/company/cF1002.aspx"
-                f"?cmp_cd={krx_code}&fin_typ=4&freq_typ=Q&encparam=&id="
-            )
-            r3 = requests.get(url3, headers={**_hdrs,
-                "Referer": f"https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={krx_code}",
-                "Accept": "text/html,application/xhtml+xml",
-            }, timeout=8)
-            if r3.status_code == 200:
-                # HTML 파싱 — 분기 컬럼 + 행 매출액/영업이익 추출
-                try:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(r3.text, "html.parser")
-                    # 표 헤더에서 컬럼명(분기) 추출
-                    table = soup.find("table")
-                    if table:
-                        # 첫 헤더 행에서 컬럼명 (예: 2024/12, 2025/03, 2025/06, 2025/09, 2025/12, 2026/03)
-                        headers = []
-                        thead = table.find("thead") or table
-                        for th in thead.find_all("th"):
-                            txt = th.get_text(strip=True)
-                            m = re.match(r'(\d{4})[./](\d{2})', txt)
-                            if m:
-                                headers.append(f"{m.group(1)}-{m.group(2)}")
-                            else:
-                                headers.append(None)
+    # ── 시도 3: wisereport (네이버 PC 가 내부적으로 사용, 항상 시도해서 최신 분기 추가) ──
+    try:
+        url3 = (
+            f"https://navercomp.wisereport.co.kr/v2/company/cF1002.aspx"
+            f"?cmp_cd={krx_code}&fin_typ=4&freq_typ=Q&encparam=&id="
+        )
+        r3 = requests.get(url3, headers={**_hdrs,
+            "Referer": f"https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={krx_code}",
+            "Accept": "text/html,application/xhtml+xml",
+        }, timeout=8)
+        if r3.status_code == 200:
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(r3.text, "html.parser")
+                table = soup.find("table")
+                if table:
+                    # 헤더: 분기 컬럼명 (예: 2024/12, 2025/03, 2025/06, ..., 2026/03)
+                    headers = []
+                    thead = table.find("thead") or table
+                    for th in thead.find_all("th"):
+                        txt = th.get_text(strip=True)
+                        m = re.match(r'(\d{4})[./](\d{2})', txt)
+                        headers.append(f"{m.group(1)}-{m.group(2)}" if m else None)
 
-                        for tr in table.find_all("tr"):
-                            th = tr.find("th")
-                            if not th:
+                    before = len(rev_act)
+                    for tr in table.find_all("tr"):
+                        th = tr.find("th")
+                        if not th:
+                            continue
+                        label = th.get_text(strip=True)
+                        is_rev = label in ("매출액", "매출", "수익")
+                        is_oi  = label in ("영업이익", "영업이익(손실)")
+                        if not (is_rev or is_oi):
+                            continue
+                        tds = tr.find_all("td")
+                        data_cols = [h for h in headers if h]
+                        for i, td in enumerate(tds):
+                            if i >= len(data_cols):
+                                break
+                            period = data_cols[i]
+                            val = _clean_num(td.get_text(strip=True))
+                            if val is None:
                                 continue
-                            label = th.get_text(strip=True)
-                            is_rev = label in ("매출액", "매출", "수익")
-                            is_oi  = label in ("영업이익", "영업이익(손실)")
-                            if not (is_rev or is_oi):
-                                continue
-                            tds = tr.find_all("td")
-                            # td 인덱스 = headers의 첫 None 제외 인덱스
-                            data_cols = [h for h in headers if h]
-                            for i, td in enumerate(tds):
-                                if i >= len(data_cols):
-                                    break
-                                period = data_cols[i]
-                                raw = td.get_text(strip=True)
-                                val = _clean_num(raw)
-                                if val is None:
-                                    continue
-                                krw_val = val * 1e8
-                                if is_rev: rev_act[period] = krw_val
-                                else:      oi_act[period]  = krw_val
-                        app.logger.info(f"[KR qtr] wisereport parsed: {sorted(rev_act.keys())}")
-                except Exception as e:
-                    app.logger.warning(f"[KR qtr] wisereport parse failed: {e}")
-        except Exception as e:
-            app.logger.warning(f"[KR qtr] wisereport fetch failed: {e}")
+                            krw_val = val * 1e8
+                            if is_rev: rev_act[period] = krw_val
+                            else:      oi_act[period]  = krw_val
+                    after = len(rev_act)
+                    app.logger.info(
+                        f"[KR qtr] wisereport: {before}→{after} periods, "
+                        f"periods={sorted(rev_act.keys())}"
+                    )
+            except Exception as e:
+                app.logger.warning(f"[KR qtr] wisereport parse failed: {e}")
+    except Exception as e:
+        app.logger.warning(f"[KR qtr] wisereport fetch failed: {e}")
 
     return {
         "rev_act": rev_act, "oi_act":  oi_act,
@@ -1166,30 +1163,17 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=N
 4. 4~6문장으로 간결하되 인사이트 있게 작성하세요.
 5. 한국어로만 답변하세요. 불필요한 서론 없이 바로 분석 내용으로 시작하세요."""
 
-        try:
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [
-                        {"role": "system", "content": "당신은 한국어로 답변하는 주식 시장 전문 애널리스트입니다."},
-                        {"role": "user",   "content": prompt},
-                    ],
-                    "temperature": 0.4,
-                    "max_tokens": 400,
-                },
-                timeout=15,
-            )
-            data = resp.json()
-            if "choices" in data:
-                text = data["choices"][0]["message"]["content"].strip()
-                if text:
-                    return text
-            else:
-                app.logger.warning(f"Groq no choices: {data}")
-        except Exception as e:
-            app.logger.error(f"Groq API exception: {e}")
+        text = _groq_chat(
+            api_key,
+            system_msg="당신은 한국어로 답변하는 주식 시장 전문 애널리스트입니다.",
+            user_msg=prompt,
+            max_tokens=400,
+            temperature=0.4,
+            label=f"move_reason:{ticker}",
+            timeout=20,
+        )
+        if text:
+            return text
 
     # 폴백
     if not news_items:
@@ -1201,6 +1185,85 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=N
 # ── Groq 응답 캐시 (rate limit 회피) ──
 _OVERVIEW_CACHE = {}              # ticker → (timestamp, sections)
 _OVERVIEW_TTL   = 60 * 60 * 6     # 6시간 캐시
+
+# Groq 모델 fallback 후보
+_GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+]
+
+
+def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
+               label="generic", timeout=30):
+    """Groq Chat Completion 공용 호출 (모델 fallback + 재시도).
+
+    Returns: 텍스트 또는 None
+    """
+    for model_name in _GROQ_MODELS:
+        for attempt in range(2):
+            try:
+                resp = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": model_name,
+                        "messages": [
+                            {"role": "system", "content": system_msg},
+                            {"role": "user",   "content": user_msg},
+                        ],
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                    },
+                    timeout=timeout,
+                )
+
+                if resp.status_code == 429:
+                    wait = 1.5 * (attempt + 1)
+                    app.logger.warning(f"[groq:{label}] {model_name} 429, retry in {wait}s")
+                    time.sleep(wait)
+                    continue
+                if 500 <= resp.status_code < 600:
+                    wait = 1.5 * (attempt + 1)
+                    app.logger.warning(f"[groq:{label}] {model_name} {resp.status_code}, retry in {wait}s")
+                    time.sleep(wait)
+                    continue
+                if resp.status_code >= 400:
+                    body = resp.text[:300] if resp.text else "(empty)"
+                    app.logger.error(f"[groq:{label}] {model_name} HTTP {resp.status_code}: {body}")
+                    break   # 이 모델 안 됨, 다음 모델 시도
+
+                data = resp.json()
+
+                if "error" in data:
+                    err = data["error"]
+                    msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                    app.logger.error(f"[groq:{label}] {model_name} error: {msg}")
+                    if "model" in msg.lower() or "deprecated" in msg.lower() or "decommissioned" in msg.lower():
+                        break
+                    continue
+
+                if "choices" not in data or not data["choices"]:
+                    app.logger.error(f"[groq:{label}] {model_name} no choices: {str(data)[:200]}")
+                    break
+
+                text = (data["choices"][0].get("message", {}).get("content") or "").strip()
+                if not text:
+                    app.logger.error(f"[groq:{label}] {model_name} empty")
+                    break
+
+                app.logger.info(f"[groq:{label}] OK model={model_name} attempt={attempt+1}")
+                return text
+
+            except requests.exceptions.Timeout:
+                app.logger.warning(f"[groq:{label}] {model_name} timeout (attempt {attempt+1})")
+                continue
+            except Exception as e:
+                app.logger.error(f"[groq:{label}] {model_name} {type(e).__name__}: {e}")
+                break
+
+    app.logger.warning(f"[groq:{label}] 모든 모델 실패")
+    return None
 
 
 def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
@@ -1281,126 +1344,31 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
 
 모든 답변은 한국어로만 작성하고 불필요한 서론 없이 바로 시작하세요."""
 
-    # ── Groq 호출 (모델 fallback + 재시도) ──
-    # Groq 가 자주 모델 deprecate / rotate 하므로 여러 후보 순서대로 시도
-    models = [
-        "llama-3.3-70b-versatile",       # 최신·고품질
-        "llama-3.1-70b-versatile",       # 1.차 fallback
-        "llama-3.1-8b-instant",          # 2.차 fallback (가벼움)
-    ]
+    text = _groq_chat(
+        api_key,
+        system_msg="당신은 한국어로 답변하는 주식 전문 애널리스트입니다.",
+        user_msg=prompt,
+        max_tokens=800,
+        temperature=0.4,
+        label=f"overview:{ticker}",
+        timeout=30,
+    )
+    if not text:
+        return None
 
-    def _build_body(model_name):
-        return {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": "당신은 한국어로 답변하는 주식 전문 애널리스트입니다."},
-                {"role": "user",   "content": prompt},
-            ],
-            "temperature": 0.4,
-            "max_tokens": 800,
-        }
+    # 파싱: [기업소개], [주요사업], [기업분석] 섹션 분리
+    import re as _re
+    sections = {}
+    for key in ["기업소개", "주요사업", "기업분석"]:
+        m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
+        if m:
+            sections[key] = m.group(1).strip()
+    result = sections if sections else {"기업소개": text}
 
-    last_err = None
-    for model_name in models:
-        for attempt in range(2):   # 모델별 2회 시도
-            try:
-                resp = requests.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                    json=_build_body(model_name),
-                    timeout=30,
-                )
-
-                # rate limit / 5xx → 재시도
-                if resp.status_code == 429:
-                    wait = 1.5 * (attempt + 1)
-                    app.logger.warning(
-                        f"[company_overview] {ticker} {model_name} 429, retry in {wait}s"
-                    )
-                    time.sleep(wait)
-                    last_err = "rate_limit_429"
-                    continue
-                if 500 <= resp.status_code < 600:
-                    wait = 1.5 * (attempt + 1)
-                    app.logger.warning(
-                        f"[company_overview] {ticker} {model_name} {resp.status_code}, retry in {wait}s"
-                    )
-                    time.sleep(wait)
-                    last_err = f"server_{resp.status_code}"
-                    continue
-
-                # 4xx (모델 deprecated 같은 경우) → 다음 모델 시도
-                if resp.status_code >= 400:
-                    body_preview = resp.text[:300] if resp.text else "(empty)"
-                    app.logger.error(
-                        f"[company_overview] {ticker} {model_name} HTTP {resp.status_code}: {body_preview}"
-                    )
-                    last_err = f"http_{resp.status_code}"
-                    break   # 이 모델은 안 됨, 다음 모델로
-
-                # 200 OK
-                try:
-                    data = resp.json()
-                except Exception as je:
-                    app.logger.error(
-                        f"[company_overview] {ticker} {model_name} JSON parse error: {je}, body: {resp.text[:300]}"
-                    )
-                    last_err = "json_parse"
-                    break
-
-                if "error" in data:
-                    err = data["error"]
-                    msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-                    app.logger.error(f"[company_overview] {ticker} {model_name} Groq error: {msg}")
-                    last_err = msg
-                    # 모델 관련 에러면 다음 모델로
-                    if "model" in msg.lower() or "deprecated" in msg.lower():
-                        break
-                    continue   # rate-limit 류는 재시도
-
-                if "choices" not in data or not data["choices"]:
-                    app.logger.error(
-                        f"[company_overview] {ticker} {model_name} no choices: {str(data)[:200]}"
-                    )
-                    last_err = "no_choices"
-                    break
-
-                text = (data["choices"][0].get("message", {}).get("content") or "").strip()
-                if not text:
-                    app.logger.error(f"[company_overview] {ticker} {model_name} empty content")
-                    last_err = "empty_content"
-                    break
-
-                # 파싱: [기업소개], [주요사업], [기업분석] 섹션 분리
-                import re as _re
-                sections = {}
-                for key in ["기업소개", "주요사업", "기업분석"]:
-                    m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
-                    if m:
-                        sections[key] = m.group(1).strip()
-                result = sections if sections else {"기업소개": text}
-
-                _OVERVIEW_CACHE[ticker] = (now, result)
-                app.logger.info(
-                    f"[company_overview] {ticker} OK (model={model_name}, attempt {attempt+1}) — cached 6h"
-                )
-                return result
-
-            except requests.exceptions.Timeout:
-                last_err = "timeout"
-                app.logger.warning(
-                    f"[company_overview] {ticker} {model_name} timeout (attempt {attempt+1})"
-                )
-                continue
-            except Exception as e:
-                last_err = f"{type(e).__name__}: {e}"
-                app.logger.error(
-                    f"[company_overview] {ticker} {model_name} error: {last_err}"
-                )
-                break
-
-    app.logger.warning(f"[company_overview] {ticker} 모든 모델 실패: {last_err}")
-    return None
+    # 캐시 저장 후 반환
+    _OVERVIEW_CACHE[ticker] = (now, result)
+    app.logger.info(f"[company_overview] {ticker} cached 6h")
+    return result
 
 
 @app.route("/api/analyze", methods=["GET"])
