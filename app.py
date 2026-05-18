@@ -433,11 +433,19 @@ GRADE_SCORE = {
     "sell": 1, "strong sell": 1, "reduce": 1,
 }
 
-def fetch_kr_quarterly_estimates(krx_code):
-    """네이버 금융 분기 컨센서스 API에서 매출액·영업이익 추정치를 수집.
+def fetch_kr_quarterly_data(krx_code):
+    """네이버 금융 분기 API → actuals + 컨센서스 estimates 동시 수집.
+
+    yfinance 가 한국 종목 실적 업데이트가 느려서, 네이버 데이터를
+    우선적으로 사용하기 위함.
 
     Returns:
-        (rev_est, oi_est): 각각 {"YYYY-MM": value_in_krw} dict
+        dict {
+            "rev_act":  {"YYYY-MM": value_krw},   # 발표치 매출
+            "oi_act":   {"YYYY-MM": value_krw},   # 발표치 영업이익
+            "rev_est":  {"YYYY-MM": value_krw},   # 컨센서스 매출
+            "oi_est":   {"YYYY-MM": value_krw},   # 컨센서스 영업이익
+        }
     """
     _hdrs = {
         "User-Agent": (
@@ -469,9 +477,10 @@ def fetch_kr_quarterly_estimates(krx_code):
             return f"{m.group(1)}-{m.group(2)}"
         return None
 
+    rev_act, oi_act = {}, {}
     rev_est, oi_est = {}, {}
 
-    # ── 방법 1: m.stock.naver.com 모바일 API ─────────────────────────
+    # ── m.stock.naver.com 모바일 API ─────────────────────────
     try:
         url  = f"https://m.stock.naver.com/api/stock/{krx_code}/finance/quarterly"
         resp = requests.get(url, headers=_hdrs, timeout=8)
@@ -480,14 +489,23 @@ def fetch_kr_quarterly_estimates(krx_code):
             title_list = fi.get("trTitleList", [])
             row_list   = fi.get("rowList", [])
 
-            # isConsensus 가 "Y" / True / 1 인 컬럼만 추정치
+            # 컬럼별: 실제 발표치(actual) vs 컨센서스(estimate) 분류
+            act_keys = set()
             est_keys = set()
             for t in title_list:
+                k = t.get("key")
+                if not k:
+                    continue
                 cv = t.get("isConsensus")
                 if cv in ("Y", True, "true", "TRUE", 1):
-                    est_keys.add(t["key"])
+                    est_keys.add(k)
+                else:
+                    act_keys.add(k)
 
-            app.logger.info(f"[KR est] {krx_code}: est_keys={list(est_keys)[:5]}, rows={[r.get('title') for r in row_list[:8]]}")
+            app.logger.info(
+                f"[KR qtr] {krx_code}: actuals={list(act_keys)[:8]} "
+                f"estimates={list(est_keys)[:4]}"
+            )
 
             for row in row_list:
                 title = row.get("title", "")
@@ -495,6 +513,46 @@ def fetch_kr_quarterly_estimates(krx_code):
                 is_oi  = title in ("영업이익", "영업이익(손실)", "OperatingIncome")
                 if not (is_rev or is_oi):
                     continue
+
+                def _extract(keys, target_act, target_est, is_est):
+                    for key in keys:
+                        cell = row.get("columns", {}).get(key, {})
+                        if not cell:
+                            continue
+                        raw = cell.get("value") or cell.get("val") or ""
+                        val = _clean_num(str(raw))
+                        if val is None:
+                            continue
+                        period = _parse_period(key)
+                        if not period:
+                            continue
+                        # 네이버 단위: 억원 → KRW
+                        krw_val = val * 1e8
+                        if is_est:
+                            if is_rev: target_est[period] = krw_val
+                            else:      (oi_est if not is_rev else target_est)[period] = krw_val
+                        else:
+                            target_act[period] = krw_val
+
+                # 발표치 추출
+                for key in act_keys:
+                    cell = row.get("columns", {}).get(key, {})
+                    if not cell:
+                        continue
+                    raw = cell.get("value") or cell.get("val") or ""
+                    val = _clean_num(str(raw))
+                    if val is None:
+                        continue
+                    period = _parse_period(key)
+                    if not period:
+                        continue
+                    krw_val = val * 1e8
+                    if is_rev:
+                        rev_act[period] = krw_val
+                    else:
+                        oi_act[period] = krw_val
+
+                # 컨센서스 추출
                 for key in est_keys:
                     cell = row.get("columns", {}).get(key, {})
                     if not cell:
@@ -506,28 +564,24 @@ def fetch_kr_quarterly_estimates(krx_code):
                     period = _parse_period(key)
                     if not period:
                         continue
-                    # 네이버 단위: 억원 → KRW
+                    krw_val = val * 1e8
                     if is_rev:
-                        rev_est[period] = val * 1e8
+                        rev_est[period] = krw_val
                     else:
-                        oi_est[period] = val * 1e8
+                        oi_est[period] = krw_val
     except Exception as e:
-        app.logger.error(f"[KR est] mobile API error: {e}")
+        app.logger.error(f"[KR qtr] mobile API error: {e}")
 
-    # ── 방법 2: PC 웹 JSON API (폴백) ────────────────────────────────
-    if not rev_est and not oi_est:
-        try:
-            url2 = (
-                f"https://finance.naver.com/item/coinfo.naver"
-                f"?code={krx_code}&target=finsum_quarterly"
-            )
-            r2 = requests.get(url2, headers={**_hdrs, "Referer": "https://finance.naver.com/"}, timeout=8)
-            # 간단 파싱: 쿼터별 매출·영업이익 행 찾기
-            # (실패해도 무방 — 추정치 없이 발표치만 보여줌)
-        except Exception:
-            pass
+    return {
+        "rev_act": rev_act, "oi_act":  oi_act,
+        "rev_est": rev_est, "oi_est":  oi_est,
+    }
 
-    return rev_est, oi_est
+
+# 하위 호환: 기존 호출부가 (rev_est, oi_est) 튜플을 기대하면 그것만 반환
+def fetch_kr_quarterly_estimates(krx_code):
+    data = fetch_kr_quarterly_data(krx_code)
+    return data["rev_est"], data["oi_est"]
 
 
 def fetch_kr_analysts(code):
@@ -1493,17 +1547,41 @@ def analyze():
             try:
                 krx_code = ticker.split(".")[0]
 
-                # 네이버 분기 컨센서스 → 매출·영업이익 추정치 동시 수집
-                kr_rev_est, kr_oi_est = fetch_kr_quarterly_estimates(krx_code)
-                app.logger.info(f"[KR est] {krx_code}: rev_est={kr_rev_est}, oi_est={kr_oi_est}")
+                # 네이버 분기 API → actuals + estimates 모두 수집
+                kr_data = fetch_kr_quarterly_data(krx_code)
+                kr_rev_act = kr_data["rev_act"]
+                kr_oi_act  = kr_data["oi_act"]
+                kr_rev_est = kr_data["rev_est"]
+                kr_oi_est  = kr_data["oi_est"]
+                app.logger.info(
+                    f"[KR qtr] {krx_code}: act_periods={list(kr_rev_act.keys())[:6]} "
+                    f"est_periods={list(kr_rev_est.keys())[:4]}"
+                )
 
-                # 매출 추정치 보완: earnings_dates 값 없으면 네이버 값 사용
-                if kr_rev_est:
-                    for q in revenue_quarters:
-                        if q["estimate"] is None:
-                            q["estimate"] = _match_estimate(q["period"], kr_rev_est)
+                # ── 매출: 네이버 actuals 우선 머지 (yfinance 보다 최신) ──
+                # 1) 기존 revenue_quarters period 집합
+                existing_periods = {q["period"] for q in revenue_quarters}
+                # 2) 네이버에만 있는 더 최신 분기 추가
+                for period, val in sorted(kr_rev_act.items(), reverse=True):
+                    if period not in existing_periods:
+                        revenue_quarters.append({
+                            "period":   period,
+                            "actual":   val,
+                            "estimate": _match_estimate(period, kr_rev_est),
+                        })
+                # 3) yfinance actual 이 None 이거나 네이버 값이 더 정확하면 갱신
+                for q in revenue_quarters:
+                    if q["period"] in kr_rev_act:
+                        if q.get("actual") is None:
+                            q["actual"] = kr_rev_act[q["period"]]
+                    if q.get("estimate") is None:
+                        q["estimate"] = _match_estimate(q["period"], kr_rev_est)
+                # 4) 최신 5개로 컷
+                revenue_quarters.sort(key=lambda x: x["period"], reverse=True)
+                revenue_quarters[:] = revenue_quarters[:5]
 
-                # 발표치: quarterly_income_stmt["Operating Income"]
+                # ── 영업이익: 네이버 actuals + estimates 우선 ──
+                yf_oi_act = {}
                 if qf is not None and not qf.empty:
                     oi_row = None
                     for key in ["Operating Income", "OperatingIncome", "EBIT"]:
@@ -1511,18 +1589,20 @@ def analyze():
                             oi_row = qf.loc[key]
                             break
                     if oi_row is not None:
-                        oi_actuals = oi_row.dropna().sort_index(ascending=False)
-                        for i, (idx, val) in enumerate(oi_actuals.items()):
-                            if i >= 5:
-                                break
-                            period   = str(idx)[:7]
-                            actual   = safe_float(val)
-                            estimate = _match_estimate(period, kr_oi_est)
-                            oi_quarters.append({
-                                "period":   period,
-                                "actual":   actual,
-                                "estimate": estimate,
-                            })
+                        for idx, val in oi_row.dropna().items():
+                            period = str(idx)[:7]
+                            v = safe_float(val)
+                            if v is not None:
+                                yf_oi_act[period] = v
+
+                # 네이버 actuals 머지 (네이버가 더 최신)
+                merged_oi_act = {**yf_oi_act, **kr_oi_act}
+                for period, actual in sorted(merged_oi_act.items(), reverse=True)[:5]:
+                    oi_quarters.append({
+                        "period":   period,
+                        "actual":   actual,
+                        "estimate": _match_estimate(period, kr_oi_est),
+                    })
             except Exception as e:
                 app.logger.error(f"oi_quarters fetch: {e}")
 
