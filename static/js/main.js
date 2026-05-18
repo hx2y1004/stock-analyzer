@@ -1824,8 +1824,11 @@ function renderUpcomingEvents(events) {
   const card = document.getElementById('eventsCard');
   const list = document.getElementById('eventsList');
   if (!card || !list) return;
+
   if (!events || !events.length) {
-    card.classList.add('hidden');
+    // 빈 상태 표시 (카드는 노출)
+    list.innerHTML = `<div class="event-empty">확정된 다가오는 이벤트가 없습니다 (실적·배당)</div>`;
+    card.classList.remove('hidden');
     return;
   }
   const rows = events.map(e => {

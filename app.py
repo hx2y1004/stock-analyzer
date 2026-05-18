@@ -765,57 +765,109 @@ def fetch_market_context(is_korean: bool) -> dict:
     return result
 
 
+def _norm_dt(d):
+    """다양한 타입(timestamp/int/datetime/str)을 tz-naive Timestamp 로 통일."""
+    if d is None:
+        return None
+    try:
+        if isinstance(d, (int, float)):
+            return pd.Timestamp(d, unit='s')
+        ts = pd.Timestamp(d)
+        if ts.tz is not None:
+            ts = ts.tz_localize(None)
+        return ts
+    except Exception:
+        return None
+
+
 def fetch_upcoming_events(stock, info: dict) -> list:
-    """다음 실적 발표 / 배당락일 등 향후 이벤트."""
+    """다음 실적 발표 / 배당락일 등 향후 이벤트 (여러 소스 시도)."""
     events = []
-    today_naive = pd.Timestamp.utcnow().tz_localize(None).normalize()
+    today = pd.Timestamp.utcnow().tz_localize(None).normalize()
+    next_earnings_ts = None
 
-    # 1) 다음 실적 발표
+    # ── 1) get_earnings_dates ──
     try:
-        ed = stock.get_earnings_dates(limit=8)
+        ed = stock.get_earnings_dates(limit=12)
         if ed is not None and not ed.empty:
-            idx = ed.index
-            # tz-aware → naive 통일
-            try:
-                idx_naive = idx.tz_localize(None) if idx.tz else idx
-            except Exception:
-                idx_naive = idx
-            future = [d for d in idx_naive if pd.Timestamp(d) >= today_naive]
-            if future:
-                next_e = min(future)
-                days = (pd.Timestamp(next_e).normalize() - today_naive).days
-                if 0 <= days <= 180:
-                    events.append({
-                        'type':  'earnings',
-                        'icon':  '📊',
-                        'label': '실적 발표',
-                        'date':  pd.Timestamp(next_e).strftime('%Y-%m-%d'),
-                        'days':  int(days),
-                    })
+            for d in ed.index:
+                ts = _norm_dt(d)
+                if ts is None:
+                    continue
+                if ts.normalize() >= today and (next_earnings_ts is None or ts < next_earnings_ts):
+                    next_earnings_ts = ts
+            app.logger.info(f"[events] get_earnings_dates → next={next_earnings_ts}")
     except Exception as e:
-        app.logger.debug(f"earnings dates: {e}")
+        app.logger.warning(f"[events] get_earnings_dates failed: {e}")
 
-    # 2) 배당락일
+    # ── 2) stock.calendar (Earnings Date) ──
+    if next_earnings_ts is None:
+        try:
+            cal = stock.calendar
+            if cal is not None:
+                # pandas DataFrame 또는 dict 둘 다 처리
+                edates = None
+                if hasattr(cal, 'get'):
+                    edates = cal.get('Earnings Date') or cal.get('earnings_date')
+                elif hasattr(cal, 'loc'):
+                    try: edates = cal.loc['Earnings Date'].tolist()
+                    except Exception: pass
+                if edates:
+                    if not isinstance(edates, (list, tuple)):
+                        edates = [edates]
+                    for d in edates:
+                        ts = _norm_dt(d)
+                        if ts and ts.normalize() >= today:
+                            if next_earnings_ts is None or ts < next_earnings_ts:
+                                next_earnings_ts = ts
+                    app.logger.info(f"[events] calendar → next={next_earnings_ts}")
+        except Exception as e:
+            app.logger.warning(f"[events] calendar failed: {e}")
+
+    # ── 3) info 에 있는 earningsTimestamp / earningsDate ──
+    if next_earnings_ts is None:
+        try:
+            for key in ('earningsTimestamp', 'earningsTimestampStart',
+                        'earningsTimestampEnd', 'earningsDate'):
+                v = info.get(key)
+                if v:
+                    ts = _norm_dt(v)
+                    if ts and ts.normalize() >= today:
+                        if next_earnings_ts is None or ts < next_earnings_ts:
+                            next_earnings_ts = ts
+                        break
+            app.logger.info(f"[events] info → next={next_earnings_ts}")
+        except Exception as e:
+            app.logger.warning(f"[events] info earnings failed: {e}")
+
+    if next_earnings_ts is not None:
+        days = (next_earnings_ts.normalize() - today).days
+        if 0 <= days <= 180:
+            events.append({
+                'type':  'earnings',
+                'icon':  '📊',
+                'label': '실적 발표',
+                'date':  next_earnings_ts.strftime('%Y-%m-%d'),
+                'days':  int(days),
+            })
+
+    # ── 배당락일 ──
     try:
-        ex_div = info.get('exDividendDate')   # Unix timestamp (int) 또는 datetime
-        if ex_div:
-            if isinstance(ex_div, (int, float)):
-                ex_dt = datetime.utcfromtimestamp(ex_div)
-            else:
-                ex_dt = pd.Timestamp(ex_div).to_pydatetime()
-            days = (pd.Timestamp(ex_dt).normalize() - today_naive).days
+        ex_div = info.get('exDividendDate')
+        ts = _norm_dt(ex_div)
+        if ts is not None:
+            days = (ts.normalize() - today).days
             if 0 <= days <= 365:
                 events.append({
                     'type':  'dividend',
                     'icon':  '💰',
                     'label': '배당락일',
-                    'date':  ex_dt.strftime('%Y-%m-%d'),
+                    'date':  ts.strftime('%Y-%m-%d'),
                     'days':  int(days),
                 })
     except Exception as e:
-        app.logger.debug(f"ex-dividend: {e}")
+        app.logger.warning(f"[events] ex-dividend failed: {e}")
 
-    # 가까운 순으로 정렬
     events.sort(key=lambda e: e.get('days', 999))
     return events
 

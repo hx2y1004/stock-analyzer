@@ -1981,6 +1981,17 @@ body {
 .event-row.urgent .event-days { color: var(--red); }
 .event-row.soon   .event-days { color: rgb(255,185,30); }
 
+/* 이벤트 빈 상태 */
+.event-empty {
+  padding: 14px 12px;
+  background: var(--bg3);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
 /* ── 차트 아래 거래 버튼 ── */
 .trade-actions {
   display: flex;
