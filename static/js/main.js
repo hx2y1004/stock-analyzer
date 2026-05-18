@@ -350,8 +350,22 @@ function _renderTrendsProgress(prog, total, pct, indeterminate) {
         ${liveTag}
         <span class="trend-scanning-hint">전체 종목 분석에 1~5분 소요</span>
       </div>
+      <button class="trend-abort-btn" onclick="abortTrendScan()">✕ 스캔 중단</button>
       ${stallWarn}
     </div>`;
+}
+
+async function abortTrendScan() {
+  if (!confirm('스캔을 중단할까요?')) return;
+  try {
+    await fetch(`/api/trends/abort?market=${trendsMarket}`, { method: 'POST' });
+  } catch (e) {
+    console.warn('abort failed:', e);
+  }
+  if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
+  _stopElapsedTicker();
+  _setScanBtn(false, '🔍 스캔');
+  document.getElementById('trendsCards').innerHTML = `<div class="pf-empty">스캔이 중단되었습니다.</div>`;
 }
 
 // 1초마다 elapsed 표시만 갱신 (진행률 없을 때도 시간은 흐르게)

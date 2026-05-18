@@ -234,6 +234,14 @@ def api_trends_status():
     return resp
 
 
+@app.route("/api/trends/abort", methods=["POST"])
+def api_trends_abort():
+    """진행 중인 스캔 중단."""
+    from flask import request, jsonify
+    market = (request.args.get("market") or "ALL").upper()
+    return jsonify(_trends.abort_scan(market))
+
+
 # 레거시: 캐시된 결과만 반환 (없으면 안내)
 @app.route("/api/trends")
 def api_trends():
