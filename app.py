@@ -551,31 +551,42 @@ def fetch_kr_quarterly_data(krx_code):
     except Exception as e:
         app.logger.warning(f"[KR qtr] integration failed: {e}")
 
-    # ── 시도 3: wisereport (네이버 PC 가 내부적으로 사용, 항상 시도해서 최신 분기 추가) ──
+    # ── 시도 3: wisereport (여러 fin_typ 파라미터 시도) ──
     try:
-        url3 = (
-            f"https://navercomp.wisereport.co.kr/v2/company/cF1002.aspx"
-            f"?cmp_cd={krx_code}&fin_typ=4&freq_typ=Q&encparam=&id="
-        )
-        r3 = requests.get(url3, headers={**_hdrs,
+        from bs4 import BeautifulSoup
+        wisereport_urls = [
+            f"https://navercomp.wisereport.co.kr/v2/company/cF1002.aspx?cmp_cd={krx_code}&fin_typ=0&freq_typ=Q",
+            f"https://navercomp.wisereport.co.kr/v2/company/cF1002.aspx?cmp_cd={krx_code}&fin_typ=4&freq_typ=Q",
+            f"https://navercomp.wisereport.co.kr/v2/company/c1030001.aspx?cmp_cd={krx_code}",  # 종합 페이지
+        ]
+        wisereport_hdrs = {**_hdrs,
             "Referer": f"https://navercomp.wisereport.co.kr/v2/company/c1010001.aspx?cmp_cd={krx_code}",
-            "Accept": "text/html,application/xhtml+xml",
-        }, timeout=8)
-        if r3.status_code == 200:
+            "Accept": "text/html,application/xhtml+xml,*/*",
+        }
+        for u in wisereport_urls:
             try:
-                from bs4 import BeautifulSoup
+                r3 = requests.get(u, headers=wisereport_hdrs, timeout=10)
+                app.logger.info(f"[KR qtr] wisereport try {u[-60:]} → {r3.status_code} {len(r3.text)}b")
+                if r3.status_code != 200 or not r3.text:
+                    continue
                 soup = BeautifulSoup(r3.text, "html.parser")
-                table = soup.find("table")
-                if table:
-                    # 헤더: 분기 컬럼명 (예: 2024/12, 2025/03, 2025/06, ..., 2026/03)
-                    headers = []
+                tables = soup.find_all("table")
+                if not tables:
+                    app.logger.info(f"[KR qtr] wisereport no tables")
+                    continue
+                before = len(rev_act)
+                # 모든 테이블 순회 (페이지에 여러 표가 있음 — 분기 표를 찾아야 함)
+                for table in tables:
+                    # 헤더: 분기 컬럼명 (예: 2024/12, 2025/03, ..., 2026/03)
+                    headers_parsed = []
                     thead = table.find("thead") or table
                     for th in thead.find_all("th"):
                         txt = th.get_text(strip=True)
                         m = re.match(r'(\d{4})[./](\d{2})', txt)
-                        headers.append(f"{m.group(1)}-{m.group(2)}" if m else None)
+                        headers_parsed.append(f"{m.group(1)}-{m.group(2)}" if m else None)
+                    if not any(headers_parsed):
+                        continue
 
-                    before = len(rev_act)
                     for tr in table.find_all("tr"):
                         th = tr.find("th")
                         if not th:
@@ -586,7 +597,7 @@ def fetch_kr_quarterly_data(krx_code):
                         if not (is_rev or is_oi):
                             continue
                         tds = tr.find_all("td")
-                        data_cols = [h for h in headers if h]
+                        data_cols = [h for h in headers_parsed if h]
                         for i, td in enumerate(tds):
                             if i >= len(data_cols):
                                 break
@@ -597,15 +608,71 @@ def fetch_kr_quarterly_data(krx_code):
                             krw_val = val * 1e8
                             if is_rev: rev_act[period] = krw_val
                             else:      oi_act[period]  = krw_val
-                    after = len(rev_act)
+
+                after = len(rev_act)
+                if after > before:
                     app.logger.info(
-                        f"[KR qtr] wisereport: {before}→{after} periods, "
+                        f"[KR qtr] wisereport SUCCESS: {before}→{after} periods, "
                         f"periods={sorted(rev_act.keys())}"
                     )
+                    break   # 성공하면 추가 URL 시도 안 함
             except Exception as e:
-                app.logger.warning(f"[KR qtr] wisereport parse failed: {e}")
+                app.logger.warning(f"[KR qtr] wisereport {u[-40:]} failed: {e}")
     except Exception as e:
-        app.logger.warning(f"[KR qtr] wisereport fetch failed: {e}")
+        app.logger.warning(f"[KR qtr] wisereport block failed: {e}")
+
+    # ── 시도 4: m.stock.naver.com 모바일 페이지 HTML 직접 스크래핑 ──
+    # API 가 못 가져오는 최신 분기가 페이지에는 렌더링 되어 있을 수 있음
+    try:
+        from bs4 import BeautifulSoup
+        page_url = f"https://m.stock.naver.com/domestic/stock/{krx_code}/finance/quarterly"
+        rp = requests.get(page_url, headers=_hdrs, timeout=10)
+        app.logger.info(f"[KR qtr] mobile page → {rp.status_code} {len(rp.text)}b")
+        if rp.status_code == 200 and rp.text:
+            soup = BeautifulSoup(rp.text, "html.parser")
+            tables = soup.find_all("table")
+            before = len(rev_act)
+            for table in tables:
+                # 같은 파싱 로직
+                headers_parsed = []
+                thead = table.find("thead") or table
+                for th in thead.find_all("th"):
+                    txt = th.get_text(strip=True)
+                    m = re.match(r'(\d{4})[./](\d{2})', txt)
+                    headers_parsed.append(f"{m.group(1)}-{m.group(2)}" if m else None)
+                if not any(headers_parsed):
+                    continue
+                for tr in table.find_all("tr"):
+                    th = tr.find("th")
+                    if not th:
+                        continue
+                    label = th.get_text(strip=True)
+                    is_rev = label in ("매출액", "매출", "수익")
+                    is_oi  = label in ("영업이익", "영업이익(손실)")
+                    if not (is_rev or is_oi):
+                        continue
+                    tds = tr.find_all("td")
+                    data_cols = [h for h in headers_parsed if h]
+                    for i, td in enumerate(tds):
+                        if i >= len(data_cols):
+                            break
+                        period = data_cols[i]
+                        val = _clean_num(td.get_text(strip=True))
+                        if val is None:
+                            continue
+                        krw_val = val * 1e8
+                        if is_rev: rev_act[period] = krw_val
+                        else:      oi_act[period]  = krw_val
+            after = len(rev_act)
+            if after > before:
+                app.logger.info(
+                    f"[KR qtr] mobile page scrape: {before}→{after} periods, "
+                    f"periods={sorted(rev_act.keys())}"
+                )
+    except Exception as e:
+        app.logger.warning(f"[KR qtr] mobile page scrape failed: {e}")
+
+    app.logger.info(f"[KR qtr] FINAL: rev_act_periods={sorted(rev_act.keys())}")
 
     return {
         "rev_act": rev_act, "oi_act":  oi_act,
