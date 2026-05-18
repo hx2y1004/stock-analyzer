@@ -378,13 +378,15 @@ function _startElapsedTicker() {
       const el = document.querySelector('.trend-scanning-elapsed');
       if (el) el.textContent = `⏱ ${s}초`;
     }
-    // 마지막 폴링 갱신 시각도 매초 업데이트
+    // 라이브 태그: 폴링 카운트 + 경과 시간 갱신 (포맷 일치하게)
     if (_trendsLastPollAt) {
       const since = ((Date.now() - _trendsLastPollAt) / 1000).toFixed(1);
       const liveEl = document.querySelector('.trend-live-tag');
-      if (liveEl) liveEl.textContent = `📡 ${since}초 전 갱신`;
-      // 마지막 폴링이 5초 이상 없으면 빨간색
-      if (liveEl) liveEl.classList.toggle('stale', (Date.now() - _trendsLastPollAt) > 5000);
+      if (liveEl) {
+        liveEl.textContent = `📡 ${_trendsPollOk}회 갱신 · ${since}초 전`;
+        // 마지막 폴링이 5초 이상 없으면 빨간색 (서버 응답 정지 신호)
+        liveEl.classList.toggle('stale', (Date.now() - _trendsLastPollAt) > 5000);
+      }
     }
   }, 500);
 }
