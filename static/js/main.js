@@ -1275,6 +1275,8 @@ function renderFundamental(details, stock) {
       const sentences = summary.match(/[^.!?]+[.!?]+/g) || [summary];
       const shortSummary = sentences.slice(0, 3).join(' ').slice(0, 320).trim();
       const isLong = summary.length > shortSummary.length;
+      // 전체 텍스트를 window 변수로 저장 (HTML 속성 escape 문제 회피)
+      window._lastCoSummary = summary;
       html += `
         <div class="company-overview-card">
           <div class="co-header">
@@ -1283,7 +1285,7 @@ function renderFundamental(details, stock) {
             ${stock.sector ? `<span class="co-sector">${stock.sector}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
           </div>
           <p class="co-desc" id="coDescText">${shortSummary}${isLong ? '<span>...</span>' : ''}</p>
-          ${isLong ? `<button class="co-more-btn" onclick="toggleCoDesc(${JSON.stringify(summary)})">더보기 ▼</button>` : ''}
+          ${isLong ? `<button class="co-more-btn" onclick="toggleCoDesc()">더보기 ▼</button>` : ''}
         </div>`;
     }
   }
@@ -1433,17 +1435,19 @@ function renderFundamental(details, stock) {
   el.innerHTML = html;
 }
 
-function toggleCoDesc(fullText) {
+function toggleCoDesc() {
+  const fullText = window._lastCoSummary || '';
   const p   = document.getElementById('coDescText');
   const btn = p ? p.parentElement.querySelector('.co-more-btn') : null;
-  if (!p) return;
+  if (!p || !fullText) return;
   if (p.dataset.expanded === '1') {
     const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
     p.innerHTML = sentences.slice(0, 3).join(' ').slice(0, 320) + '<span>...</span>';
     p.dataset.expanded = '0';
     if (btn) btn.textContent = '더보기 ▼';
   } else {
-    p.innerHTML = fullText;
+    // 줄바꿈 보존
+    p.innerHTML = fullText.replace(/\n/g, '<br>');
     p.dataset.expanded = '1';
     if (btn) btn.textContent = '접기 ▲';
   }

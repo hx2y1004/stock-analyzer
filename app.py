@@ -12,10 +12,10 @@ import yfinance as yf
 try:
     from deep_translator import GoogleTranslator as _GTrans
     from concurrent.futures import ThreadPoolExecutor as _TPE
-    def _translate_ko(text):
+    def _translate_ko(text, max_chars=2000):
         if not text or not text.strip(): return text
         try:
-            return _GTrans(source='auto', target='ko').translate(text[:500])
+            return _GTrans(source='auto', target='ko').translate(text[:max_chars])
         except Exception:
             return text
     def _translate_batch(texts):
@@ -480,97 +480,76 @@ def fetch_kr_quarterly_data(krx_code):
     rev_act, oi_act = {}, {}
     rev_est, oi_est = {}, {}
 
-    # ── m.stock.naver.com 모바일 API ─────────────────────────
+    def _parse_naver_finance(fi: dict):
+        """공통 파서: financeInfo 딕셔너리에서 actual/estimate 추출."""
+        title_list = fi.get("trTitleList", [])
+        row_list   = fi.get("rowList", [])
+
+        act_keys, est_keys = set(), set()
+        for t in title_list:
+            k = t.get("key")
+            if not k:
+                continue
+            cv = t.get("isConsensus")
+            if cv in ("Y", True, "true", "TRUE", 1):
+                est_keys.add(k)
+            else:
+                act_keys.add(k)
+
+        app.logger.info(
+            f"[KR qtr] actual={sorted(act_keys)} estimate={sorted(est_keys)}"
+        )
+
+        for row in row_list:
+            title = row.get("title", "")
+            is_rev = title in ("매출액", "매출", "수익", "Revenue", "총매출")
+            is_oi  = title in ("영업이익", "영업이익(손실)", "OperatingIncome")
+            if not (is_rev or is_oi):
+                continue
+            for key_set, target_rev, target_oi in (
+                (act_keys, rev_act, oi_act),
+                (est_keys, rev_est, oi_est),
+            ):
+                for key in key_set:
+                    cell = row.get("columns", {}).get(key, {})
+                    if not cell:
+                        continue
+                    raw = cell.get("value") or cell.get("val") or ""
+                    val = _clean_num(str(raw))
+                    if val is None:
+                        continue
+                    period = _parse_period(key)
+                    if not period:
+                        continue
+                    krw_val = val * 1e8
+                    if is_rev: target_rev[period] = krw_val
+                    else:      target_oi[period]  = krw_val
+
+    # ── 시도 1: m.stock.naver.com/api/stock/.../finance/quarterly ──
     try:
         url  = f"https://m.stock.naver.com/api/stock/{krx_code}/finance/quarterly"
         resp = requests.get(url, headers=_hdrs, timeout=8)
         if resp.status_code == 200:
-            fi         = resp.json().get("financeInfo", {})
-            title_list = fi.get("trTitleList", [])
-            row_list   = fi.get("rowList", [])
-
-            # 컬럼별: 실제 발표치(actual) vs 컨센서스(estimate) 분류
-            act_keys = set()
-            est_keys = set()
-            for t in title_list:
-                k = t.get("key")
-                if not k:
-                    continue
-                cv = t.get("isConsensus")
-                if cv in ("Y", True, "true", "TRUE", 1):
-                    est_keys.add(k)
-                else:
-                    act_keys.add(k)
-
-            app.logger.info(
-                f"[KR qtr] {krx_code}: actuals={list(act_keys)[:8]} "
-                f"estimates={list(est_keys)[:4]}"
-            )
-
-            for row in row_list:
-                title = row.get("title", "")
-                is_rev = title in ("매출액", "매출", "수익", "Revenue", "총매출")
-                is_oi  = title in ("영업이익", "영업이익(손실)", "OperatingIncome")
-                if not (is_rev or is_oi):
-                    continue
-
-                def _extract(keys, target_act, target_est, is_est):
-                    for key in keys:
-                        cell = row.get("columns", {}).get(key, {})
-                        if not cell:
-                            continue
-                        raw = cell.get("value") or cell.get("val") or ""
-                        val = _clean_num(str(raw))
-                        if val is None:
-                            continue
-                        period = _parse_period(key)
-                        if not period:
-                            continue
-                        # 네이버 단위: 억원 → KRW
-                        krw_val = val * 1e8
-                        if is_est:
-                            if is_rev: target_est[period] = krw_val
-                            else:      (oi_est if not is_rev else target_est)[period] = krw_val
-                        else:
-                            target_act[period] = krw_val
-
-                # 발표치 추출
-                for key in act_keys:
-                    cell = row.get("columns", {}).get(key, {})
-                    if not cell:
-                        continue
-                    raw = cell.get("value") or cell.get("val") or ""
-                    val = _clean_num(str(raw))
-                    if val is None:
-                        continue
-                    period = _parse_period(key)
-                    if not period:
-                        continue
-                    krw_val = val * 1e8
-                    if is_rev:
-                        rev_act[period] = krw_val
-                    else:
-                        oi_act[period] = krw_val
-
-                # 컨센서스 추출
-                for key in est_keys:
-                    cell = row.get("columns", {}).get(key, {})
-                    if not cell:
-                        continue
-                    raw = cell.get("value") or cell.get("val") or ""
-                    val = _clean_num(str(raw))
-                    if val is None:
-                        continue
-                    period = _parse_period(key)
-                    if not period:
-                        continue
-                    krw_val = val * 1e8
-                    if is_rev:
-                        rev_est[period] = krw_val
-                    else:
-                        oi_est[period] = krw_val
+            _parse_naver_finance(resp.json().get("financeInfo", {}))
     except Exception as e:
-        app.logger.error(f"[KR qtr] mobile API error: {e}")
+        app.logger.error(f"[KR qtr] mobile quarterly error: {e}")
+
+    # ── 시도 2: integration 엔드포인트 (더 많은 데이터 보유 케이스) ──
+    if not rev_act:
+        try:
+            url2 = f"https://m.stock.naver.com/api/stock/{krx_code}/integration"
+            r2 = requests.get(url2, headers=_hdrs, timeout=8)
+            if r2.status_code == 200:
+                # 'finance' → 'quarterly' 또는 유사 구조
+                payload = r2.json()
+                fi = (payload.get("financeInfo")
+                      or payload.get("quarterly")
+                      or {})
+                if fi:
+                    _parse_naver_finance(fi)
+                    app.logger.info(f"[KR qtr] integration fallback used")
+        except Exception as e:
+            app.logger.warning(f"[KR qtr] integration fallback failed: {e}")
 
     return {
         "rev_act": rev_act, "oi_act":  oi_act,
@@ -1627,7 +1606,12 @@ def analyze():
             "industry": info.get("industry"),
             "currency": info.get("currency", "USD"),
             "exchange": info.get("exchange"),
-            "business_summary": info.get("longBusinessSummary", ""),
+            "business_summary": (
+                # 한국 종목인데 영문 summary 만 있으면 자동 번역
+                _translate_ko(info.get("longBusinessSummary", ""), max_chars=1500)
+                if (ticker.endswith(".KS") or ticker.endswith(".KQ"))
+                else info.get("longBusinessSummary", "")
+            ),
             "revenue_quarters": revenue_quarters,
             "eps_quarters":     eps_quarters,
             "oi_quarters":      oi_quarters,
