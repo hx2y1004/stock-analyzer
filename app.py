@@ -756,53 +756,80 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
     """
     api_key = os.environ.get("DART_API_KEY", "").strip()
     if not api_key:
+        app.logger.warning(f"[DART] {krx_code}: DART_API_KEY 미설정")
         return {"rev_act": {}, "oi_act": {}}
 
     corp_codes = _load_dart_corp_codes()
     corp_code = corp_codes.get(krx_code)
     if not corp_code:
-        app.logger.info(f"[DART] {krx_code}: corp_code 매핑 없음")
+        app.logger.warning(
+            f"[DART] {krx_code}: corp_code 매핑 없음 (corp_codes map size={len(corp_codes)})"
+        )
         return {"rev_act": {}, "oi_act": {}}
+    app.logger.info(f"[DART] {krx_code}: corp_code={corp_code}")
 
     rev_cum = {}   # (year, qtr_idx) → cumulative revenue
     oi_cum  = {}
 
-    # 분기 보고서 코드: Q1, 반기, Q3, 사업보고서
+    # 분기 보고서 코드
     quarters = [(1, "11013", "03"), (2, "11012", "06"),
                 (3, "11014", "09"), (4, "11011", "12")]
 
     today = datetime.now()
     cur_year = today.year
-    # 최근 3년 데이터 시도 (작년 + 올해)
+    # CFS 우선, 실패 시 OFS 도 시도
     for y in (cur_year - 1, cur_year):
         for qi, reprt, month in quarters:
-            try:
-                resp = requests.get(
-                    "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json",
-                    params={
-                        "crtfc_key": api_key,
-                        "corp_code": corp_code,
-                        "bsns_year": str(y),
-                        "reprt_code": reprt,
-                        "fs_div":     "CFS",
-                    },
-                    timeout=12,
-                )
-                d = resp.json()
-                if d.get("status") != "000":
-                    # 발표 안 된 분기일 수 있음 (정상)
-                    continue
-                for item in d.get("list", []):
-                    nm = item.get("account_nm", "")
-                    amt = _dart_parse_amount(item.get("thstrm_amount", ""))
-                    if amt is None:
+            found = False
+            for fs_div in ("CFS", "OFS"):
+                try:
+                    resp = requests.get(
+                        "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json",
+                        params={
+                            "crtfc_key": api_key,
+                            "corp_code": corp_code,
+                            "bsns_year": str(y),
+                            "reprt_code": reprt,
+                            "fs_div":     fs_div,
+                        },
+                        timeout=12,
+                    )
+                    d = resp.json()
+                    status = d.get("status", "?")
+                    msg    = d.get("message", "")
+                    if status != "000":
+                        app.logger.debug(
+                            f"[DART] {krx_code} {y}Q{qi} {fs_div}: status={status} msg={msg}"
+                        )
                         continue
-                    if nm in ("매출액", "수익(매출액)", "영업수익"):
-                        rev_cum[(y, qi)] = amt
-                    elif nm == "영업이익":
-                        oi_cum[(y, qi)] = amt
-            except Exception as e:
-                app.logger.warning(f"[DART] {krx_code} {y}Q{qi} fetch error: {e}")
+                    rev_found, oi_found = False, False
+                    for item in d.get("list", []):
+                        nm = item.get("account_nm", "")
+                        amt = _dart_parse_amount(item.get("thstrm_amount", ""))
+                        if amt is None:
+                            continue
+                        if nm in ("매출액", "수익(매출액)", "영업수익", "매출"):
+                            rev_cum[(y, qi)] = amt
+                            rev_found = True
+                        elif nm in ("영업이익", "영업이익(손실)"):
+                            oi_cum[(y, qi)] = amt
+                            oi_found = True
+                    if rev_found or oi_found:
+                        app.logger.info(
+                            f"[DART] {krx_code} {y}Q{qi} {fs_div}: "
+                            f"rev={'✓' if rev_found else '✗'} "
+                            f"oi={'✓' if oi_found else '✗'}"
+                        )
+                        found = True
+                        break    # 이 분기 데이터 잡았으면 다음 fs_div 시도 안 함
+                except Exception as e:
+                    app.logger.warning(f"[DART] {krx_code} {y}Q{qi} {fs_div} error: {e}")
+            if not found:
+                # 발표 안 된 분기 (정상). 단, Q1 of current year missing 일 수 있어 로그
+                if y == cur_year and qi == 1 and today.month >= 5:
+                    app.logger.warning(
+                        f"[DART] {krx_code} {y}Q1 데이터 없음 (5월인데도 미공시?)"
+                    )
 
     # 누적 → 단일 분기 변환
     def _to_quarterly(cum_map):
