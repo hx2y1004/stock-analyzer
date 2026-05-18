@@ -310,11 +310,23 @@
         </div>
         <div class="add-field">
           <label>매입가 <span id="addCurrencyLabel">(USD)</span></label>
-          <input id="addPrice" class="add-input" type="number" step="any" placeholder="매입 평균가" />
+          <div class="num-input-wrap">
+            <input id="addPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" placeholder="매입 평균가" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addPrice', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addPrice', -1)">▼</button>
+            </div>
+          </div>
         </div>
         <div class="add-field">
           <label>보유 수량</label>
-          <input id="addQty" class="add-input" type="number" step="any" placeholder="보유 주수" />
+          <div class="num-input-wrap">
+            <input id="addQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" placeholder="보유 주수" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addQty', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addQty', -1)">▼</button>
+            </div>
+          </div>
         </div>
         <button class="add-submit-btn" onclick="submitAddHolding()">추가하기</button>
       </div>

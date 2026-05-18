@@ -1778,6 +1778,56 @@ body {
   transition: border-color 0.15s;
 }
 .add-input:focus { border-color: var(--accent); }
+
+/* 숫자 입력 + 커스텀 스테퍼 */
+.num-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.num-input-wrap .add-input {
+  width: 100%;
+  padding-right: 44px;  /* 스테퍼 자리 확보 */
+}
+/* 네이티브 스피너 숨김 (Chrome / Safari / Edge / Firefox) */
+.num-input-wrap input[type=number]::-webkit-inner-spin-button,
+.num-input-wrap input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.num-input-wrap input[type=number] { -moz-appearance: textfield; }
+
+.num-steppers {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.num-step-btn {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  width: 30px;
+  height: 18px;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.num-step-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(88,166,255,0.08);
+}
+.num-step-btn:active { transform: scale(0.95); }
 .add-submit-btn {
   background: var(--accent);
   color: #fff;
