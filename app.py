@@ -1281,93 +1281,125 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
 
 모든 답변은 한국어로만 작성하고 불필요한 서론 없이 바로 시작하세요."""
 
-    # ── Groq 호출 (최대 2회 재시도) ──
-    request_body = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "system", "content": "당신은 한국어로 답변하는 주식 전문 애널리스트입니다."},
-            {"role": "user",   "content": prompt},
-        ],
-        "temperature": 0.4,
-        "max_tokens": 800,
-    }
+    # ── Groq 호출 (모델 fallback + 재시도) ──
+    # Groq 가 자주 모델 deprecate / rotate 하므로 여러 후보 순서대로 시도
+    models = [
+        "llama-3.3-70b-versatile",       # 최신·고품질
+        "llama-3.1-70b-versatile",       # 1.차 fallback
+        "llama-3.1-8b-instant",          # 2.차 fallback (가벼움)
+    ]
+
+    def _build_body(model_name):
+        return {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "당신은 한국어로 답변하는 주식 전문 애널리스트입니다."},
+                {"role": "user",   "content": prompt},
+            ],
+            "temperature": 0.4,
+            "max_tokens": 800,
+        }
 
     last_err = None
-    for attempt in range(3):           # 최대 3회 시도 (초기 + 재시도 2회)
-        try:
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=request_body,
-                timeout=30,            # 20 → 30s
-            )
-
-            # rate limit 또는 5xx → 재시도
-            if resp.status_code == 429:
-                wait = 2 ** attempt    # 1, 2, 4초 백오프
-                app.logger.warning(
-                    f"[company_overview] {ticker} rate limit (429), retry in {wait}s"
+    for model_name in models:
+        for attempt in range(2):   # 모델별 2회 시도
+            try:
+                resp = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    json=_build_body(model_name),
+                    timeout=30,
                 )
-                time.sleep(wait)
-                last_err = "rate_limit_429"
-                continue
-            if 500 <= resp.status_code < 600:
-                wait = 2 ** attempt
-                app.logger.warning(
-                    f"[company_overview] {ticker} server error {resp.status_code}, retry in {wait}s"
+
+                # rate limit / 5xx → 재시도
+                if resp.status_code == 429:
+                    wait = 1.5 * (attempt + 1)
+                    app.logger.warning(
+                        f"[company_overview] {ticker} {model_name} 429, retry in {wait}s"
+                    )
+                    time.sleep(wait)
+                    last_err = "rate_limit_429"
+                    continue
+                if 500 <= resp.status_code < 600:
+                    wait = 1.5 * (attempt + 1)
+                    app.logger.warning(
+                        f"[company_overview] {ticker} {model_name} {resp.status_code}, retry in {wait}s"
+                    )
+                    time.sleep(wait)
+                    last_err = f"server_{resp.status_code}"
+                    continue
+
+                # 4xx (모델 deprecated 같은 경우) → 다음 모델 시도
+                if resp.status_code >= 400:
+                    body_preview = resp.text[:300] if resp.text else "(empty)"
+                    app.logger.error(
+                        f"[company_overview] {ticker} {model_name} HTTP {resp.status_code}: {body_preview}"
+                    )
+                    last_err = f"http_{resp.status_code}"
+                    break   # 이 모델은 안 됨, 다음 모델로
+
+                # 200 OK
+                try:
+                    data = resp.json()
+                except Exception as je:
+                    app.logger.error(
+                        f"[company_overview] {ticker} {model_name} JSON parse error: {je}, body: {resp.text[:300]}"
+                    )
+                    last_err = "json_parse"
+                    break
+
+                if "error" in data:
+                    err = data["error"]
+                    msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                    app.logger.error(f"[company_overview] {ticker} {model_name} Groq error: {msg}")
+                    last_err = msg
+                    # 모델 관련 에러면 다음 모델로
+                    if "model" in msg.lower() or "deprecated" in msg.lower():
+                        break
+                    continue   # rate-limit 류는 재시도
+
+                if "choices" not in data or not data["choices"]:
+                    app.logger.error(
+                        f"[company_overview] {ticker} {model_name} no choices: {str(data)[:200]}"
+                    )
+                    last_err = "no_choices"
+                    break
+
+                text = (data["choices"][0].get("message", {}).get("content") or "").strip()
+                if not text:
+                    app.logger.error(f"[company_overview] {ticker} {model_name} empty content")
+                    last_err = "empty_content"
+                    break
+
+                # 파싱: [기업소개], [주요사업], [기업분석] 섹션 분리
+                import re as _re
+                sections = {}
+                for key in ["기업소개", "주요사업", "기업분석"]:
+                    m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
+                    if m:
+                        sections[key] = m.group(1).strip()
+                result = sections if sections else {"기업소개": text}
+
+                _OVERVIEW_CACHE[ticker] = (now, result)
+                app.logger.info(
+                    f"[company_overview] {ticker} OK (model={model_name}, attempt {attempt+1}) — cached 6h"
                 )
-                time.sleep(wait)
-                last_err = f"server_{resp.status_code}"
+                return result
+
+            except requests.exceptions.Timeout:
+                last_err = "timeout"
+                app.logger.warning(
+                    f"[company_overview] {ticker} {model_name} timeout (attempt {attempt+1})"
+                )
                 continue
-
-            data = resp.json()
-
-            # 응답 에러 체크
-            if "error" in data:
-                err = data["error"]
-                msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-                app.logger.error(f"[company_overview] {ticker} Groq error: {msg}")
-                last_err = msg
-                break
-
-            if "choices" not in data or not data["choices"]:
+            except Exception as e:
+                last_err = f"{type(e).__name__}: {e}"
                 app.logger.error(
-                    f"[company_overview] {ticker} no choices in response: {str(data)[:200]}"
+                    f"[company_overview] {ticker} {model_name} error: {last_err}"
                 )
-                last_err = "no_choices"
                 break
 
-            text = (data["choices"][0].get("message", {}).get("content") or "").strip()
-            if not text:
-                app.logger.error(f"[company_overview] {ticker} empty content")
-                last_err = "empty_content"
-                break
-
-            # 파싱: [기업소개], [주요사업], [기업분석] 섹션 분리
-            import re as _re
-            sections = {}
-            for key in ["기업소개", "주요사업", "기업분석"]:
-                m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
-                if m:
-                    sections[key] = m.group(1).strip()
-            result = sections if sections else {"기업소개": text}
-
-            # 캐시 저장 후 반환
-            _OVERVIEW_CACHE[ticker] = (now, result)
-            app.logger.info(
-                f"[company_overview] {ticker} OK (attempt {attempt+1}) — cached for 6h"
-            )
-            return result
-
-        except requests.exceptions.Timeout:
-            last_err = "timeout"
-            app.logger.warning(f"[company_overview] {ticker} timeout (attempt {attempt+1})")
-        except Exception as e:
-            last_err = f"{type(e).__name__}: {e}"
-            app.logger.error(f"[company_overview] {ticker} error: {last_err}")
-            break   # 알 수 없는 에러는 재시도 안 함
-
-    app.logger.warning(f"[company_overview] {ticker} 최종 실패: {last_err}")
+    app.logger.warning(f"[company_overview] {ticker} 모든 모델 실패: {last_err}")
     return None
 
 
