@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 import numpy as np
@@ -710,6 +712,114 @@ def fetch_analysts(stock, info):
         return {"targets": [], "summary": {}}
 
 
+# ── 시장 컨텍스트 & 이벤트 캘린더 ─────────────────────────
+_MARKET_CACHE = {}   # market_kind → (timestamp, data)
+_MARKET_TTL   = 600  # 10분 (지수는 빨리 안 바뀜)
+
+
+def fetch_market_context(is_korean: bool) -> dict:
+    """시장 인덱스(S&P/Nasdaq/VIX 또는 KOSPI/KOSDAQ/환율) 현재가·등락률."""
+    key = 'KR' if is_korean else 'US'
+    now = time.time()
+    cached = _MARKET_CACHE.get(key)
+    if cached and (now - cached[0]) < _MARKET_TTL:
+        return cached[1]
+
+    if is_korean:
+        tickers_map = [
+            ('KOSPI',   '^KS11'),
+            ('KOSDAQ',  '^KQ11'),
+            ('환율',     'KRW=X'),
+        ]
+    else:
+        tickers_map = [
+            ('S&P 500', '^GSPC'),
+            ('Nasdaq',  '^IXIC'),
+            ('VIX',     '^VIX'),
+        ]
+
+    result = {}
+    for label, sym in tickers_map:
+        try:
+            t = yf.Ticker(sym)
+            hist = t.history(period='5d', interval='1d', auto_adjust=False)
+            if hist is None or hist.empty or len(hist) < 2:
+                continue
+            closes = hist['Close'].dropna()
+            if len(closes) < 2:
+                continue
+            last = float(closes.iloc[-1])
+            prev = float(closes.iloc[-2])
+            if prev == 0 or pd.isna(last) or pd.isna(prev):
+                continue
+            chg_pct = (last - prev) / prev * 100
+            result[label] = {
+                'symbol':     sym,
+                'value':      round(last, 2),
+                'change_pct': round(chg_pct, 2),
+            }
+        except Exception as e:
+            app.logger.debug(f"market context {sym}: {e}")
+
+    _MARKET_CACHE[key] = (now, result)
+    return result
+
+
+def fetch_upcoming_events(stock, info: dict) -> list:
+    """다음 실적 발표 / 배당락일 등 향후 이벤트."""
+    events = []
+    today_naive = pd.Timestamp.utcnow().tz_localize(None).normalize()
+
+    # 1) 다음 실적 발표
+    try:
+        ed = stock.get_earnings_dates(limit=8)
+        if ed is not None and not ed.empty:
+            idx = ed.index
+            # tz-aware → naive 통일
+            try:
+                idx_naive = idx.tz_localize(None) if idx.tz else idx
+            except Exception:
+                idx_naive = idx
+            future = [d for d in idx_naive if pd.Timestamp(d) >= today_naive]
+            if future:
+                next_e = min(future)
+                days = (pd.Timestamp(next_e).normalize() - today_naive).days
+                if 0 <= days <= 180:
+                    events.append({
+                        'type':  'earnings',
+                        'icon':  '📊',
+                        'label': '실적 발표',
+                        'date':  pd.Timestamp(next_e).strftime('%Y-%m-%d'),
+                        'days':  int(days),
+                    })
+    except Exception as e:
+        app.logger.debug(f"earnings dates: {e}")
+
+    # 2) 배당락일
+    try:
+        ex_div = info.get('exDividendDate')   # Unix timestamp (int) 또는 datetime
+        if ex_div:
+            if isinstance(ex_div, (int, float)):
+                ex_dt = datetime.utcfromtimestamp(ex_div)
+            else:
+                ex_dt = pd.Timestamp(ex_div).to_pydatetime()
+            days = (pd.Timestamp(ex_dt).normalize() - today_naive).days
+            if 0 <= days <= 365:
+                events.append({
+                    'type':  'dividend',
+                    'icon':  '💰',
+                    'label': '배당락일',
+                    'date':  ex_dt.strftime('%Y-%m-%d'),
+                    'days':  int(days),
+                })
+    except Exception as e:
+        app.logger.debug(f"ex-dividend: {e}")
+
+    # 가까운 순으로 정렬
+    events.sort(key=lambda e: e.get('days', 999))
+    return events
+
+
 def fetch_news(stock):
     try:
         news_list = stock.news or []
@@ -1325,8 +1435,19 @@ def analyze():
         stock_data["return_1y"]  = calc_return(252)
 
         news_data    = fetch_news(stock)
-        # 한국 주식(.KS/.KQ)이면 네이버 금융, 아니면 yfinance 애널리스트 데이터
+
+        # ── 시장 컨텍스트 + 다가오는 이벤트 ──────────────────────────────
         is_kr_stock  = ticker.endswith('.KS') or ticker.endswith('.KQ')
+        try:
+            stock_data["market_context"]  = fetch_market_context(is_kr_stock)
+        except Exception as e:
+            app.logger.warning(f"market_context: {e}")
+        try:
+            stock_data["upcoming_events"] = fetch_upcoming_events(stock, info)
+        except Exception as e:
+            app.logger.warning(f"upcoming_events: {e}")
+
+        # 한국 주식(.KS/.KQ)이면 네이버 금융, 아니면 yfinance 애널리스트 데이터
         if is_kr_stock:
             kr_code      = ticker.split('.')[0]
             analyst_data = fetch_kr_analysts(kr_code)
