@@ -974,9 +974,17 @@ function renderVerdict(analysis, stock) {
   const sdp    = analysis.stop_distance_pct;
 
   if (rec) {
+    // 진입 전략 디테일: 진입가가 현재가보다 낮으면 풀백 대기, 같으면 즉시 진입
+    const curPrice = stock && stock.price;
+    let strongDesc = '추세 강세 — 진입가까지 풀백 대기 후 분할매수';
+    if (analysis.entry_price != null && curPrice != null) {
+      const diff = (curPrice - analysis.entry_price) / curPrice * 100;
+      if (diff < 0.5) strongDesc = '신고가 돌파 + 추세 강세 — 즉시 진입 가능';
+      else if (diff > 3) strongDesc = `RSI 과열 또는 급등 — 약 ${diff.toFixed(1)}% 풀백 대기 권장`;
+      else strongDesc = `추세 강세 — 약 ${diff.toFixed(1)}% 얕은 풀백까지 limit 주문 권장`;
+    }
     const recMap = {
-      strong:  { cls: 'strong',  icon: '🔥', label: '강한 매수 신호',
-                 desc: '추세가 강해 즉시 진입 또는 분할매수 권장' },
+      strong:  { cls: 'strong',  icon: '🔥', label: '강한 매수 신호', desc: strongDesc },
       neutral: { cls: 'neutral', icon: '⚖️', label: '풀백 대기 권장',
                  desc: 'MA20 부근 눌림목까지 대기 후 진입' },
       avoid:   { cls: 'avoid',   icon: '⚠️', label: '진입 비추천',
