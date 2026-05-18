@@ -349,20 +349,75 @@ def _bg_scan(stock_db, market: str):
             _STATUS[market] = {"state": "error", "message": str(e)}
 
 
+def _filter_items_by_market(items, market):
+    """ALL 캐시 결과에서 KR/US 만 필터링."""
+    if market == "ALL":
+        return items
+    out = []
+    for it in items:
+        sym = it.get("ticker", "")
+        is_kr = sym.endswith(".KS") or sym.endswith(".KQ")
+        if market == "KR" and is_kr: out.append(it)
+        elif market == "US" and not is_kr: out.append(it)
+    return out
+
+
+def _derive_from_all_cache(market):
+    """ALL 캐시가 있으면 KR/US 결과를 거기서 도출. None 반환 시 도출 불가."""
+    if market not in ("KR", "US"):
+        return None
+    if "ALL" not in _CACHE:
+        return None
+    ts, all_data = _CACHE["ALL"]
+    if time.time() - ts >= _CACHE_TTL:
+        return None
+    # 필터링된 결과 생성
+    filtered_items = _filter_items_by_market(all_data.get("items", []), market)
+    # 점수 분포 재계산
+    dist = {
+        "≥50": sum(1 for r in filtered_items if r.get("total_score", 0) >= 50),
+        "≥30": sum(1 for r in filtered_items if r.get("total_score", 0) >= 30),
+        "≥15": sum(1 for r in filtered_items if r.get("total_score", 0) >= 15),
+        "≥5":  sum(1 for r in filtered_items if r.get("total_score", 0) >= 5),
+    }
+    return {
+        "scanned_at":   all_data.get("scanned_at"),
+        "market":       market,
+        "total":        all_data.get("total", 0),
+        "data_ok":      all_data.get("data_ok"),
+        "hits":         len(filtered_items),
+        "score_dist":   dist,
+        "elapsed_sec":  all_data.get("elapsed_sec", 0),
+        "items":        filtered_items,
+        "derived_from_all": True,
+    }
+
+
 def start_scan(stock_db, market: str, force: bool = False) -> dict:
-    """스캔 시작. 캐시 유효하면 즉시 결과, 진행 중이면 그 상태 반환."""
+    """스캔 시작. 캐시 유효하면 즉시 결과, 진행 중이면 그 상태 반환.
+
+    KR/US 요청 시 ALL 캐시가 있으면 거기서 필터링 → 재스캔 없음.
+    """
     market = (market or "ALL").upper()
     if market not in ("ALL", "KR", "US"):
         market = "ALL"
 
     with _LOCK:
-        # 캐시 확인
+        # 1) 직접 캐시 확인
         if not force and market in _CACHE:
             ts, data = _CACHE[market]
             if time.time() - ts < _CACHE_TTL:
                 return {"state": "done", "cached": True, "result": data}
 
-        # 진행 중
+        # 2) ALL 캐시에서 도출 (KR/US 요청 시)
+        if not force:
+            derived = _derive_from_all_cache(market)
+            if derived is not None:
+                # 도출 결과를 해당 market 캐시에도 저장 (재계산 절약)
+                _CACHE[market] = (time.time(), derived)
+                return {"state": "done", "cached": True, "result": derived}
+
+        # 3) 진행 중
         if market in _STATUS and _STATUS[market].get("state") == "running":
             return {
                 "state":      "running",
@@ -371,7 +426,7 @@ def start_scan(stock_db, market: str, force: bool = False) -> dict:
                 "total":      _STATUS[market].get("total", 0),
             }
 
-        # 새 스캔 시작 — abort 플래그 초기화
+        # 4) 새 스캔 시작 — abort 플래그 초기화
         _ABORT[market] = False
         _STATUS[market] = {
             "state":      "running",
@@ -401,7 +456,7 @@ def get_status(market: str) -> dict:
     server_now = time.time()  # 서버 응답 시각 (캐시 진단용)
 
     with _LOCK:
-        # 캐시 우선
+        # 1) 직접 캐시
         if market in _CACHE:
             ts, data = _CACHE[market]
             if server_now - ts < _CACHE_TTL:
@@ -412,7 +467,17 @@ def get_status(market: str) -> dict:
                     "result": data,
                     "server_now": server_now,
                 }
-        # 진행 상태
+        # 2) ALL 캐시에서 도출 (KR/US 요청 시)
+        derived = _derive_from_all_cache(market)
+        if derived is not None:
+            _CACHE[market] = (time.time(), derived)
+            return {
+                "state":  "done",
+                "cached": True,
+                "result": derived,
+                "server_now": server_now,
+            }
+        # 3) 진행 상태
         st = dict(_STATUS.get(market, {"state": "idle"}))
         st["server_now"] = server_now
         return st
