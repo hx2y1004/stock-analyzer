@@ -642,36 +642,51 @@ def analyze_signals(df, info, df_weekly=None):
     if _vol_avg20 > 0 and _vol_last > _vol_avg20 * 1.5:
         trend_score += 20                                 # 거래량 급증
 
-    # ── 추세 강도별 진입·손절·목표 산출 ─────────────────
-    # 52주 신고가 돌파 여부 (0.5% 이내 = 진짜 돌파)
-    is_breakout = _year_high > 0 and close >= _year_high * 0.995
-    # RSI 과열 여부 (>70 이면 매수 신중)
+    # ── 추세 강도별 진입·손절·목표 (월가 정통 로직) ────
+    is_breakout    = _year_high > 0 and close >= _year_high * 0.995
     rsi_overheated = (not np.isnan(rsi)) and rsi > 70
 
     if trend_score >= 60:
         # 🔥 강한 상승추세
-        if is_breakout and not rsi_overheated:
-            # 신고가 돌파 + 과열 아님 → 즉시 진입 (breakout buy)
-            entry_price = round(close, 2)
-        elif rsi_overheated:
-            # 과열: 1.5 ATR 풀백까지 보수적으로 기다림
-            entry_price = round(close - atr_use * 1.5, 2)
-        else:
-            # 일반 강세: 0.5 ATR 얕은 풀백 (limit order 권장)
-            entry_price = round(close - atr_use * 0.5, 2)
+        # ── 1) 손절 먼저 결정 ──
+        base_stop = max(_swing_low_5, (_ma20 * 0.99) if _ma20 else (close * 0.95))
+        stop_loss = round(base_stop - atr_use * 0.3, 2)
 
-        # 손절: max(5일 swing low, MA20) - 0.3 ATR
-        base_stop   = max(_swing_low_5, _ma20 or _swing_low_5)
-        stop_loss   = round(base_stop - atr_use * 0.3, 2)
-        # 목표: R:R 1:3 (진입가가 손절보다 낮으면 fallback)
-        risk        = entry_price - stop_loss
+        # ── 2) 진입가: 상황별 ──
+        near_ma20 = _ma20 is not None and (close - _ma20) < atr_use
+        if is_breakout:
+            entry_raw = close                                      # 돌파 매수
+        elif near_ma20:
+            entry_raw = close                                      # 이미 좋은 자리
+        elif rsi_overheated and _ma20:
+            # 과열: MA20+0.5ATR 또는 close-1ATR 중 더 높은 쪽 (덜 깊게)
+            entry_raw = max(_ma20 + atr_use * 0.5, close - atr_use * 1.0)
+        elif rsi_overheated:
+            entry_raw = close - atr_use * 1.0
+        else:
+            # 일반 강세: close-0.5ATR 또는 MA20 중 높은 쪽 (MA20을 floor로)
+            entry_raw = max(close - atr_use * 0.5, _ma20 or 0)
+
+        # ── 3) 안전장치 ──
+        entry_raw = max(entry_raw, stop_loss + atr_use * 1.0)      # R:R 의미 확보
+        entry_raw = min(entry_raw, close)                          # limit buy
+        entry_price = round(entry_raw, 2)
+
+        # ── 4) 목표: R:R 1:3 ──
+        risk = entry_price - stop_loss
         target_price = round(entry_price + risk * 3, 2) if risk > 0 \
-                       else round(entry_price + atr_use * 4, 2)
+                       else round(close + atr_use * 4, 2)
         trade_recommendation = "strong"
 
     elif trend_score >= 30:
-        # ⚖️ 약한 추세/횡보: MA20 풀백 대기, R:R 1:2
-        entry_price = round(close - atr_use * 1.5, 2)   # 더 깊은 풀백
+        # ⚖️ 약한 추세/횡보: MA50 또는 1.5 ATR 풀백 중 더 가까운 쪽
+        fallback = close - atr_use * 1.5
+        if _ma50 and close > _ma50:
+            entry_raw = max(_ma50, fallback)
+        else:
+            entry_raw = fallback
+        entry_raw = min(entry_raw, close)
+        entry_price = round(entry_raw, 2)
         stop_loss   = round(entry_price - atr_use * 2.0, 2)
         target_price = round(entry_price + atr_use * 4.0, 2)
         trade_recommendation = "neutral"
@@ -682,6 +697,17 @@ def analyze_signals(df, info, df_weekly=None):
         target_price = None
         stop_loss    = round(max(_swing_low_5, close * 0.92) - atr_use * 0.5, 2)
         trade_recommendation = "avoid"
+
+    # ── 진입 신뢰도 (close와의 거리 기반) ──
+    entry_confidence = None
+    if entry_price is not None and close > 0:
+        diff_pct = (close - entry_price) / close * 100
+        if diff_pct < 0.5:
+            entry_confidence = "immediate"     # 🟢 즉시 진입 가능
+        elif diff_pct < 2.0:
+            entry_confidence = "wait"          # 🟡 풀백 대기 (limit)
+        else:
+            entry_confidence = "patient"       # 🟠 깊은 풀백 대기
 
     # 안전장치: R:R 비율 + 변동성 경고
     risk_reward_ratio  = None
@@ -836,6 +862,7 @@ def analyze_signals(df, info, df_weekly=None):
         "trend_score":         trend_score,             # 0~100
         "risk_reward_ratio":   risk_reward_ratio,       # 1.5 미만이면 avoid
         "stop_distance_pct":   stop_distance_pct,       # 손절 거리 % (변동성 판단용)
+        "entry_confidence":    entry_confidence,        # immediate/wait/patient
         "month_high": round(month_high, 2),
         "month_low":  round(month_low, 2),
         "trend": trend,
