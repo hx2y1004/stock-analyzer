@@ -139,46 +139,25 @@ function renderPortfolioCards(holdings) {
   const footer = document.getElementById('pfMoreFooter');
   const btn    = document.getElementById('pfToggleBtn');
 
+  // 토글/푸터 사용 안 함 (전체 항상 렌더 + 내부 스크롤로 표시)
+  if (footer) footer.classList.add('hidden');
+  if (btn)    btn.classList.add('hidden');
+  cards.classList.remove('collapsed');
+
   if (!holdings.length) {
     cards.innerHTML = `<div class="pf-empty">보유 종목이 없습니다. 종목을 추가해보세요!</div>`;
-    cards.classList.remove('collapsed');
-    footer.classList.add('hidden');
-    btn.classList.add('hidden');
     return;
   }
 
-  // 수익률 내림차순 정렬
+  // 수익률 내림차순 정렬 → 전체 풀모드로 렌더
   const byReturn = [...holdings].sort((a, b) => (b.return_pct ?? -9999) - (a.return_pct ?? -9999));
-
-  // 접힘: 상위 5개를 컴팩트하게 / 펼침: 전체를 풀카드로
-  const displayed = pfCollapsed ? byReturn.slice(0, 5) : byReturn;
-  cards.innerHTML = displayed.map((h, idx) => _pfCardHTML(h, idx + 1, pfCollapsed)).join('');
-
-  // 접힘 상태일 때 컨테이너에 .collapsed 부여 (모바일에서 상위 2개만 보이도록 CSS 처리)
-  if (pfCollapsed) cards.classList.add('collapsed');
-  else             cards.classList.remove('collapsed');
-
-  // 토글 버튼 & 푸터 업데이트
-  if (holdings.length <= 5 && !pfCollapsed) {
-    btn.classList.add('hidden');
-    footer.classList.add('hidden');
-  } else {
-    btn.classList.remove('hidden');
-    if (pfCollapsed) {
-      btn.innerHTML = `펼치기 ▼`;
-      const isMobile = window.innerWidth <= 768;
-      const visibleCount = isMobile ? Math.min(2, displayed.length) : displayed.length;
-      footer.textContent = `간략 표시 ${visibleCount}개 · 전체 ${holdings.length}개 보유 (눌러서 펼치기)`;
-      footer.classList.remove('hidden');
-    } else {
-      btn.innerHTML = `접기 ▲`;
-      footer.classList.add('hidden');
-    }
-  }
+  cards.innerHTML = byReturn.map((h, idx) => _pfCardHTML(h, idx + 1, false)).join('');
 }
 
+// 레거시 호환: 펼치기/접기 토글 → 더 이상 사용 안 함
 function togglePortfolio() {
-  pfCollapsed = !pfCollapsed;
+  // 내부 스크롤로 전체 표시 중이라 noop
+  pfCollapsed = false;
   renderPortfolioCards(pfAllHoldings);
 }
 
