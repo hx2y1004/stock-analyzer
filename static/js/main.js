@@ -305,6 +305,60 @@ function _setScanBtn(running, label) {
   btn.textContent = label;
 }
 
+// 진행률 UI 렌더링 (indeterminate 모드 포함)
+function _renderTrendsProgress(prog, total, pct, indeterminate) {
+  const cards = document.getElementById('trendsCards');
+  if (!cards) return;
+
+  const elapsed = _trendsStartTime ? Math.floor((Date.now() - _trendsStartTime) / 1000) : 0;
+
+  // 정체 감지
+  if (!indeterminate) {
+    if (prog === _trendsLastProgress) _trendsStallCount++;
+    else { _trendsLastProgress = prog; _trendsStallCount = 0; }
+  }
+  const stallWarn = _trendsStallCount >= 8
+    ? `<div class="trend-stall-warn">⚠️ Yahoo Finance 응답 지연 — 잠시만 기다려주세요</div>`
+    : '';
+
+  const status = indeterminate
+    ? `<span class="trend-pulse">●</span> 스캔 시작 중...`
+    : `🔍 스캔 중 <strong>${prog}/${total || '?'}</strong> · <strong class="trend-pct">${pct}%</strong>`;
+
+  const fillStyle = indeterminate
+    ? `class="trend-progress-fill indeterminate"`
+    : `class="trend-progress-fill" style="width:${pct}%"`;
+
+  cards.innerHTML = `
+    <div class="trend-scanning">
+      <div class="trend-scanning-row">
+        <span class="trend-scanning-status">${status}</span>
+        <span class="trend-scanning-elapsed">⏱ ${elapsed}초</span>
+      </div>
+      <div class="trend-progress-bar ${indeterminate ? 'indeterminate' : ''}">
+        <div ${fillStyle}></div>
+      </div>
+      <div class="trend-scanning-hint">전체 종목 분석에 1~5분 소요됩니다.</div>
+      ${stallWarn}
+    </div>`;
+}
+
+// 1초마다 elapsed 표시만 갱신 (진행률 없을 때도 시간은 흐르게)
+let _trendsElapsedTicker = null;
+function _startElapsedTicker() {
+  if (_trendsElapsedTicker) clearInterval(_trendsElapsedTicker);
+  _trendsElapsedTicker = setInterval(() => {
+    const el = document.querySelector('.trend-scanning-elapsed');
+    if (el && _trendsStartTime) {
+      const s = Math.floor((Date.now() - _trendsStartTime) / 1000);
+      el.textContent = `⏱ ${s}초`;
+    }
+  }, 1000);
+}
+function _stopElapsedTicker() {
+  if (_trendsElapsedTicker) { clearInterval(_trendsElapsedTicker); _trendsElapsedTicker = null; }
+}
+
 async function _pollTrendsStatus() {
   try {
     // 캐시 버스터 (no-store 헤더와 이중 안전장치)
@@ -317,32 +371,15 @@ async function _pollTrendsStatus() {
       _renderTrendsResult(st.result, !!st.cached);
       _setScanBtn(false, '🔍 다시 스캔');
       if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
+      _stopElapsedTicker();
       return;
     }
 
     if (st.state === 'running') {
-      const cards = document.getElementById('trendsCards');
       const prog  = st.progress || 0;
       const total = st.total || 0;
       const pct   = total ? Math.round(prog / total * 100) : 0;
-      // 경과 시간은 클라이언트에서 추적 (서버-클라이언트 시계 차이 무시)
-      const elapsed = _trendsStartTime ? Math.floor((Date.now() - _trendsStartTime) / 1000) : 0;
-
-      // 정체 감지: 같은 progress가 5회 연속이면 경고
-      if (prog === _trendsLastProgress) _trendsStallCount++;
-      else { _trendsLastProgress = prog; _trendsStallCount = 0; }
-
-      const stallWarn = _trendsStallCount >= 5
-        ? `<div style="color:var(--red);font-size:11px;margin-top:4px">⚠️ 진행이 느려요 (Yahoo Finance 응답 지연). 잠시만 기다려주세요...</div>`
-        : '';
-
-      cards.innerHTML = `
-        <div class="pf-loading">
-          🔍 스캔 중... <strong>${prog}/${total || '?'}</strong> (${pct}%) · ${elapsed}초 경과<br/>
-          <div class="trend-progress-bar"><div class="trend-progress-fill" style="width:${pct}%"></div></div>
-          <small style="color:var(--text2)">전체 종목 분석에 1~5분 소요됩니다.</small>
-          ${stallWarn}
-        </div>`;
+      _renderTrendsProgress(prog, total, pct, st.total === 0);
       return;
     }
 
@@ -350,6 +387,7 @@ async function _pollTrendsStatus() {
       document.getElementById('trendsCards').innerHTML = `<div class="pf-empty">오류: ${st.message || '스캔 실패'}</div>`;
       _setScanBtn(false, '🔍 다시 스캔');
       if (_trendsPollTimer) { clearInterval(_trendsPollTimer); _trendsPollTimer = null; }
+      _stopElapsedTicker();
     }
   } catch (e) {
     console.warn('[trends] poll failed:', e);
@@ -360,13 +398,16 @@ async function scanTrends() {
   const cards  = document.getElementById('trendsCards');
   const footer = document.getElementById('trendsFooter');
   footer.classList.add('hidden');
-  cards.innerHTML = `<div class="pf-loading">스캔 시작...</div>`;
   _setScanBtn(true, '⏳ 스캔 중...');
 
   // 진행률/경과시간 추적 초기화
   _trendsStartTime    = Date.now();
   _trendsLastProgress = -1;
   _trendsStallCount   = 0;
+
+  // 즉시 indeterminate progress UI 노출 (서버 응답 기다리지 않음)
+  _renderTrendsProgress(0, 0, 0, true);
+  _startElapsedTicker();
 
   try {
     // 캐시 사용 (force=1 이면 강제 재스캔)
@@ -375,15 +416,17 @@ async function scanTrends() {
     const data  = await resp.json();
 
     if (data.state === 'done' && data.result) {
+      _stopElapsedTicker();
       _renderTrendsResult(data.result, !!data.cached);
       _setScanBtn(false, '🔍 다시 스캔');
       return;
     }
-    // running → 폴링 시작 (1.5초마다)
+    // running → 폴링 시작 (1초마다)
     if (_trendsPollTimer) clearInterval(_trendsPollTimer);
-    _trendsPollTimer = setInterval(_pollTrendsStatus, 1500);
+    _trendsPollTimer = setInterval(_pollTrendsStatus, 1000);
     _pollTrendsStatus();   // 즉시 한 번
   } catch (e) {
+    _stopElapsedTicker();
     cards.innerHTML = `<div class="pf-empty">오류: ${e.message || '서버 응답 오류'}</div>`;
     _setScanBtn(false, '🔍 스캔');
   }
