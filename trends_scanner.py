@@ -36,7 +36,7 @@ def _get_session():
             # 모든 요청에 timeout 적용 (yfinance 내부에서 호출 시)
             _orig_request = s.request
             def _timed_request(method, url, **kwargs):
-                kwargs.setdefault("timeout", 8)
+                kwargs.setdefault("timeout", 15)  # 8 → 15 (데이터 받을 시간 확보)
                 return _orig_request(method, url, **kwargs)
             s.request = _timed_request
             _SESSION = s
@@ -214,12 +214,13 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
 
 # ── 전체 스캔 (2-pass) ────────────────────────────────
 def scan_all(stock_db, market: str = "ALL",
-             min_tech_momentum: int = 20,
+             min_total_score: int = 15,    # 25 → 15 (필터 완화)
+             min_tech_momentum: int = 10,  # 20 → 10
              top_for_fund: int = 50,
              final_limit: int = 30,
-             max_workers_pass1: int = 5,   # 2 → 5 (timeout이 짧으니 좀더 공격적)
+             max_workers_pass1: int = 4,
              max_workers_pass2: int = 3,
-             per_call_timeout: int = 10,   # 12 → 10 으로 더 짧게
+             per_call_timeout: int = 20,   # 10 → 20 (데이터 받을 여유)
              progress_cb=None) -> dict:
     """후보 종목 전체 스캔. 2-pass 로 펀더멘털 호출 최소화.
 
@@ -307,7 +308,7 @@ def scan_all(stock_db, market: str = "ALL",
     for r in enriched.values():
         r["total_score"] = r["tech_score"] + r["momentum_score"] + r["fund_score"]
 
-    final = [r for r in enriched.values() if r["total_score"] >= 25]
+    final = [r for r in enriched.values() if r["total_score"] >= min_total_score]
     # 1차: 총점 desc, 2차: 기술 desc, 3차: 모멘텀 desc, 4차: 펀더 desc
     final.sort(
         key=lambda x: (x["total_score"], x["tech_score"], x["momentum_score"], x["fund_score"]),
@@ -316,15 +317,26 @@ def scan_all(stock_db, market: str = "ALL",
     final = final[:final_limit]
 
     elapsed = time.time() - started
-    log.info(f"[trends scan] done in {elapsed:.1f}s, scanned={total_n} hits={len(final)}")
+    # 진단 정보
+    pass1_count = len(pass1)
+    score_dist = {
+        "≥50": sum(1 for r in enriched.values() if r["total_score"] >= 50),
+        "≥30": sum(1 for r in enriched.values() if r["total_score"] >= 30),
+        "≥15": sum(1 for r in enriched.values() if r["total_score"] >= 15),
+        "≥5":  sum(1 for r in enriched.values() if r["total_score"] >= 5),
+    }
+    log.info(f"[trends scan] done in {elapsed:.1f}s scanned={total_n} "
+             f"pass1_ok={pass1_count} score_dist={score_dist} hits={len(final)}")
 
     return {
-        "scanned_at": datetime.utcnow().isoformat() + "Z",
-        "market":      market,
-        "total":       total_n,
-        "hits":        len(final),
-        "elapsed_sec": round(elapsed, 1),
-        "items":       final,
+        "scanned_at":   datetime.utcnow().isoformat() + "Z",
+        "market":       market,
+        "total":        total_n,
+        "data_ok":      pass1_count,   # 데이터 받은 종목 수
+        "hits":         len(final),
+        "score_dist":   score_dist,
+        "elapsed_sec":  round(elapsed, 1),
+        "items":        final,
     }
 
 
