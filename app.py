@@ -1735,9 +1735,8 @@ def analyze():
                 )
 
                 # ── 매출: 네이버 actuals 우선 머지 (yfinance 보다 최신) ──
-                # 1) 기존 revenue_quarters period 집합
                 existing_periods = {q["period"] for q in revenue_quarters}
-                # 2) 네이버에만 있는 더 최신 분기 추가
+                # 네이버에만 있는 더 최신 actual 분기 추가
                 for period, val in sorted(kr_rev_act.items(), reverse=True):
                     if period not in existing_periods:
                         revenue_quarters.append({
@@ -1745,14 +1744,26 @@ def analyze():
                             "actual":   val,
                             "estimate": _match_estimate(period, kr_rev_est),
                         })
-                # 3) yfinance actual 이 None 이거나 네이버 값이 더 정확하면 갱신
+                        existing_periods.add(period)
+                # 앞으로 발표될 분기 (actual 없고 estimate만 있는 경우) - 1개까지 추가
+                future_est_periods = sorted(
+                    [p for p in kr_rev_est.keys()
+                     if p not in existing_periods
+                     and p > max(kr_rev_act.keys(), default="")]
+                )
+                for period in future_est_periods[:1]:    # 가장 가까운 1개만
+                    revenue_quarters.append({
+                        "period":   period,
+                        "actual":   None,                # 아직 미발표
+                        "estimate": kr_rev_est[period],
+                    })
+                # yfinance actual 보강
                 for q in revenue_quarters:
-                    if q["period"] in kr_rev_act:
-                        if q.get("actual") is None:
-                            q["actual"] = kr_rev_act[q["period"]]
+                    if q["period"] in kr_rev_act and q.get("actual") is None:
+                        q["actual"] = kr_rev_act[q["period"]]
                     if q.get("estimate") is None:
                         q["estimate"] = _match_estimate(q["period"], kr_rev_est)
-                # 4) 최신 5개로 컷
+                # 최신 5개로 컷 (period DESC)
                 revenue_quarters.sort(key=lambda x: x["period"], reverse=True)
                 revenue_quarters[:] = revenue_quarters[:5]
 
@@ -1773,12 +1784,30 @@ def analyze():
 
                 # 네이버 actuals 머지 (네이버가 더 최신)
                 merged_oi_act = {**yf_oi_act, **kr_oi_act}
-                for period, actual in sorted(merged_oi_act.items(), reverse=True)[:5]:
+                merged_periods = set(merged_oi_act.keys())
+
+                # 앞으로 발표될 분기 (estimate만 있음) 1개 추가
+                future_oi_est = sorted(
+                    [p for p in kr_oi_est.keys()
+                     if p not in merged_periods
+                     and p > max(merged_oi_act.keys(), default="")]
+                )
+                for period in future_oi_est[:1]:
+                    oi_quarters.append({
+                        "period":   period,
+                        "actual":   None,
+                        "estimate": kr_oi_est[period],
+                    })
+                for period, actual in sorted(merged_oi_act.items(), reverse=True):
                     oi_quarters.append({
                         "period":   period,
                         "actual":   actual,
                         "estimate": _match_estimate(period, kr_oi_est),
                     })
+
+                # 최신 5개로 컷 (period DESC)
+                oi_quarters.sort(key=lambda x: x["period"], reverse=True)
+                oi_quarters[:] = oi_quarters[:5]
             except Exception as e:
                 app.logger.error(f"oi_quarters fetch: {e}")
 
