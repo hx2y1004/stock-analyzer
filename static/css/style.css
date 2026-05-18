@@ -1299,20 +1299,108 @@ body {
   #trendsCards { grid-template-columns: 1fr; }
 }
 
-/* 진행률 바 (스캔 중) */
+/* ── 추세 스캔 진행 UI ─────────────────────────────── */
+.trend-scanning {
+  padding: 18px 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.trend-scanning-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.trend-scanning-status { font-weight: 600; }
+.trend-pct {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+}
+.trend-scanning-elapsed {
+  font-size: 12px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.trend-scanning-hint {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 6px;
+}
+.trend-stall-warn {
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: rgba(248,81,73,0.08);
+  border-radius: 6px;
+}
+
+/* 진행률 바 */
 .trend-progress-bar {
   width: 100%;
-  height: 6px;
-  background: var(--bg3);
-  border-radius: 3px;
+  height: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
   overflow: hidden;
-  margin: 8px 0 6px;
+  position: relative;
 }
 .trend-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--accent), rgb(120, 200, 255));
-  border-radius: 3px;
-  transition: width 0.4s ease;
+  border-radius: 4px;
+  transition: width 0.8s cubic-bezier(0.22, 0.61, 0.36, 1);  /* 부드러운 ease-out */
+  min-width: 0;
+  /* 진행 중 표시용 stripe 패턴 */
+  background-image:
+    linear-gradient(90deg, var(--accent), rgb(120, 200, 255)),
+    linear-gradient(45deg,
+      rgba(255,255,255,0.18) 25%, transparent 25%,
+      transparent 50%, rgba(255,255,255,0.18) 50%,
+      rgba(255,255,255,0.18) 75%, transparent 75%, transparent);
+  background-size: 100% 100%, 18px 18px;
+  background-blend-mode: overlay;
+  animation: trend-stripe 1.2s linear infinite;
+}
+@keyframes trend-stripe {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 0 0, 18px 0; }
+}
+
+/* 인디터미네이트(아직 progress 모를 때): 좌→우 슬라이딩 바 */
+.trend-progress-bar.indeterminate {
+  background: var(--bg2);
+}
+.trend-progress-fill.indeterminate {
+  width: 35%;
+  animation: trend-indet 1.4s ease-in-out infinite, trend-stripe 1.2s linear infinite;
+  background-image:
+    linear-gradient(90deg, var(--accent), rgb(120, 200, 255)),
+    linear-gradient(45deg,
+      rgba(255,255,255,0.18) 25%, transparent 25%,
+      transparent 50%, rgba(255,255,255,0.18) 50%,
+      rgba(255,255,255,0.18) 75%, transparent 75%, transparent);
+  background-size: 100% 100%, 18px 18px;
+}
+@keyframes trend-indet {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%;  }
+}
+
+/* 펄스 점 (인디터미네이트 상태) */
+.trend-pulse {
+  display: inline-block;
+  color: var(--accent);
+  animation: trend-pulse 1s ease-in-out infinite;
+  margin-right: 3px;
+}
+@keyframes trend-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1.15); }
 }
 
 /* 추세 카드 종합 점수 (컴팩트 한 줄 레이아웃) */
