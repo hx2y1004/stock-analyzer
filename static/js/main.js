@@ -334,7 +334,7 @@ function _renderTrendsProgress(prog, total, pct, indeterminate) {
   // 마지막 폴링 갱신 시각
   const sinceLastPoll = _trendsLastPollAt ? ((Date.now() - _trendsLastPollAt) / 1000).toFixed(1) : '?';
   const liveTag = !indeterminate
-    ? `<span class="trend-live-tag">📡 ${sinceLastPoll}초 전 갱신</span>`
+    ? `<span class="trend-live-tag">📡 ${_trendsPollOk}회 갱신 · ${sinceLastPoll}초 전</span>`
     : '';
 
   cards.innerHTML = `
@@ -392,6 +392,8 @@ function _stopElapsedTicker() {
   if (_trendsElapsedTicker) { clearInterval(_trendsElapsedTicker); _trendsElapsedTicker = null; }
 }
 
+let _trendsLastServerNow = null;
+
 async function _pollTrendsStatus() {
   try {
     // 캐시 버스터 (no-store 헤더와 이중 안전장치)
@@ -400,7 +402,12 @@ async function _pollTrendsStatus() {
     const st = await resp.json();
     _trendsLastPollAt = Date.now();
     _trendsPollOk += 1;
-    console.log('[trends poll]', st.state, st.progress, '/', st.total);
+    // 서버 시각이 매번 달라야 정상 (같으면 캐시됨!)
+    const isCachedResp = (st.server_now != null && st.server_now === _trendsLastServerNow);
+    _trendsLastServerNow = st.server_now;
+    console.log('[trends poll #' + _trendsPollOk + ']', st.state, st.progress, '/', st.total,
+                'server_now=' + (st.server_now || '?'),
+                isCachedResp ? '⚠️ CACHED!' : 'fresh');
 
     if (st.state === 'done' && st.result) {
       _renderTrendsResult(st.result, !!st.cached);
@@ -441,6 +448,7 @@ async function scanTrends() {
   _trendsStallCount   = 0;
   _trendsLastPollAt   = null;
   _trendsPollOk       = 0;
+  _trendsLastServerNow = null;
 
   // 즉시 indeterminate progress UI 노출 (서버 응답 기다리지 않음)
   _renderTrendsProgress(0, 0, 0, true);
