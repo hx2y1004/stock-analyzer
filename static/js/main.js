@@ -974,19 +974,31 @@ function renderVerdict(analysis, stock) {
   const sdp    = analysis.stop_distance_pct;
 
   if (rec) {
-    // 진입 전략 디테일: 진입가가 현재가보다 낮으면 풀백 대기, 같으면 즉시 진입
+    // 진입 신뢰도 기반 동적 설명
     const curPrice = stock && stock.price;
-    let strongDesc = '추세 강세 — 진입가까지 풀백 대기 후 분할매수';
+    const conf = analysis.entry_confidence; // immediate / wait / patient
+    let diff = 0;
     if (analysis.entry_price != null && curPrice != null) {
-      const diff = (curPrice - analysis.entry_price) / curPrice * 100;
-      if (diff < 0.5) strongDesc = '신고가 돌파 + 추세 강세 — 즉시 진입 가능';
-      else if (diff > 3) strongDesc = `RSI 과열 또는 급등 — 약 ${diff.toFixed(1)}% 풀백 대기 권장`;
-      else strongDesc = `추세 강세 — 약 ${diff.toFixed(1)}% 얕은 풀백까지 limit 주문 권장`;
+      diff = (curPrice - analysis.entry_price) / curPrice * 100;
     }
+    const confMap = {
+      immediate: { dot: '🟢', txt: '즉시 진입 가능' },
+      wait:      { dot: '🟡', txt: `약 ${diff.toFixed(1)}% 풀백까지 limit 주문` },
+      patient:   { dot: '🟠', txt: `약 ${diff.toFixed(1)}% 풀백 대기 (시간 필요)` },
+    };
+    const cInfo = confMap[conf] || null;
+
+    let strongDesc = '추세 강세';
+    if (cInfo) strongDesc = `${cInfo.dot} ${cInfo.txt}`;
+
+    let neutralDesc = 'MA50 또는 풀백까지 대기';
+    if (conf === 'patient') neutralDesc = `${confMap.patient.dot} 풀백 대기 필요 (${diff.toFixed(1)}%)`;
+    else if (conf === 'wait') neutralDesc = `${confMap.wait.dot} ${diff.toFixed(1)}% 풀백까지 limit`;
+    else if (conf === 'immediate') neutralDesc = `${confMap.immediate.dot} 현재 가격대 매수 가능`;
+
     const recMap = {
       strong:  { cls: 'strong',  icon: '🔥', label: '강한 매수 신호', desc: strongDesc },
-      neutral: { cls: 'neutral', icon: '⚖️', label: '풀백 대기 권장',
-                 desc: 'MA20 부근 눌림목까지 대기 후 진입' },
+      neutral: { cls: 'neutral', icon: '⚖️', label: '풀백 대기 권장', desc: neutralDesc },
       avoid:   { cls: 'avoid',   icon: '⚠️', label: '진입 비추천',
                  desc: '추세가 약하거나 손익비 부족 — 관망 권장' },
     };
