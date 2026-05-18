@@ -1403,6 +1403,46 @@ body {
   50%      { opacity: 1;   transform: scale(1.15); }
 }
 
+/* 라이브 인디케이터 점 (폴링 살아있음을 시각화) */
+.trend-live-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  animation: trend-live-blink 1s ease-out infinite;
+  box-shadow: 0 0 6px var(--green);
+}
+@keyframes trend-live-blink {
+  0%   { transform: scale(1);   opacity: 1; }
+  50%  { transform: scale(1.4); opacity: 0.6; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* 메타 정보 행 (라이브 태그 + 힌트) */
+.trend-scanning-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.trend-live-tag {
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(63,185,80,0.10);
+  transition: all 0.3s;
+}
+.trend-live-tag.stale {
+  color: var(--red);
+  background: rgba(248,81,73,0.10);
+}
+
 /* 추세 카드 종합 점수 (컴팩트 한 줄 레이아웃) */
 .trend-compact-row {
   display: grid;

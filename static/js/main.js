@@ -229,6 +229,8 @@ let _trendsMeta      = null;    // 마지막 응답 메타 정보
 let _trendsStartTime = null;    // 클라이언트 측 스캔 시작 시각
 let _trendsLastProgress = -1;   // 마지막 진행률 (정체 감지용)
 let _trendsStallCount   = 0;    // 같은 진행률이 몇 번 연속
+let _trendsLastPollAt   = null; // 마지막 성공 폴링 시각 (Date.now)
+let _trendsPollOk       = 0;    // 성공 폴링 누적 횟수 (라이브 펄스 트리거용)
 
 function _trendsPageSize() {
   return window.innerWidth <= 768 ? 5 : 10;  // 모바일 5개씩, 데스크톱 10개씩
@@ -323,11 +325,17 @@ function _renderTrendsProgress(prog, total, pct, indeterminate) {
 
   const status = indeterminate
     ? `<span class="trend-pulse">●</span> 스캔 시작 중...`
-    : `🔍 스캔 중 <strong>${prog}/${total || '?'}</strong> · <strong class="trend-pct">${pct}%</strong>`;
+    : `<span class="trend-live-dot" data-pulse="${_trendsPollOk}"></span> 스캔 중 <strong>${prog}/${total || '?'}</strong> · <strong class="trend-pct">${pct}%</strong>`;
 
   const fillStyle = indeterminate
     ? `class="trend-progress-fill indeterminate"`
     : `class="trend-progress-fill" style="width:${pct}%"`;
+
+  // 마지막 폴링 갱신 시각
+  const sinceLastPoll = _trendsLastPollAt ? ((Date.now() - _trendsLastPollAt) / 1000).toFixed(1) : '?';
+  const liveTag = !indeterminate
+    ? `<span class="trend-live-tag">📡 ${sinceLastPoll}초 전 갱신</span>`
+    : '';
 
   cards.innerHTML = `
     <div class="trend-scanning">
@@ -338,7 +346,10 @@ function _renderTrendsProgress(prog, total, pct, indeterminate) {
       <div class="trend-progress-bar ${indeterminate ? 'indeterminate' : ''}">
         <div ${fillStyle}></div>
       </div>
-      <div class="trend-scanning-hint">전체 종목 분석에 1~5분 소요됩니다.</div>
+      <div class="trend-scanning-meta">
+        ${liveTag}
+        <span class="trend-scanning-hint">전체 종목 분석에 1~5분 소요</span>
+      </div>
       ${stallWarn}
     </div>`;
 }
@@ -348,12 +359,20 @@ let _trendsElapsedTicker = null;
 function _startElapsedTicker() {
   if (_trendsElapsedTicker) clearInterval(_trendsElapsedTicker);
   _trendsElapsedTicker = setInterval(() => {
-    const el = document.querySelector('.trend-scanning-elapsed');
-    if (el && _trendsStartTime) {
+    if (_trendsStartTime) {
       const s = Math.floor((Date.now() - _trendsStartTime) / 1000);
-      el.textContent = `⏱ ${s}초`;
+      const el = document.querySelector('.trend-scanning-elapsed');
+      if (el) el.textContent = `⏱ ${s}초`;
     }
-  }, 1000);
+    // 마지막 폴링 갱신 시각도 매초 업데이트
+    if (_trendsLastPollAt) {
+      const since = ((Date.now() - _trendsLastPollAt) / 1000).toFixed(1);
+      const liveEl = document.querySelector('.trend-live-tag');
+      if (liveEl) liveEl.textContent = `📡 ${since}초 전 갱신`;
+      // 마지막 폴링이 5초 이상 없으면 빨간색
+      if (liveEl) liveEl.classList.toggle('stale', (Date.now() - _trendsLastPollAt) > 5000);
+    }
+  }, 500);
 }
 function _stopElapsedTicker() {
   if (_trendsElapsedTicker) { clearInterval(_trendsElapsedTicker); _trendsElapsedTicker = null; }
@@ -365,6 +384,8 @@ async function _pollTrendsStatus() {
     const url = `/api/trends/status?market=${trendsMarket}&_=${Date.now()}`;
     const resp = await fetch(url, { cache: 'no-store' });
     const st = await resp.json();
+    _trendsLastPollAt = Date.now();
+    _trendsPollOk += 1;
     console.log('[trends poll]', st.state, st.progress, '/', st.total);
 
     if (st.state === 'done' && st.result) {
@@ -404,6 +425,8 @@ async function scanTrends() {
   _trendsStartTime    = Date.now();
   _trendsLastProgress = -1;
   _trendsStallCount   = 0;
+  _trendsLastPollAt   = null;
+  _trendsPollOk       = 0;
 
   // 즉시 indeterminate progress UI 노출 (서버 응답 기다리지 않음)
   _renderTrendsProgress(0, 0, 0, true);
