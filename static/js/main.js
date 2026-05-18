@@ -1936,6 +1936,7 @@ function renderCharts(data) {
   const c1 = renderMainChart(data);
   const c2 = renderRSIChart(data);
   const c3 = renderMACDChart(data);
+  window._chartTriplet = [c1, c2, c3];   // 리사이즈 시 재동기화용
 
   // 시간(timestamp) 기준으로 통일 — 데이터 시작점이 달라도 날짜 기준으로 정렬됨
   const alignAndSync = () => {
@@ -1945,8 +1946,30 @@ function renderCharts(data) {
       c3.timeScale().setVisibleRange(range);
     }
     syncChartTimeScales([c1, c2, c3]);
+    syncPriceScaleWidths([c1, c2, c3]);   // 가격축 폭 통일 → 세로 그리드 정렬
   };
   requestAnimationFrame(() => setTimeout(alignAndSync, 80));
+  // 렌더 직후 한 번 더 (차트가 데이터를 그린 뒤 실측 폭으로 동기화)
+  setTimeout(() => syncPriceScaleWidths([c1, c2, c3]), 200);
+  setTimeout(() => syncPriceScaleWidths([c1, c2, c3]), 500);
+}
+
+// 가격축(rightPriceScale) 최소 너비 동기화 → 차트 본체 가로폭 일치 → 세로 그리드 정렬
+function syncPriceScaleWidths(charts) {
+  try {
+    const widths = charts.map(c => {
+      try { return c.priceScale('right').width(); } catch { return 0; }
+    });
+    const maxW = Math.max(...widths, 0);
+    if (maxW <= 0) return;
+    charts.forEach(c => {
+      try {
+        c.priceScale('right').applyOptions({ minimumWidth: maxW });
+      } catch {}
+    });
+  } catch (e) {
+    console.warn('[chart] price scale width sync failed:', e);
+  }
 }
 
 function makeChart(el, height, showTimeAxis = true) {
@@ -1957,7 +1980,10 @@ function makeChart(el, height, showTimeAxis = true) {
     layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
     grid: { vertLines: { color: '#21262d' }, horzLines: { visible: false } },
     crosshair: { mode: 1 },
-    rightPriceScale: { borderColor: '#30363d' },
+    rightPriceScale: {
+      borderColor: '#30363d',
+      minimumWidth: 70,    // 최소 너비 보장 (이후 차트 간 동기화로 max 적용)
+    },
     timeScale: {
       borderColor: '#30363d',
       timeVisible: showTimeAxis,
@@ -1968,7 +1994,16 @@ function makeChart(el, height, showTimeAxis = true) {
   });
   const ro = new ResizeObserver(() => {
     const w = el.clientWidth;
-    if (w > 0) chart.applyOptions({ width: w });
+    if (w > 0) {
+      chart.applyOptions({ width: w });
+      // 리사이즈 후 가격축 너비도 다시 동기화
+      if (window._chartTriplet) {
+        clearTimeout(window._psResyncTid);
+        window._psResyncTid = setTimeout(
+          () => syncPriceScaleWidths(window._chartTriplet), 100
+        );
+      }
+    }
   });
   ro.observe(el);
   return chart;
