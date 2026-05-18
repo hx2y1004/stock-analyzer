@@ -1949,7 +1949,7 @@ function renderCharts(data) {
   requestAnimationFrame(() => setTimeout(alignAndSync, 80));
 }
 
-function makeChart(el, height) {
+function makeChart(el, height, showTimeAxis = true) {
   const width = el.clientWidth || el.parentElement.clientWidth || 900;
   const chart = LightweightCharts.createChart(el, {
     width,
@@ -1958,7 +1958,11 @@ function makeChart(el, height) {
     grid: { vertLines: { color: '#21262d' }, horzLines: { visible: false } },
     crosshair: { mode: 1 },
     rightPriceScale: { borderColor: '#30363d' },
-    timeScale: { borderColor: '#30363d', timeVisible: true },
+    timeScale: {
+      borderColor: '#30363d',
+      timeVisible: showTimeAxis,
+      visible: showTimeAxis,        // 시간축 자체를 숨김 (공간 절약)
+    },
     handleScroll: true,
     handleScale: true,
   });
@@ -1976,15 +1980,17 @@ function toSeries(dates, values) {
 
 function getChartHeights() {
   const w = window.innerWidth;
-  if (w <= 480) return { main: 260, sub: 90 };
-  if (w <= 768) return { main: 340, sub: 110 };
-  return { main: 420, sub: 140 };
+  // 메인 차트만 시간축 미표시 → 사이즈 그대로
+  // MACD 만 시간축 표시 → 마지막 차트는 시간축 공간 위해 살짝 더 크게
+  if (w <= 480) return { main: 360, sub: 100, last: 120 };
+  if (w <= 768) return { main: 380, sub: 110, last: 130 };
+  return { main: 420, sub: 140, last: 160 };
 }
 
 function renderMainChart(data) {
   const el = document.getElementById('mainChart');
   el.innerHTML = '';
-  const chart = makeChart(el, getChartHeights().main);
+  const chart = makeChart(el, getChartHeights().main, false);  // 시간축 숨김
 
   // 보조 지표 공통 옵션 — 점선(priceLineVisible) 제거
   const indOpt = { priceLineVisible: false, lastValueVisible: false };
@@ -2030,7 +2036,7 @@ function renderMainChart(data) {
 function renderRSIChart(data) {
   const el = document.getElementById('rsiChart');
   el.innerHTML = '';
-  const chart = makeChart(el, getChartHeights().sub);
+  const chart = makeChart(el, getChartHeights().sub, false);   // 시간축 숨김 (가운데 차트)
 
   chart.addLineSeries({ color: '#bc8cff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.rsi));
@@ -2049,7 +2055,7 @@ function renderRSIChart(data) {
 function renderMACDChart(data) {
   const el = document.getElementById('macdChart');
   el.innerHTML = '';
-  const chart = makeChart(el, getChartHeights().sub);
+  const chart = makeChart(el, getChartHeights().last, true);   // 마지막 차트 — 시간축 표시
 
   chart.addLineSeries({ color: '#58a6ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.macd));
