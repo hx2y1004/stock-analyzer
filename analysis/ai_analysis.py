@@ -602,42 +602,94 @@ def analyze_signals(df, info, df_weekly=None):
     # ── 종합 판단 (기술 + 펀더멘털 통합) ──────────────
     combined_score = max(-100, min(100, score + fund_score))
 
-    # ── 1개월 기반 구간 계산 ────────────────────────────
+    # ── 1개월 기반 박스권 정보 (참고용 구간) ────────────
     atr_series  = (df["High"] - df["Low"]).rolling(14).mean()
     atr_val     = _f(atr_series.iloc[-1])
+    atr_use     = atr_val if (atr_val and atr_val > 0) else close * 0.02
 
     month       = df.tail(21)                          # 최근 21거래일 ≈ 1개월
     month_high  = float(month["High"].max())
     month_low   = float(month["Low"].min())
     month_range = month_high - month_low if month_high > month_low else close * 0.1
 
-    # 손절: 1개월 최저가 - ATR (지지선 완전 이탈 기준)
-    stop_loss   = round(month_low - (atr_val or month_range * 0.1), 2)
-
-    # 매수 추천 구간: 1개월 범위 하위 30%  (존 차트용)
+    # 매수/매도 추천 박스 (존 차트용 — 참고만)
     entry_low   = round(month_low, 2)
     entry_high  = round(month_low + month_range * 0.30, 2)
-
-    # 매도 추천 구간: 1개월 범위 상위 30%  (존 차트용)
     target_low  = round(month_low + month_range * 0.70, 2)
     target_high = round(month_high, 2)
 
-    # ── 종합 판단 패널용 진입가·목표가 (현재가 기준 동적 보정) ──────────────
-    # 진입 추천가: 현재가가 이미 매수 구간을 크게 벗어났으면 ATR 기반 눌림목 진입가
-    if close > entry_high and atr_val:
-        entry_price = round(close - atr_val * 1.5, 2)
-    elif close > entry_high:
-        entry_price = round(close * 0.95, 2)
-    else:
-        entry_price = round((entry_low + entry_high) / 2, 2)
+    # ── Plan D: 추세 강도 점수 (0~100) ──────────────────
+    _ma20 = _f(df["Close"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else None
+    _ma50 = _f(df["Close"].rolling(50).mean().iloc[-1]) if len(df) >= 50 else None
+    _ma200= _f(df["Close"].rolling(200).mean().iloc[-1]) if len(df) >= 200 else None
+    _year_high = float(df["High"].tail(252).max()) if len(df) > 0 else close
+    _vol_avg20 = float(df["Volume"].tail(20).mean()) if len(df) > 0 else 0
+    _vol_last  = float(df["Volume"].iloc[-1])      if len(df) > 0 else 0
+    _swing_low_5 = float(df["Low"].tail(5).min())  if len(df) >= 5 else close * 0.95
 
-    # 목표가: 현재가가 이미 목표 구간을 넘어섰으면 ATR 기반 전방 목표가
-    if close >= target_low and atr_val:
-        target_price = round(close + atr_val * 2.0, 2)
-    elif close >= target_low:
-        target_price = round(close * 1.08, 2)
+    trend_score = 0
+    if _ma20 and _ma50 and _ma200 and _ma20 > _ma50 > _ma200:
+        trend_score += 30                                 # 정배열
+    if _ma20 and close > _ma20:
+        trend_score += 20                                 # 단기선 위
+    if not np.isnan(rsi):
+        if 50 <= rsi <= 70:
+            trend_score += 20                             # 강세 모멘텀
+        elif 40 <= rsi < 50:
+            trend_score += 10                             # 약한 강세
+    if _year_high > 0 and close >= _year_high * 0.95:
+        trend_score += 10                                 # 52주 신고가 5% 이내
+    if _vol_avg20 > 0 and _vol_last > _vol_avg20 * 1.5:
+        trend_score += 20                                 # 거래량 급증
+
+    # ── 추세 강도별 진입·손절·목표 산출 ─────────────────
+    if trend_score >= 60:
+        # 🔥 강한 상승추세: 즉시 진입, 타이트 손절, R:R 1:3
+        entry_price = round(close, 2)
+        base_stop   = max(_swing_low_5, _ma20 or _swing_low_5)
+        stop_loss   = round(base_stop - atr_use * 0.3, 2)
+        risk        = entry_price - stop_loss
+        target_price = round(entry_price + risk * 3, 2) if risk > 0 \
+                       else round(entry_price + atr_use * 4, 2)
+        trade_recommendation = "strong"
+    elif trend_score >= 30:
+        # ⚖️ 약한 추세/횡보: MA20 풀백 대기, R:R 1:2
+        entry_price = round(close - atr_use * 1.0, 2)
+        stop_loss   = round(entry_price - atr_use * 2.0, 2)
+        target_price = round(entry_price + atr_use * 4.0, 2)
+        trade_recommendation = "neutral"
     else:
-        target_price = target_low
+        # ⚠️ 약세/하락: 진입 비추천
+        entry_price  = None
+        target_price = None
+        stop_loss    = round(max(_swing_low_5, close * 0.92) - atr_use * 0.5, 2)
+        trade_recommendation = "avoid"
+
+    # 안전장치: R:R 비율 + 변동성 경고
+    risk_reward_ratio  = None
+    stop_distance_pct  = None
+    if entry_price and stop_loss and target_price and entry_price > stop_loss:
+        rr = (target_price - entry_price) / (entry_price - stop_loss)
+        risk_reward_ratio = round(rr, 2)
+        if rr < 1.5:
+            trade_recommendation = "avoid"   # 손익비 부족
+        stop_distance_pct = round((entry_price - stop_loss) / entry_price * 100, 1)
+        if stop_distance_pct > 15:
+            # 변동성 너무 큰 종목 - 그래도 표시는 함 (사용자 판단)
+            pass
+
+    # 추세에 맞게 매수/매도 박스(존 차트) 재계산
+    if trade_recommendation == "strong" and entry_price and target_price:
+        entry_low   = round(entry_price - atr_use, 2)
+        entry_high  = round(entry_price, 2)
+        target_low  = round(target_price * 0.97, 2)
+        target_high = round(target_price, 2)
+    elif trade_recommendation == "neutral" and entry_price and target_price:
+        entry_low   = round(entry_price - atr_use * 0.5, 2)
+        entry_high  = round(entry_price + atr_use * 0.5, 2)
+        target_low  = round(target_price - atr_use, 2)
+        target_high = round(target_price, 2)
+    # avoid 시: 기존 박스권(1개월) 유지 (위에서 이미 계산됨)
 
     # ── 추세 판단 (MA + 종합점수 + 52주 고/저가 + 크로스 + BB + 거래량) ──────────
     ma20 = _f(df["Close"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else None
@@ -762,6 +814,10 @@ def analyze_signals(df, info, df_weekly=None):
         "target_low":  target_low,
         "target_high": target_high,
         "stop_loss": stop_loss,
+        "trade_recommendation": trade_recommendation,  # strong / neutral / avoid
+        "trend_score":         trend_score,             # 0~100
+        "risk_reward_ratio":   risk_reward_ratio,       # 1.5 미만이면 avoid
+        "stop_distance_pct":   stop_distance_pct,       # 손절 거리 % (변동성 판단용)
         "month_high": round(month_high, 2),
         "month_low":  round(month_low, 2),
         "trend": trend,
