@@ -2446,7 +2446,7 @@ body {
 /* 바 컨테이너: 고정 높이 제거, flex로 남은 공간 채움 */
 .qc-bars {
   flex: 1;
-  min-height: 80px;
+  min-height: 140px;       /* 80 → 140 (찌그러짐 방지) */
   display: flex;
   gap: 6px;
   align-items: flex-end;
