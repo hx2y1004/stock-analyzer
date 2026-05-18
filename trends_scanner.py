@@ -11,19 +11,42 @@ from __future__ import annotations
 import logging
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import random
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutTimeout
 from datetime import datetime
 from typing import Optional
 
 import yfinance as yf
 import pandas as pd
+import requests
 
 log = logging.getLogger(__name__)
+
+# 공유 세션 (yfinance 가 매번 새로 만드는 것보다 효율적, 타임아웃 강제)
+_SESSION_LOCK = threading.Lock()
+_SESSION = None
+
+def _get_session():
+    """타임아웃이 강제된 공유 requests.Session."""
+    global _SESSION
+    with _SESSION_LOCK:
+        if _SESSION is None:
+            s = requests.Session()
+            s.headers.update({"User-Agent": "Mozilla/5.0 (compatible; StockAnalyzer/1.0)"})
+            # 모든 요청에 timeout 적용 (yfinance 내부에서 호출 시)
+            _orig_request = s.request
+            def _timed_request(method, url, **kwargs):
+                kwargs.setdefault("timeout", 8)
+                return _orig_request(method, url, **kwargs)
+            s.request = _timed_request
+            _SESSION = s
+    return _SESSION
 
 # ── 캐시/상태 (모듈 전역) ─────────────────────────────
 _LOCK    = threading.Lock()
 _CACHE   = {}    # market → (ts, result_dict)
 _STATUS  = {}    # market → {state, started_at, progress, total, hits, message?}
+_ABORT   = {}    # market → True if user requested abort
 _CACHE_TTL = 30 * 60   # 30분
 
 
@@ -45,7 +68,10 @@ def _safe(v):
 def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> Optional[dict]:
     """단일 종목의 추세 상승 점수 계산. 실패 시 None."""
     try:
-        stock = yf.Ticker(symbol)
+        # 약간의 지터 (rate limit 분산)
+        time.sleep(random.uniform(0.02, 0.10))
+
+        stock = yf.Ticker(symbol, session=_get_session())
 
         # 1년 일봉
         df_d = stock.history(period="1y", interval="1d", auto_adjust=False)
@@ -191,8 +217,9 @@ def scan_all(stock_db, market: str = "ALL",
              min_tech_momentum: int = 20,
              top_for_fund: int = 50,
              final_limit: int = 30,
-             max_workers_pass1: int = 4,   # 이전 8 → 4 (rate limit 회피)
-             max_workers_pass2: int = 3,   # 이전 6 → 3
+             max_workers_pass1: int = 2,   # 4 → 2 (rate limit / hang 회피)
+             max_workers_pass2: int = 2,   # 3 → 2
+             per_call_timeout: int = 12,   # 단일 종목 분석 timeout
              progress_cb=None) -> dict:
     """후보 종목 전체 스캔. 2-pass 로 펀더멘털 호출 최소화.
 
@@ -229,10 +256,21 @@ def scan_all(stock_db, market: str = "ALL",
         futs = {ex.submit(analyze_uptrend, sym, name, False): sym for sym, name in candidates}
         for fut in as_completed(futs):
             _bump()
+            # 사용자 중단 요청 체크
+            with _LOCK:
+                if _ABORT.get(market):
+                    log.info(f"[trends scan] aborted by user at {work_done[0]}/{est_total}")
+                    for f in futs:
+                        try: f.cancel()
+                        except Exception: pass
+                    raise RuntimeError("스캔이 사용자에 의해 중단됨")
             try:
-                r = fut.result(timeout=25)
+                r = fut.result(timeout=per_call_timeout)
                 if r:
                     pass1.append(r)
+            except FutTimeout:
+                try: fut.cancel()
+                except Exception: pass
             except Exception:
                 pass
 
@@ -251,9 +289,12 @@ def scan_all(stock_db, market: str = "ALL",
             for fut in as_completed(futs):
                 _bump()
                 try:
-                    r = fut.result(timeout=20)
+                    r = fut.result(timeout=per_call_timeout + 6)  # info 호출은 좀 더 길게
                     if r:
                         enriched[r["ticker"]] = r   # full result로 교체
+                except FutTimeout:
+                    try: fut.cancel()
+                    except Exception: pass
                 except Exception:
                     pass
 
@@ -332,7 +373,8 @@ def start_scan(stock_db, market: str, force: bool = False) -> dict:
                 "total":      _STATUS[market].get("total", 0),
             }
 
-        # 새 스캔 시작
+        # 새 스캔 시작 — abort 플래그 초기화
+        _ABORT[market] = False
         _STATUS[market] = {
             "state":      "running",
             "started_at": time.time(),
@@ -342,6 +384,14 @@ def start_scan(stock_db, market: str, force: bool = False) -> dict:
 
     threading.Thread(target=_bg_scan, args=(stock_db, market), daemon=True).start()
     return {"state": "running", "started_at": time.time(), "progress": 0, "total": 0}
+
+
+def abort_scan(market: str) -> dict:
+    """진행 중인 스캔 중단 요청."""
+    market = (market or "ALL").upper()
+    with _LOCK:
+        _ABORT[market] = True
+    return {"aborted": True, "market": market}
 
 
 def get_status(market: str) -> dict:

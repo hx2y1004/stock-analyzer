@@ -1443,6 +1443,24 @@ body {
   background: rgba(248,81,73,0.10);
 }
 
+/* 스캔 중단 버튼 */
+.trend-abort-btn {
+  margin-top: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.trend-abort-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(248,81,73,0.08);
+}
+
 /* 추세 카드 종합 점수 (컴팩트 한 줄 레이아웃) */
 .trend-compact-row {
   display: grid;
