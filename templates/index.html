@@ -176,9 +176,12 @@
               <button class="interval-btn" data-interval="1mo" onclick="setInterval('1mo')">월봉</button>
             </div>
             <div class="indicator-toggles">
-              <label><input type="checkbox" id="toggleMA" checked onchange="toggleIndicator('ma')"> 이동평균</label>
-              <label><input type="checkbox" id="toggleBB" checked onchange="toggleIndicator('bb')"> 볼린저밴드</label>
-              <label><input type="checkbox" id="toggleIchimoku" checked onchange="toggleIndicator('ichimoku')"> 일목균형표</label>
+              <input type="checkbox" id="toggleMA" checked onchange="toggleIndicator('ma')" hidden />
+              <label for="toggleMA" class="ind-chip">📈 MA</label>
+              <input type="checkbox" id="toggleBB" checked onchange="toggleIndicator('bb')" hidden />
+              <label for="toggleBB" class="ind-chip">📊 BB</label>
+              <input type="checkbox" id="toggleIchimoku" checked onchange="toggleIndicator('ichimoku')" hidden />
+              <label for="toggleIchimoku" class="ind-chip">☁️ 일목</label>
             </div>
           </div>
           <div id="mainChart" class="main-chart"></div>

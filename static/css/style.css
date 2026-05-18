@@ -528,8 +528,8 @@ body {
 
   /* 차트 컨트롤 */
   .chart-controls { flex-wrap: wrap; gap: 8px; }
-  .indicator-toggles { margin-left: 0; flex-wrap: wrap; gap: 8px; }
-  .main-chart { height: 340px; }
+  .indicator-toggles { margin-left: 0; flex-wrap: wrap; gap: 6px; width: 100%; }
+  .main-chart { height: 380px; }     /* 340 → 380 */
   .sub-chart  { height: 110px; }
 
   /* 종합판단 */
@@ -598,11 +598,14 @@ body {
   .stock-meta { font-size: 12px; gap: 8px; }
 
   /* 차트 */
-  .chart-controls { gap: 6px; }
+  .chart-controls { gap: 6px; margin-bottom: 10px; }
   .chart-btn, .interval-btn { padding: 5px 10px; font-size: 12px; }
-  .main-chart { height: 260px; }
-  .sub-chart  { height: 90px; margin-top: 4px; }
-  .indicator-toggles label { font-size: 12px; }
+  .main-chart { height: 360px; }     /* 260 → 360px 확대 */
+  .sub-chart  { height: 100px; margin-top: 4px; }
+  .ind-chip { padding: 5px 10px; font-size: 11px; }
+  .indicator-toggles { gap: 5px; width: 100%; margin-left: 0; }
+  /* 차트 카드 모바일 좌우 여백 줄임 (차트 가로 폭 확보) */
+  .chart-card { padding: 14px 10px; }
 
   /* 종합판단 */
   .verdict-badge { font-size: 15px; padding: 5px 14px; }
@@ -836,9 +839,30 @@ body {
 }
 .interval-btn:hover { border-color: var(--yellow); color: var(--yellow); }
 .interval-btn.active { background: rgba(210,153,34,0.15); border-color: var(--yellow); color: var(--yellow); }
-.indicator-toggles { display: flex; gap: 16px; margin-left: auto; }
-.indicator-toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text2); font-size: 13px; }
-.indicator-toggles input[type=checkbox] { accent-color: var(--accent); }
+.indicator-toggles { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.ind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text2);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.ind-chip:hover { border-color: var(--accent); color: var(--text); }
+/* checked 상태 */
+.indicator-toggles input[type=checkbox]:checked + .ind-chip {
+  background: rgba(88,166,255,0.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .main-chart { height: 420px; border-radius: 8px; overflow: hidden; }
 .sub-chart { height: 140px; border-radius: 8px; overflow: hidden; margin-top: 8px; }
 
