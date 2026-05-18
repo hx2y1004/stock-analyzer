@@ -961,12 +961,60 @@ function renderVerdict(analysis, stock) {
   document.getElementById('scoreMarker').style.left = `${pct}%`;
 
   const cur = stock.currency;
-  document.getElementById('entryPrice').textContent = fmt(analysis.entry_price, cur);
+  document.getElementById('entryPrice').textContent  = fmt(analysis.entry_price,  cur);
   document.getElementById('targetPrice').textContent = fmt(analysis.target_price, cur);
-  document.getElementById('stopLoss').textContent = fmt(analysis.stop_loss, cur);
+  document.getElementById('stopLoss').textContent    = fmt(analysis.stop_loss,    cur);
 
-  // 시그널 요약은 상세 분석 근거로 이동
+  // ── Plan D: 추천 등급 + R:R 정보 표시 ──
+  const banner = document.getElementById('tradeRecBanner');
+  const meta   = document.getElementById('tradeMetaRow');
+  const rec    = analysis.trade_recommendation;
+  const ts     = analysis.trend_score;
+  const rr     = analysis.risk_reward_ratio;
+  const sdp    = analysis.stop_distance_pct;
 
+  if (rec) {
+    const recMap = {
+      strong:  { cls: 'strong',  icon: '🔥', label: '강한 매수 신호',
+                 desc: '추세가 강해 즉시 진입 또는 분할매수 권장' },
+      neutral: { cls: 'neutral', icon: '⚖️', label: '풀백 대기 권장',
+                 desc: 'MA20 부근 눌림목까지 대기 후 진입' },
+      avoid:   { cls: 'avoid',   icon: '⚠️', label: '진입 비추천',
+                 desc: '추세가 약하거나 손익비 부족 — 관망 권장' },
+    };
+    const r = recMap[rec] || recMap.neutral;
+    banner.className = `trade-rec-banner ${r.cls}`;
+    banner.innerHTML = `
+      <div class="rec-icon">${r.icon}</div>
+      <div class="rec-body">
+        <div class="rec-label">${r.label}</div>
+        <div class="rec-desc">${r.desc}${ts != null ? ` · 추세점수 ${ts}/100` : ''}</div>
+      </div>`;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+
+  // R:R 비율 + 손절거리 메타
+  const metaItems = [];
+  if (rr != null)  metaItems.push(`📊 R:R <strong>1:${rr.toFixed(2)}</strong>`);
+  if (sdp != null) metaItems.push(`📉 손절 거리 <strong>${sdp}%</strong>`);
+  if (sdp != null && sdp > 15) metaItems.push(`<span class="meta-warn">⚠ 변동성 큼</span>`);
+  if (metaItems.length) {
+    meta.innerHTML = metaItems.join(' · ');
+    meta.classList.remove('hidden');
+  } else {
+    meta.classList.add('hidden');
+  }
+
+  // 진입가 없을 때 (avoid) 회색 처리
+  if (rec === 'avoid') {
+    document.getElementById('entryPrice').classList.add('disabled');
+    document.getElementById('targetPrice').classList.add('disabled');
+  } else {
+    document.getElementById('entryPrice').classList.remove('disabled');
+    document.getElementById('targetPrice').classList.remove('disabled');
+  }
 }
 
 function renderMetrics(stock, analysis) {

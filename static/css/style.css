@@ -715,6 +715,41 @@ body {
 .target-value.entry { color: var(--accent); }
 .target-value.target { color: var(--green); }
 .target-value.stop { color: var(--red); }
+.target-value.disabled { color: var(--text2); opacity: 0.5; }
+
+/* Plan D: 추천 등급 배너 */
+.trade-rec-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  border-left: 4px solid;
+}
+.trade-rec-banner.strong  { background: rgba(63,185,80,0.10);  border-left-color: var(--green); }
+.trade-rec-banner.neutral { background: rgba(255,185,30,0.08); border-left-color: rgb(255,185,30); }
+.trade-rec-banner.avoid   { background: rgba(248,81,73,0.10); border-left-color: var(--red); }
+.trade-rec-banner .rec-icon { font-size: 22px; line-height: 1; }
+.trade-rec-banner .rec-body { flex: 1; min-width: 0; }
+.trade-rec-banner .rec-label { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.trade-rec-banner .rec-desc  { font-size: 12px; color: var(--text2); line-height: 1.4; }
+.trade-rec-banner.strong  .rec-label { color: var(--green); }
+.trade-rec-banner.neutral .rec-label { color: rgb(255,185,30); }
+.trade-rec-banner.avoid   .rec-label { color: var(--red); }
+
+/* R:R / 손절 거리 메타 정보 */
+.trade-meta-row {
+  margin-top: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text2);
+  background: var(--bg3);
+  border-radius: 6px;
+  text-align: center;
+}
+.trade-meta-row strong { color: var(--text); font-weight: 700; }
+.trade-meta-row .meta-warn { color: var(--red); font-weight: 600; }
 
 .signal-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .signal-item {
