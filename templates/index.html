@@ -195,6 +195,12 @@
           <button class="trade-btn sell" onclick="openSellModal()">📉 모의 매도</button>
           <button class="trade-btn del"  onclick="deleteHolding(event, currentPositionId)">🗑 포지션 삭제</button>
         </div>
+
+        <!-- 내 포지션 카드 (좌측 컬럼으로 이동: 차트/트레이드와 시각적 그룹화 + 우측 사이드바 높이 균형) -->
+        <section class="card" id="positionCard">
+          <h3 class="card-title">📊 내 포지션</h3>
+          <div id="positionContent"></div>
+        </section>
       </div>
 
       <!-- 우: 사이드바 -->
@@ -233,12 +239,6 @@
             <div class="metric-item"><div class="metric-label">배당수익률</div><div id="dividendYield" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">거래량 (평균 대비)</div><div id="volumeRatio" class="metric-value"></div></div>
           </div>
-        </section>
-
-        <!-- 내 포지션 카드 -->
-        <section class="card" id="positionCard">
-          <h3 class="card-title">📊 내 포지션</h3>
-          <div id="positionContent"></div>
         </section>
 
       </div>
