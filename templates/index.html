@@ -351,6 +351,40 @@
     </div>
   </div>
 
+  <!-- ── 포지션 수정 모달 ── -->
+  <div id="editModal" class="modal-overlay hidden" onclick="closeEditModal(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+      <h2 class="modal-title" style="font-size:18px;margin-bottom:8px">✏️ 포지션 수정</h2>
+      <p id="editModalDesc" class="modal-desc" style="margin-bottom:20px"></p>
+      <div class="add-form">
+        <input type="hidden" id="editHoldingId" />
+        <input type="hidden" id="editCurrency" />
+        <div class="add-field">
+          <label>매입 평균가 <span id="editCurrencyLabel">(USD)</span></label>
+          <div class="num-input-wrap">
+            <input id="editPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editPrice', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editPrice', -1)">▼</button>
+            </div>
+          </div>
+        </div>
+        <div class="add-field">
+          <label>보유 수량</label>
+          <div class="num-input-wrap">
+            <input id="editQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editQty', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editQty', -1)">▼</button>
+            </div>
+          </div>
+        </div>
+        <button class="add-submit-btn" onclick="submitEditHolding()">저장</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── 모의 매도 모달 ── -->
   <div id="sellModal" class="modal-overlay hidden" onclick="closeSellModal(event)">
     <div class="modal-box">

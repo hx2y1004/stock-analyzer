@@ -128,6 +128,7 @@ function _pfCardHTML(h, rank, compact = false) {
     <div class="pf-meta-row">
       <span class="pf-meta-item">📌 매입 ${fmtPrice(h.purchase_price, true)}</span>
       <span class="pf-meta-item">📦 ${h.quantity}주</span>
+      <button class="pf-edit-btn" onclick="openEditModal(event, ${h.id})" title="매입가/수량 수정">✏️</button>
       <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제">✕</button>
     </div>
   </div>`;
@@ -563,6 +564,116 @@ async function deleteHolding(event, hid) {
   renderTradeActions(null);
   renderPositionCard(null, null);
 }
+
+// ── 포지션 수정 모달 ──────────────────────────────────────
+function openEditModal(event, hid) {
+  if (event) event.stopPropagation();
+  if (!currentUser) { openLoginModal(); return; }
+  // pfAllHoldings 에서 해당 종목 찾기
+  const h = (pfAllHoldings || []).find(x => x.id === hid);
+  if (!h) { alert('종목 정보를 찾을 수 없습니다.'); return; }
+
+  document.getElementById('editHoldingId').value = h.id;
+  document.getElementById('editCurrency').value  = h.currency || 'USD';
+  document.getElementById('editPrice').value     = h.purchase_price;
+  document.getElementById('editQty').value       = h.quantity;
+  document.getElementById('editCurrencyLabel').textContent = `(${h.currency || 'USD'})`;
+  document.getElementById('editModalDesc').textContent =
+    `${h.name} (${h.ticker}) 의 매입가·수량을 수정합니다`;
+  document.getElementById('editModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('editPrice').focus(), 50);
+}
+
+function closeEditModal(event) {
+  if (!event || event.target === document.getElementById('editModal')) {
+    document.getElementById('editModal').classList.add('hidden');
+  }
+}
+
+// 수정 모달 전용 step (통화 기준)
+function _stepEditNum(inputId, direction) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const isKRW = (document.getElementById('editCurrency').value || 'USD') === 'KRW';
+  let step = 1;
+  if (inputId === 'editPrice') step = isKRW ? 100 : 1;
+  else if (inputId === 'editQty') step = 1;
+
+  let cur = parseFloat(input.value);
+  if (isNaN(cur)) cur = 0;
+  let next = cur + direction * step;
+  if (next < 0) next = 0;
+  if ((inputId === 'editPrice' && isKRW) || inputId === 'editQty') {
+    next = Math.round(next);
+  } else {
+    next = Math.round(next * 100) / 100;
+  }
+  input.value = next;
+}
+
+async function submitEditHolding() {
+  const hid     = parseInt(document.getElementById('editHoldingId').value);
+  const currency = document.getElementById('editCurrency').value || 'USD';
+  let   price   = parseFloat(document.getElementById('editPrice').value);
+  let   qty     = parseFloat(document.getElementById('editQty').value);
+
+  if (!hid)              { alert('종목 정보를 찾을 수 없습니다'); return; }
+  if (!price || !qty)    { alert('매입가와 수량을 입력해주세요'); return; }
+  if (price <= 0 || qty <= 0) { alert('매입가와 수량은 0보다 커야 합니다'); return; }
+
+  if (currency === 'KRW') price = Math.round(price);
+  qty = Math.floor(qty);
+
+  try {
+    const res = await fetch(`/api/portfolio/${hid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quantity: qty, purchase_price: price }),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || '수정 실패'); return; }
+    closeEditModal();
+    loadPortfolio();
+    // 현재 분석 중인 종목이면 포지션 카드도 새로고침
+    if (currentAnalysisTicker && currentPositionData &&
+        currentPositionData.ticker === currentAnalysisTicker) {
+      analyze();
+    }
+  } catch (e) {
+    alert('네트워크 오류: ' + (e.message || e));
+  }
+}
+
+// 수정 모달 input 검증 (개별 입력 시)
+document.addEventListener('DOMContentLoaded', () => {
+  const editPrice = document.getElementById('editPrice');
+  const editQty   = document.getElementById('editQty');
+  if (editPrice) {
+    editPrice.addEventListener('input', (e) => {
+      const isKRW = (document.getElementById('editCurrency').value || 'USD') === 'KRW';
+      let v = e.target.value;
+      if (v.startsWith('-')) v = v.replace(/^-+/, '');
+      if (isKRW) v = v.replace(/[.,].*$/, '');
+      if (v !== e.target.value) e.target.value = v;
+    });
+    editPrice.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepEditNum('editPrice', 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _stepEditNum('editPrice', -1); }
+    });
+  }
+  if (editQty) {
+    editQty.addEventListener('input', (e) => {
+      let v = e.target.value;
+      if (v.startsWith('-')) v = v.replace(/^-+/, '');
+      v = v.replace(/[.,].*$/, '');
+      if (v !== e.target.value) e.target.value = v;
+    });
+    editQty.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepEditNum('editQty', 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _stepEditNum('editQty', -1); }
+    });
+  }
+});
 
 // ── 종목 추가 모달 ─────────────────────────────────────────────────────────
 function _currencyFromTicker(ticker) {
