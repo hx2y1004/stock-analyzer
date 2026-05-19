@@ -1904,15 +1904,17 @@ def analyze():
                         pass
                 return None
 
-            for period, actual in sorted(rev_by_period.items(), reverse=True):
+            for period, actual in sorted(rev_by_period.items(), reverse=True)[:5]:
                 revenue_quarters.append({
                     "period":   period,
                     "actual":   actual,
                     "estimate": _match_estimate(period, rev_est_by_period),
                 })
 
-            # 5. EPS 리스트 (추정치·surprise 매칭, 최신순)
-            for period, actual in sorted(eps_act_by_period.items(), reverse=True):
+            # 5. EPS 리스트 (추정치·surprise 매칭, 최신순 5개로 컷)
+            #    earnings_dates/history 합치면 20+ 개 쌓일 수 있으므로 명시적 제한
+            sorted_eps = sorted(eps_act_by_period.items(), reverse=True)[:5]
+            for period, actual in sorted_eps:
                 estimate = _match_estimate(period, eps_est_by_period)
                 surp     = eps_surp_by_period.get(period)
                 if surp is None and actual is not None and estimate is not None and estimate != 0:
