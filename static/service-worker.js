@@ -4,7 +4,7 @@
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v13';
+const CACHE_VERSION = 'sa-v14';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -52,7 +52,8 @@ self.addEventListener('fetch', (event) => {
 
   // 핵심 정적 자산(JS/CSS): network-first (배포 시 즉시 반영되도록)
   // 오프라인이거나 네트워크 실패 시에만 캐시 사용
-  if (url.pathname === '/static/js/main.js'
+  // /static/js/* 전체와 style.css/manifest 포함
+  if (url.pathname.startsWith('/static/js/')
       || url.pathname === '/static/css/style.css'
       || url.pathname === '/static/manifest.json') {
     event.respondWith(
