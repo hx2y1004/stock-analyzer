@@ -1706,9 +1706,9 @@ body {
   border-radius: 8px;
   background: var(--bg3);
 }
+.pf-meta-row .pf-edit-btn,
 .pf-meta-row .pf-delete-btn {
-  margin-left: auto;
-  opacity: 0.4;
+  opacity: 0.5;
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text2);
@@ -1716,6 +1716,16 @@ body {
   padding: 2px 8px;
   cursor: pointer;
   transition: all 0.15s;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.pf-meta-row .pf-edit-btn   { margin-left: auto; }
+.pf-meta-row .pf-delete-btn { margin-left: 4px; }
+.pf-meta-row .pf-edit-btn:hover {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(88,166,255,0.08);
 }
 .pf-meta-row .pf-delete-btn:hover {
   opacity: 1;
