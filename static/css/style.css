@@ -2861,3 +2861,188 @@ body {
   .market-btn { flex: 1; }
   .trends-scan-btn { width: 100%; }
 }
+
+/* ═══════════════════════════════════════════════════════
+   모의투자 (/trading) 페이지
+   ═══════════════════════════════════════════════════════ */
+.trading-main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 자산 요약 */
+.portfolio-summary .ps-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.ps-reset-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ps-reset-btn:hover { border-color: var(--red); color: var(--red); }
+.ps-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.ps-total { font-size: 32px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; }
+.ps-return { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ps-return-pct { font-size: 22px; font-weight: 800; }
+.ps-return-pct.up   { color: var(--green); }
+.ps-return-pct.down { color: var(--red); }
+.ps-return-pct.flat { color: var(--text2); }
+.ps-return-amt { font-size: 14px; font-weight: 600; color: var(--text2); }
+.ps-return-base { font-size: 11px; color: var(--text2); opacity: 0.7; }
+
+.ps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+.ps-item {
+  background: var(--bg3);
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+}
+.ps-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+.ps-val   { font-size: 15px; font-weight: 700; color: var(--text); }
+.ps-val.up   { color: var(--green); }
+.ps-val.down { color: var(--red); }
+.ps-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.ps-stats strong { color: var(--text); }
+
+/* 빠른 매수 */
+.quick-buy-card .qb-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+/* 보유 종목 / 거래 내역 */
+.positions-list, .tx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.empty-state {
+  padding: 30px 20px;
+  text-align: center;
+  color: var(--text2);
+  font-size: 13px;
+}
+
+/* 거래 액션 버튼 */
+.trade-action-btn {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  margin-left: 4px;
+  transition: all 0.15s;
+}
+.trade-action-btn.buy { color: var(--green); }
+.trade-action-btn.buy:hover { background: rgba(63,185,80,0.12); border-color: var(--green); }
+.trade-action-btn.sell { color: var(--red); }
+.trade-action-btn.sell:hover { background: rgba(248,81,73,0.12); border-color: var(--red); }
+
+/* 거래 내역 테이블 */
+.tx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tx-table th { text-align: left; color: var(--text2); padding: 8px 6px; border-bottom: 1px solid var(--border); font-weight: 600; }
+.tx-table td { padding: 10px 6px; border-bottom: 1px solid var(--border); }
+.tx-table .tx-stock { font-weight: 700; color: var(--text); }
+.tx-table .tx-ticker { font-size: 10px; color: var(--accent); font-family: monospace; }
+.tx-table .up   { color: var(--green); }
+.tx-table .down { color: var(--red); }
+.tx-type {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.tx-type.buy  { background: rgba(63,185,80,0.15); color: var(--green); }
+.tx-type.sell { background: rgba(248,81,73,0.15); color: var(--red); }
+
+/* 매매 모달 요약 */
+.trade-summary {
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+.ts-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: var(--text2);
+}
+.ts-row.total {
+  font-weight: 700;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+.ts-row.warn { color: var(--red); }
+.ts-row.up { color: var(--green); }
+
+.sell-max-btn {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 3px 12px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.sell-max-btn:hover { background: rgba(88,166,255,0.12); }
+
+.buy-action-btn { background: var(--green) !important; }
+.sell-action-btn { background: var(--red) !important; }
+
+.autocomplete-list .ac-name { font-size: 13px; font-weight: 600; }
+.autocomplete-list .ac-symbol { font-size: 11px; color: var(--accent); font-family: monospace; }
+
+/* 모바일 */
+@media (max-width: 768px) {
+  .trading-main { padding: 16px 12px 40px; }
+  .ps-grid { grid-template-columns: 1fr 1fr; }
+  .ps-total { font-size: 24px; }
+  .ps-return-pct { font-size: 18px; }
+  .qb-row { flex-direction: column; }
+  .tx-table { font-size: 11px; }
+  .tx-table th, .tx-table td { padding: 6px 4px; }
+}

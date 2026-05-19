@@ -51,7 +51,7 @@ from flask_login import LoginManager, login_required, current_user
 
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
-from models import db, User, Holding
+from models import db, User, Holding, Transaction, INITIAL_CAPITAL_KRW
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -82,6 +82,29 @@ app.register_blueprint(auth_bp)
 
 with app.app_context():
     db.create_all()
+    # ── 기존 User 마이그레이션: cash_balance / initial_capital 컬럼 추가 후
+    # 기존 유저들에게도 1억원 초기 자본 부여 ──
+    try:
+        from sqlalchemy import text
+        # PostgreSQL: ALTER TABLE 가 안전하게 동작 (이미 있으면 IF NOT EXISTS 패턴)
+        with db.engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBLE PRECISION DEFAULT 100000000"
+            ))
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS initial_capital DOUBLE PRECISION DEFAULT 100000000"
+            ))
+            # NULL 인 경우 기본값 부여 (기존 유저)
+            conn.execute(text(
+                "UPDATE users SET cash_balance = 100000000 WHERE cash_balance IS NULL"
+            ))
+            conn.execute(text(
+                "UPDATE users SET initial_capital = 100000000 WHERE initial_capital IS NULL"
+            ))
+    except Exception as e:
+        # SQLite 등에서는 ALTER TABLE 문법이 다를 수 있어 무시
+        # (db.create_all() 가 새 컬럼 만들었으면 OK)
+        print(f"[migration] User cash columns: {e}")
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -2432,6 +2455,305 @@ def delete_holding(hid):
     db.session.delete(holding)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+# ══════════════════════════════════════════════════════════════
+# 모의투자 API (Paper Trading)
+# ══════════════════════════════════════════════════════════════
+_FX_CACHE = {"rate": None, "ts": 0}
+_FX_TTL   = 10 * 60   # 10분
+
+
+def _get_usd_krw_rate():
+    """USD/KRW 환율 (10분 캐시). 실패 시 기본 1380."""
+    now = time.time()
+    if _FX_CACHE["rate"] and (now - _FX_CACHE["ts"]) < _FX_TTL:
+        return _FX_CACHE["rate"]
+    try:
+        df = yf.Ticker("KRW=X").history(period="5d", interval="1d", auto_adjust=False)
+        if df is not None and not df.empty:
+            rate = float(df["Close"].iloc[-1])
+            if rate > 0:
+                _FX_CACHE["rate"] = rate
+                _FX_CACHE["ts"]   = now
+                return rate
+    except Exception as e:
+        app.logger.warning(f"[FX] USD/KRW fetch failed: {e}")
+    return _FX_CACHE.get("rate") or 1380.0
+
+
+def _to_krw(amount, currency, exchange_rate=None):
+    """amount 를 KRW 환산. exchange_rate 명시되면 사용, 아니면 현재 환율."""
+    if currency == "KRW":
+        return amount
+    if exchange_rate is None:
+        exchange_rate = _get_usd_krw_rate()
+    return amount * exchange_rate
+
+
+def _fetch_current_price(ticker):
+    """종목 현재가 (native currency)."""
+    try:
+        fi = yf.Ticker(ticker).fast_info
+        p  = getattr(fi, "last_price", None) or getattr(fi, "regular_market_price", None)
+        return float(p) if p else None
+    except Exception:
+        return None
+
+
+@app.route("/api/trading/dashboard")
+@login_required
+def trading_dashboard():
+    """모의투자 대시보드: 총 자산, 현금, 보유 종목, 평가 손익."""
+    user = current_user
+    # 기존 유저 보호: NULL 이면 1억으로 초기화
+    if user.cash_balance is None:
+        user.cash_balance = INITIAL_CAPITAL_KRW
+    if user.initial_capital is None:
+        user.initial_capital = INITIAL_CAPITAL_KRW
+    db.session.commit()
+
+    fx = _get_usd_krw_rate()
+    holdings = Holding.query.filter_by(user_id=user.id).all()
+
+    positions = []
+    positions_value_krw = 0.0
+    unrealized_pnl_krw  = 0.0
+
+    if holdings:
+        tickers = list({h.ticker for h in holdings})
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            prices = dict(ex.map(lambda t: (t, _fetch_current_price(t)), tickers))
+
+        for h in holdings:
+            cp  = prices.get(h.ticker)
+            cur = h.currency or "USD"
+            value_native = (cp or 0) * h.quantity
+            cost_native  = h.purchase_price * h.quantity
+            # KRW 환산
+            if cur == "KRW":
+                value_krw = value_native
+                cost_krw  = cost_native
+            else:
+                value_krw = value_native * fx
+                cost_krw  = cost_native  * fx
+            pnl_krw = value_krw - cost_krw
+            pnl_pct = ((cp or 0) - h.purchase_price) / h.purchase_price * 100 if h.purchase_price else 0
+            positions_value_krw += value_krw
+            unrealized_pnl_krw  += pnl_krw
+            positions.append({
+                "id":             h.id,
+                "ticker":         h.ticker,
+                "name":           h.name,
+                "currency":       cur,
+                "quantity":       h.quantity,
+                "purchase_price": h.purchase_price,
+                "current_price":  cp,
+                "value_krw":      round(value_krw),
+                "cost_krw":       round(cost_krw),
+                "pnl_krw":        round(pnl_krw),
+                "pnl_pct":        round(pnl_pct, 2),
+            })
+
+    total_assets_krw = user.cash_balance + positions_value_krw
+    total_return_pct = ((total_assets_krw - user.initial_capital) / user.initial_capital * 100) \
+                       if user.initial_capital > 0 else 0
+
+    # 실현 손익 (모든 매도 거래 합)
+    realized_pnl_krw = db.session.query(
+        db.func.coalesce(db.func.sum(Transaction.realized_pnl_krw), 0)
+    ).filter_by(user_id=user.id).scalar() or 0
+
+    # 거래 통계
+    tx_count = Transaction.query.filter_by(user_id=user.id).count()
+    sells    = Transaction.query.filter_by(user_id=user.id, type="sell").all()
+    wins     = sum(1 for s in sells if (s.realized_pnl_krw or 0) > 0)
+    win_rate = (wins / len(sells) * 100) if sells else 0
+
+    return jsonify({
+        "cash_krw":            round(user.cash_balance),
+        "initial_capital_krw": round(user.initial_capital),
+        "positions_value_krw": round(positions_value_krw),
+        "total_assets_krw":    round(total_assets_krw),
+        "total_return_pct":    round(total_return_pct, 2),
+        "unrealized_pnl_krw":  round(unrealized_pnl_krw),
+        "realized_pnl_krw":    round(realized_pnl_krw),
+        "exchange_rate":       round(fx, 2),
+        "positions":           positions,
+        "stats": {
+            "total_trades": tx_count,
+            "total_sells":  len(sells),
+            "wins":         wins,
+            "win_rate":     round(win_rate, 1),
+        },
+    })
+
+
+@app.route("/api/trading/buy", methods=["POST"])
+@login_required
+def trading_buy():
+    """모의 매수.
+    Body: { ticker, name?, price, quantity }
+    """
+    data = request.get_json() or {}
+    ticker = (data.get("ticker") or "").strip().upper()
+    name   = (data.get("name") or "").strip() or ticker
+    price  = float(data.get("price") or 0)
+    qty    = float(data.get("quantity") or 0)
+
+    if not ticker or price <= 0 or qty <= 0:
+        return jsonify({"error": "티커/가격/수량을 올바르게 입력해주세요"}), 400
+
+    user = current_user
+    if user.cash_balance is None:
+        user.cash_balance = INITIAL_CAPITAL_KRW
+
+    currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else "USD"
+
+    # 이름 보강 (STOCK_DB lookup)
+    if name == ticker:
+        for s in STOCK_DB:
+            if s.get("symbol") == ticker:
+                name = s.get("name") or name
+                break
+
+    fx = _get_usd_krw_rate()
+    amount_native = price * qty
+    amount_krw    = amount_native * (fx if currency == "USD" else 1)
+    fee_krw       = round(amount_krw * 0.001)   # 수수료 0.1%
+    total_krw     = amount_krw + fee_krw
+
+    if user.cash_balance < total_krw:
+        return jsonify({
+            "error": f"현금 부족 (필요 {round(total_krw):,}원, 보유 {round(user.cash_balance):,}원)"
+        }), 400
+
+    # 현금 차감
+    user.cash_balance -= total_krw
+
+    # Holding 추가 또는 평균단가 업데이트
+    existing = Holding.query.filter_by(user_id=user.id, ticker=ticker).first()
+    if existing:
+        new_qty = existing.quantity + qty
+        avg     = (existing.purchase_price * existing.quantity + price * qty) / new_qty
+        existing.quantity       = round(new_qty, 6)
+        existing.purchase_price = round(avg, 6)
+        existing.name           = name
+        existing.currency       = currency
+    else:
+        h = Holding(
+            user_id=user.id, ticker=ticker, name=name,
+            quantity=qty, purchase_price=price, currency=currency,
+        )
+        db.session.add(h)
+
+    # Transaction 기록
+    tx = Transaction(
+        user_id=user.id, ticker=ticker, name=name,
+        type="buy", price=price, quantity=qty,
+        currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
+        fee_krw=fee_krw, amount_krw=round(amount_krw),
+        realized_pnl_krw=0,
+    )
+    db.session.add(tx)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "transaction": tx.to_dict(),
+        "cash_balance": round(user.cash_balance),
+    })
+
+
+@app.route("/api/trading/sell", methods=["POST"])
+@login_required
+def trading_sell():
+    """모의 매도.
+    Body: { ticker, price, quantity }
+    """
+    data = request.get_json() or {}
+    ticker = (data.get("ticker") or "").strip().upper()
+    price  = float(data.get("price") or 0)
+    qty    = float(data.get("quantity") or 0)
+
+    if not ticker or price <= 0 or qty <= 0:
+        return jsonify({"error": "티커/가격/수량을 올바르게 입력해주세요"}), 400
+
+    user = current_user
+    if user.cash_balance is None:
+        user.cash_balance = INITIAL_CAPITAL_KRW
+
+    holding = Holding.query.filter_by(user_id=user.id, ticker=ticker).first()
+    if not holding:
+        return jsonify({"error": "보유하지 않은 종목입니다"}), 400
+    if qty > holding.quantity:
+        return jsonify({
+            "error": f"보유 수량 초과 (보유 {holding.quantity}, 매도 시도 {qty})"
+        }), 400
+
+    currency = holding.currency or "USD"
+    fx = _get_usd_krw_rate()
+
+    # 매도 금액 KRW 환산
+    amount_native = price * qty
+    amount_krw    = amount_native * (fx if currency == "USD" else 1)
+    fee_krw       = round(amount_krw * 0.001)
+    proceeds_krw  = amount_krw - fee_krw
+
+    # 실현 손익 = (매도가 - 매입가) * 수량 (KRW 환산)
+    pnl_native = (price - holding.purchase_price) * qty
+    pnl_krw    = pnl_native * (fx if currency == "USD" else 1)
+
+    # 현금 증가
+    user.cash_balance += proceeds_krw
+
+    # Holding 수량 감소 또는 삭제
+    if qty >= holding.quantity:
+        db.session.delete(holding)
+    else:
+        holding.quantity = round(holding.quantity - qty, 6)
+
+    # Transaction 기록
+    tx = Transaction(
+        user_id=user.id, ticker=ticker, name=holding.name if holding else ticker,
+        type="sell", price=price, quantity=qty,
+        currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
+        fee_krw=fee_krw, amount_krw=round(amount_krw),
+        realized_pnl_krw=round(pnl_krw),
+    )
+    db.session.add(tx)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "transaction": tx.to_dict(),
+        "cash_balance": round(user.cash_balance),
+        "realized_pnl_krw": round(pnl_krw),
+    })
+
+
+@app.route("/api/trading/transactions")
+@login_required
+def trading_transactions():
+    """거래 내역 (최신순)."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    txs = Transaction.query.filter_by(user_id=current_user.id)\
+            .order_by(Transaction.timestamp.desc()).limit(limit).all()
+    return jsonify([t.to_dict() for t in txs])
+
+
+@app.route("/api/trading/reset", methods=["POST"])
+@login_required
+def trading_reset():
+    """모의투자 초기화: 현금 1억으로, 보유종목·거래내역 삭제."""
+    user = current_user
+    Holding.query.filter_by(user_id=user.id).delete()
+    Transaction.query.filter_by(user_id=user.id).delete()
+    user.cash_balance    = INITIAL_CAPITAL_KRW
+    user.initial_capital = INITIAL_CAPITAL_KRW
+    db.session.commit()
+    return jsonify({"ok": True, "cash_balance": INITIAL_CAPITAL_KRW})
 
 
 if __name__ == "__main__":
