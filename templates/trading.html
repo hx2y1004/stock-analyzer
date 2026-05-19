@@ -35,150 +35,164 @@
         <a href="/" class="nav-link">분석</a>
         <a href="/trading" class="nav-link active">모의투자</a>
       </nav>
+      <div id="authArea" class="auth-area">
+        <button class="login-btn" onclick="location.href='/auth/google'">로그인</button>
+      </div>
     </div>
   </header>
 
   <!-- 모의투자 메인 -->
-  <main class="trading-main">
+  <main class="trading-main" id="tradingMain">
 
-    <!-- 포트폴리오 요약 -->
-    <section class="card portfolio-summary">
-      <h2 class="card-title">내 포트폴리오</h2>
-      <div class="portfolio-grid">
-        <div class="portfolio-item">
-          <div class="portfolio-label">총 자산</div>
-          <div class="portfolio-value" id="totalAsset">—</div>
-        </div>
-        <div class="portfolio-item">
-          <div class="portfolio-label">보유 현금</div>
-          <div class="portfolio-value" id="cashBalance">—</div>
-        </div>
-        <div class="portfolio-item">
-          <div class="portfolio-label">평가 손익</div>
-          <div class="portfolio-value" id="totalPnl">—</div>
-        </div>
-        <div class="portfolio-item">
-          <div class="portfolio-label">수익률</div>
-          <div class="portfolio-value" id="returnRate">—</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 준비 중 안내 -->
-    <section class="card coming-soon-card">
-      <div class="coming-soon-icon">🚧</div>
-      <h3 class="coming-soon-title">모의투자 기능 준비 중</h3>
-      <p class="coming-soon-desc">
-        주식 분석 기능이 완성된 후 순차적으로 추가될 예정입니다.<br/>
-        아래 기능들이 준비되어 있습니다.
+    <!-- 비로그인 안내 -->
+    <section id="loginRequired" class="card hidden" style="text-align:center; padding:60px 20px;">
+      <div style="font-size:48px; margin-bottom:16px">🔐</div>
+      <h2 style="margin-bottom:12px">로그인이 필요합니다</h2>
+      <p style="color:var(--text2); margin-bottom:24px">
+        모의투자는 로그인 후 이용 가능합니다.<br>
+        신규 가입 시 <strong style="color:var(--accent)">1억원</strong>의 초기 자본을 드립니다!
       </p>
-      <div class="feature-list">
-        <div class="feature-item ready">
-          <span class="feature-icon">✅</span>
-          <span>UI 레이아웃 구성 완료</span>
-        </div>
-        <div class="feature-item ready">
-          <span class="feature-icon">✅</span>
-          <span>포트폴리오 화면 구조</span>
-        </div>
-        <div class="feature-item pending">
-          <span class="feature-icon">🔜</span>
-          <span>매수 / 매도 주문 기능</span>
-        </div>
-        <div class="feature-item pending">
-          <span class="feature-icon">🔜</span>
-          <span>보유 종목 관리</span>
-        </div>
-        <div class="feature-item pending">
-          <span class="feature-icon">🔜</span>
-          <span>거래 내역 및 수익률 추적</span>
-        </div>
-        <div class="feature-item pending">
-          <span class="feature-icon">🔜</span>
-          <span>수익률 차트</span>
-        </div>
-      </div>
-      <a href="/" class="goto-analysis-btn">분석 화면으로 →</a>
+      <button class="position-login-btn" onclick="location.href='/auth/google'">로그인하기</button>
     </section>
 
-    <!-- 거래 패널 (UI 미리 배치 — 기능은 추후 활성화) -->
-    <div class="trading-panels">
+    <!-- 대시보드 -->
+    <div id="tradingDashboard" class="hidden">
 
-      <!-- 매수 패널 -->
-      <section class="card trade-panel">
-        <h3 class="card-title buy-title">매수</h3>
-        <div class="trade-form">
-          <div class="trade-field">
-            <label>종목</label>
-            <input type="text" class="trade-input" placeholder="티커 입력" disabled />
+      <!-- 자산 요약 -->
+      <section class="card portfolio-summary">
+        <div class="ps-header">
+          <h2 class="card-title">💼 내 자산</h2>
+          <button class="ps-reset-btn" onclick="resetTrading()" title="초기화">🔄 초기화</button>
+        </div>
+        <div class="ps-main">
+          <div class="ps-total" id="psTotal">—</div>
+          <div class="ps-return" id="psReturn">—</div>
+        </div>
+        <div class="ps-grid">
+          <div class="ps-item">
+            <div class="ps-label">💵 보유 현금</div>
+            <div class="ps-val" id="psCash">—</div>
           </div>
-          <div class="trade-field">
-            <label>현재가</label>
-            <input type="text" class="trade-input" placeholder="—" disabled />
+          <div class="ps-item">
+            <div class="ps-label">📈 평가 금액</div>
+            <div class="ps-val" id="psPositions">—</div>
           </div>
-          <div class="trade-field">
-            <label>매수 수량</label>
-            <input type="number" class="trade-input" placeholder="0" disabled />
+          <div class="ps-item">
+            <div class="ps-label">📊 평가 손익</div>
+            <div class="ps-val" id="psUnrealized">—</div>
           </div>
-          <div class="trade-field">
-            <label>매수 금액</label>
-            <input type="text" class="trade-input" placeholder="—" disabled />
+          <div class="ps-item">
+            <div class="ps-label">💰 실현 손익</div>
+            <div class="ps-val" id="psRealized">—</div>
           </div>
-          <button class="trade-btn buy-btn" disabled>매수 (준비 중)</button>
+        </div>
+        <div class="ps-stats" id="psStats"></div>
+      </section>
+
+      <!-- 빠른 매수 -->
+      <section class="card quick-buy-card">
+        <h3 class="card-title">⚡ 빠른 매수</h3>
+        <div class="qb-row">
+          <div class="qb-search-wrap" style="position:relative; flex:2; min-width:0;">
+            <input id="qbTicker" class="add-input" type="text" placeholder="종목명 또는 티커 (예: AAPL, 삼성전자)" autocomplete="off"/>
+            <div id="qbAcList" class="autocomplete-list hidden" style="top:100%;left:0;right:0;z-index:200"></div>
+          </div>
+          <button class="add-submit-btn" onclick="openQuickBuy()" style="flex:0; padding:10px 24px; white-space:nowrap;">📊 매수</button>
+        </div>
+        <div id="qbBadge" style="margin-top:8px; font-size:12px; color:var(--text2)"></div>
+      </section>
+
+      <!-- 보유 종목 -->
+      <section class="card">
+        <h3 class="card-title">📦 보유 종목 (<span id="holdingCount">0</span>개)</h3>
+        <div id="positionsList" class="positions-list">
+          <div class="empty-state">보유 종목이 없습니다. 위에서 매수해보세요!</div>
         </div>
       </section>
 
-      <!-- 매도 패널 -->
-      <section class="card trade-panel">
-        <h3 class="card-title sell-title">매도</h3>
-        <div class="trade-form">
-          <div class="trade-field">
-            <label>종목</label>
-            <input type="text" class="trade-input" placeholder="티커 입력" disabled />
-          </div>
-          <div class="trade-field">
-            <label>현재가</label>
-            <input type="text" class="trade-input" placeholder="—" disabled />
-          </div>
-          <div class="trade-field">
-            <label>매도 수량</label>
-            <input type="number" class="trade-input" placeholder="0" disabled />
-          </div>
-          <div class="trade-field">
-            <label>매도 금액</label>
-            <input type="text" class="trade-input" placeholder="—" disabled />
-          </div>
-          <button class="trade-btn sell-btn" disabled>매도 (준비 중)</button>
+      <!-- 거래 내역 -->
+      <section class="card">
+        <h3 class="card-title">📜 거래 내역</h3>
+        <div id="transactionsList" class="tx-list">
+          <div class="empty-state">거래 내역이 없습니다</div>
         </div>
       </section>
 
     </div>
-
-    <!-- 보유 종목 테이블 -->
-    <section class="card">
-      <h3 class="card-title">보유 종목</h3>
-      <div class="holdings-table-wrap">
-        <table class="holdings-table">
-          <thead>
-            <tr>
-              <th>종목</th>
-              <th>보유수량</th>
-              <th>평균단가</th>
-              <th>현재가</th>
-              <th>평가손익</th>
-              <th>수익률</th>
-              <th>관리</th>
-            </tr>
-          </thead>
-          <tbody id="holdingsBody">
-            <tr>
-              <td colspan="7" class="empty-row">보유 종목이 없습니다 (기능 준비 중)</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
   </main>
+
+  <!-- ── 모의 매수 모달 ── -->
+  <div id="tradeBuyModal" class="modal-overlay hidden" onclick="closeBuyModal(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeBuyModal()">✕</button>
+      <h2 class="modal-title" style="font-size:18px;margin-bottom:8px">💰 모의 매수</h2>
+      <p id="buyModalDesc" class="modal-desc" style="margin-bottom:20px"></p>
+      <div class="add-form">
+        <input type="hidden" id="buyTicker" />
+        <input type="hidden" id="buyName" />
+        <input type="hidden" id="buyCurrency" />
+        <div class="add-field">
+          <label>매수가 <span id="buyCurrencyLabel">(USD)</span></label>
+          <div class="num-input-wrap">
+            <input id="buyPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', -1)">▼</button>
+            </div>
+          </div>
+        </div>
+        <div class="add-field">
+          <label>수량</label>
+          <div class="num-input-wrap">
+            <input id="buyQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyQty', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyQty', -1)">▼</button>
+            </div>
+          </div>
+        </div>
+        <div class="trade-summary" id="buySummary"></div>
+        <button class="add-submit-btn buy-action-btn" onclick="submitBuy()">💰 매수 실행</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 모의 매도 모달 ── -->
+  <div id="tradeSellModal" class="modal-overlay hidden" onclick="closeSellModal(event)">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeSellModal()">✕</button>
+      <h2 class="modal-title" style="font-size:18px;margin-bottom:8px">💸 모의 매도</h2>
+      <p id="sellModalDesc" class="modal-desc" style="margin-bottom:20px"></p>
+      <div class="add-form">
+        <input type="hidden" id="sellTicker" />
+        <input type="hidden" id="sellCurrency" />
+        <div class="add-field">
+          <label>매도가 <span id="sellCurrencyLabel">(USD)</span></label>
+          <div class="num-input-wrap">
+            <input id="sellPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', -1)">▼</button>
+            </div>
+          </div>
+        </div>
+        <div class="add-field">
+          <label>수량 (최대 <span id="sellMaxQty">0</span>주)</label>
+          <div class="num-input-wrap">
+            <input id="sellQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
+            <div class="num-steppers">
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellQty', 1)">▲</button>
+              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellQty', -1)">▼</button>
+            </div>
+          </div>
+          <button type="button" class="sell-max-btn" onclick="setSellMax()">전량 매도</button>
+        </div>
+        <div class="trade-summary" id="sellSummary"></div>
+        <button class="add-submit-btn sell-action-btn" onclick="submitSell()">💸 매도 실행</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/trading.js"></script>
 </body>
 </html>
