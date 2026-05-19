@@ -32,10 +32,13 @@ async function checkAuthAndLoad() {
       return;
     }
     currentUser = u;
+    const img = u.profile_image
+      ? `<img class="profile-img" src="${u.profile_image}" />`
+      : `<div class="profile-img" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
     document.getElementById('authArea').innerHTML = `
-      <div class="user-info">
-        ${u.profile_image ? `<img src="${u.profile_image}" class="user-avatar"/>` : '<div class="user-avatar">👤</div>'}
-        <span class="user-name">${u.name || '사용자'}</span>
+      <div class="profile-area">
+        ${img}
+        <span class="profile-name">${u.name || '사용자'}</span>
       </div>
       <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
     document.getElementById('loginRequired').classList.add('hidden');
