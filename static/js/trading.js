@@ -32,9 +32,11 @@ async function checkAuthAndLoad() {
       return;
     }
     currentUser = u;
+    // 인라인 style 로 강제 크기 (CSS 캐시 등 우회)
+    const imgStyle = 'width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--border);flex-shrink:0;';
     const img = u.profile_image
-      ? `<img class="profile-img" src="${u.profile_image}" />`
-      : `<div class="profile-img" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
+      ? `<img class="profile-img" src="${u.profile_image}" style="${imgStyle}" />`
+      : `<div class="profile-img" style="${imgStyle};display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
     document.getElementById('authArea').innerHTML = `
       <div class="profile-area">
         ${img}
