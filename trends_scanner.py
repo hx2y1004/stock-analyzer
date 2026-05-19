@@ -1,10 +1,27 @@
-"""추세 상승 종목 스캐너.
+"""추세 상승 종목 스캐너 v2 (월가 정통 로직).
 
-기술적(주봉 BB 수축 + 상단돌파 + 거래량 + 장대양봉 + MA 정렬) +
-모멘텀(14일 수익률 + 52주 신고가) +
-펀더멘털(매출/EPS 성장률 + 컨센서스 상향) 점수로 종합 평가.
+점수 체계 (총 100점):
+  기술 35:
+    - Minervini Stage 2 정의 (15pt) — 5단계 체크
+    - BB 수축+상단돌파 (8pt)
+    - OBV / 거래대금 (5pt)
+    - 베이스 패턴 돌파 (7pt)
 
-총점 max 100 = Tech 50 + Momentum 30 + Fundamental 20
+  모멘텀 40:
+    - 다중 시간프레임 (1m+3m+6m, 15pt)
+    - 상대 강도 RS (시장 대비, 15pt)
+    - 52주 신고가 + 연속 (10pt)
+
+  펀더멘털 25:
+    - 매출 YoY 가속 (8pt)
+    - EPS YoY 가속 (7pt)
+    - 이익률 (5pt)
+    - 컨센서스 상향 (5pt)
+
+조정:
+  - 변동성 페널티: ATR/Close > 5% → -10%
+  - 약세장 페널티: 시장이 MA200 아래 → -30%
+  - Perfect Setup 보너스: 핵심 신호 3+ 동시 → +15%
 """
 from __future__ import annotations
 
@@ -46,25 +63,48 @@ def _safe(v):
         return None
 
 
-# ── 단일 종목 분석 ────────────────────────────────────
-def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> Optional[dict]:
-    """단일 종목의 추세 상승 점수 계산. 실패 시 None."""
+# ── 시장 환경 컨텍스트 (스캔 1회 fetch) ─────────────────────
+def fetch_market_context() -> dict:
+    """미국/한국 시장 환경: MA200 위치 + 3개월 수익률."""
+    ctx = {"us": {}, "kr": {}}
+    for label, sym in [("us", "^GSPC"), ("kr", "^KS11")]:
+        try:
+            df = yf.Ticker(sym).history(period="1y", interval="1d", auto_adjust=False)
+            if df is None or df.empty or len(df) < 200:
+                continue
+            curr = float(df["Close"].iloc[-1])
+            ma200 = float(df["Close"].iloc[-200:].mean())
+            ret_3m = 0.0
+            if len(df) >= 63:
+                prev = float(df["Close"].iloc[-63])
+                if prev > 0:
+                    ret_3m = (curr / prev - 1) * 100
+            ctx[label] = {
+                "above_ma200":    curr > ma200,
+                "market_return_3m": round(ret_3m, 2),
+            }
+        except Exception as e:
+            log.warning(f"market_context {sym}: {e}")
+    log.info(f"[market context] {ctx}")
+    return ctx
+
+
+# ── 단일 종목 분석 v2 ─────────────────────────────────
+def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False,
+                    market_ctx: dict = None) -> Optional[dict]:
+    """추세 상승 점수 계산 v2 (월가 정통 로직, max 100pt)."""
     try:
-        # 약간의 지터 (rate limit 분산)
         time.sleep(random.uniform(0.02, 0.10))
+        stock = yf.Ticker(symbol)
 
-        stock = yf.Ticker(symbol)  # 기본 세션 (Yahoo 봇 차단 회피)
-
-        # 1년 일봉
+        # 1년 일봉 (Stage2 / 다중모멘텀에 충분한 데이터 필요)
         df_d = stock.history(period="1y", interval="1d", auto_adjust=False)
         if df_d is None or df_d.empty:
-            log.debug(f"[no data] {symbol}")
             return None
         if len(df_d) < 60:
-            log.debug(f"[short data] {symbol} only {len(df_d)} rows")
             return None
 
-        # 주봉 (일봉 리샘플)
+        # 주봉
         df_w = df_d.resample("W").agg({
             "Open": "first", "High": "max", "Low": "min",
             "Close": "last", "Volume": "sum",
@@ -74,108 +114,266 @@ def analyze_uptrend(symbol: str, name: str, with_fundamental: bool = False) -> O
 
         signals = []
         tech = momentum = fund = 0
+        core_signal_count = 0   # 핵심 신호 카운터 (Perfect Setup 보너스용)
 
-        # ─── 기술적 (주봉, max 50) ───
-        # 1) 볼린저밴드 수축 (10pt)
-        bb_mid   = df_w["Close"].rolling(20).mean()
-        bb_std   = df_w["Close"].rolling(20).std()
-        bb_upper = bb_mid + 2 * bb_std
-        bb_lower = bb_mid - 2 * bb_std
-        bb_width = (bb_upper - bb_lower) / bb_mid
+        last_d = float(df_d["Close"].iloc[-1])
+        if pd.isna(last_d):
+            return None
 
-        if not pd.isna(bb_width.iloc[-1]):
-            recent_w = bb_width.iloc[-3:].mean()
-            past_w   = bb_width.iloc[-20:-3].mean()
-            if not pd.isna(past_w) and past_w > 0 and recent_w < past_w * 0.75:
-                tech += 10
-                signals.append("볼린저 수축")
+        # ═════════════════════════════════════════════
+        # 기술적 (max 35)
+        # ═════════════════════════════════════════════
 
-        # 2) BB 상단 돌파 (15pt) — 최근 2주 내
-        if not pd.isna(bb_upper.iloc[-1]):
-            if df_w["Close"].iloc[-1] > bb_upper.iloc[-1]:
-                tech += 15
-                signals.append("상단 돌파")
-            elif len(bb_upper) >= 2 and not pd.isna(bb_upper.iloc[-2]) \
-                    and df_w["Close"].iloc[-2] > bb_upper.iloc[-2]:
-                tech += 10
-                signals.append("상단 돌파(전주)")
+        # ── 1) Minervini Stage 2 정의 (15pt) ──
+        # 5단계 체크. 각 항목 3pt, 4/5 이상 통과 시 핵심 신호 카운트
+        s2 = 0
+        # (1) MA50 > MA150 > MA200 정배열
+        if len(df_d) >= 200:
+            ma50  = float(df_d["Close"].rolling(50).mean().iloc[-1])
+            ma150 = float(df_d["Close"].rolling(150).mean().iloc[-1])
+            ma200 = float(df_d["Close"].rolling(200).mean().iloc[-1])
+            if not (pd.isna(ma50) or pd.isna(ma150) or pd.isna(ma200)):
+                if ma50 > ma150 > ma200:
+                    s2 += 1
+                # (2) MA200 1개월 전 대비 상승
+                ma200_1mo = float(df_d["Close"].rolling(200).mean().iloc[-22])
+                if not pd.isna(ma200_1mo) and ma200 > ma200_1mo:
+                    s2 += 1
+                # (3) 현재가 > MA50 > MA150
+                if last_d > ma50 > ma150:
+                    s2 += 1
+                # (4) 52주 저점 +30% 이상
+                year_low = float(df_d["Low"].min())
+                if year_low > 0 and last_d >= year_low * 1.30:
+                    s2 += 1
+                # (5) 52주 고점 -25% 이내
+                year_high = float(df_d["High"].max())
+                if year_high > 0 and last_d >= year_high * 0.75:
+                    s2 += 1
+        tech += s2 * 3
+        if s2 >= 4:
+            signals.append(f"Stage2 ({s2}/5)")
+            core_signal_count += 1
 
-        # 3) 거래량 급증 (10pt)
-        avg_vol  = df_w["Volume"].iloc[-20:-2].mean()
-        last_vol = df_w["Volume"].iloc[-1]
-        if avg_vol and avg_vol > 0 and last_vol > avg_vol * 1.5:
-            tech += 10
-            ratio = int((last_vol / avg_vol - 1) * 100)
-            signals.append(f"거래량 +{ratio}%")
+        # ── 2) BB 수축 + 상단 돌파 (8pt) ──
+        bb_mid_w   = df_w["Close"].rolling(20).mean()
+        bb_std_w   = df_w["Close"].rolling(20).std()
+        bb_upper_w = bb_mid_w + 2 * bb_std_w
+        bb_width_w = (bb_upper_w - (bb_mid_w - 2 * bb_std_w)) / bb_mid_w
+        if not pd.isna(bb_width_w.iloc[-1]):
+            recent = bb_width_w.iloc[-3:].mean()
+            past   = bb_width_w.iloc[-20:-3].mean()
+            if not pd.isna(past) and past > 0 and recent < past * 0.75:
+                tech += 4
+                signals.append("BB 수축")
+        if not pd.isna(bb_upper_w.iloc[-1]) and df_w["Close"].iloc[-1] > bb_upper_w.iloc[-1]:
+            tech += 4
+            signals.append("BB 상단 돌파")
+            core_signal_count += 1
 
-        # 4) 장대양봉 2개 이상 (10pt) — 최근 3주 내
-        body     = (df_w["Close"] - df_w["Open"]).abs()
-        avg_body = body.rolling(20).mean()
-        if not avg_body.iloc[-3:].isna().all():
-            is_long = (df_w["Close"] > df_w["Open"]) & (body > avg_body * 1.5)
-            cnt     = int(is_long.iloc[-3:].sum())
-            if cnt >= 2:
-                tech += 10
-                signals.append(f"장대양봉 {cnt}")
+        # ── 3) OBV / 거래대금 (5pt) ──
+        # OBV: 가격 상승일 거래량 +, 하락일 -
+        try:
+            close_diff = df_d["Close"].diff()
+            obv = (df_d["Volume"] * close_diff.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))).cumsum()
+            obv_60_max = obv.iloc[-60:].max()
+            if obv.iloc[-1] >= obv_60_max * 0.99:
+                tech += 3
+                signals.append("OBV 신고가")
+        except Exception:
+            pass
+        # 거래대금: 거래량 × 종가
+        try:
+            tv      = df_d["Volume"] * df_d["Close"]
+            tv_curr = float(tv.iloc[-5:].mean())
+            tv_avg  = float(tv.iloc[-60:-5].mean())
+            if tv_avg > 0 and tv_curr > tv_avg * 1.5:
+                tech += 2
+                signals.append(f"거래대금 +{int(tv_curr/tv_avg*100-100)}%")
+        except Exception:
+            pass
 
-        # 5) MA 상승 정렬 (5pt)
-        ma20 = df_w["Close"].rolling(20).mean()
-        if len(ma20) >= 6 and not pd.isna(ma20.iloc[-1]) and not pd.isna(ma20.iloc[-6]):
-            if ma20.iloc[-1] > ma20.iloc[-3] > ma20.iloc[-6]:
-                tech += 5
-                signals.append("이평선 상승")
+        # ── 4) 베이스 패턴 돌파 (7pt) ──
+        # 단순 정의: 최근 8주 동안 변동폭 < 15% (베이스 형성) → 그 후 상단 돌파
+        try:
+            last8w = df_w.tail(8)
+            if len(last8w) >= 5:
+                mean_p = float(last8w["Close"].mean())
+                if mean_p > 0:
+                    base_range = (float(last8w["High"].max()) - float(last8w["Low"].min())) / mean_p
+                    if base_range < 0.15:
+                        # 베이스 형성됨 - 돌파 확인
+                        base_top = float(last8w["High"].iloc[:-1].max())
+                        if last_d > base_top:
+                            tech += 7
+                            signals.append("베이스 돌파")
+                            core_signal_count += 1
+                        else:
+                            tech += 3   # 베이스 형성 자체도 가산
+                            signals.append("베이스 형성")
+        except Exception:
+            pass
 
-        # ─── 모멘텀 (max 30) ───
-        # 1) 14영업일 수익률 5%↑ (15pt)
-        if len(df_d) >= 16:
-            ret14 = (df_d["Close"].iloc[-1] / df_d["Close"].iloc[-15] - 1) * 100
-            if ret14 >= 5:
-                momentum += 15
-                signals.append(f"14일 +{ret14:.1f}%")
+        # ═════════════════════════════════════════════
+        # 모멘텀 (max 40)
+        # ═════════════════════════════════════════════
 
-        # 2) 52주 신고가 (10pt) + 연속 신고가 (5pt)
-        high_52w = df_d["High"].max()
-        last_d   = df_d["Close"].iloc[-1]
-        if last_d >= high_52w * 0.99:
-            momentum += 10
+        # ── 1) 다중 시간프레임 모멘텀 (15pt) ──
+        ret_1m = ret_3m = ret_6m = 0.0
+        if len(df_d) >= 22:
+            ret_1m = (last_d / float(df_d["Close"].iloc[-22]) - 1) * 100
+            if ret_1m >= 5:  momentum += 5
+        if len(df_d) >= 63:
+            ret_3m = (last_d / float(df_d["Close"].iloc[-63]) - 1) * 100
+            if ret_3m >= 10: momentum += 5
+        if len(df_d) >= 126:
+            ret_6m = (last_d / float(df_d["Close"].iloc[-126]) - 1) * 100
+            if ret_6m >= 20: momentum += 5
+        if ret_1m > 5 and ret_3m > 10 and ret_6m > 20:
+            signals.append(f"다중 모멘텀 1m+{ret_1m:.0f}% 6m+{ret_6m:.0f}%")
+            core_signal_count += 1
+
+        # ── 2) 상대 강도 RS (15pt) — 시장 대비 ──
+        if market_ctx:
+            mc_key = "kr" if _is_korean(symbol) else "us"
+            market_3m = market_ctx.get(mc_key, {}).get("market_return_3m")
+            if market_3m is not None and len(df_d) >= 63:
+                rs_diff = ret_3m - market_3m
+                if rs_diff >= 30:
+                    momentum += 15
+                    signals.append(f"RS 강세 +{rs_diff:.0f}%p")
+                    core_signal_count += 1
+                elif rs_diff >= 15:
+                    momentum += 10
+                    signals.append(f"RS +{rs_diff:.0f}%p")
+                elif rs_diff >= 5:
+                    momentum += 5
+                elif rs_diff >= 0:
+                    momentum += 2
+
+        # ── 3) 52주 신고가 + 연속 (10pt) ──
+        high_52w = float(df_d["High"].max())
+        if high_52w > 0 and last_d >= high_52w * 0.99:
+            momentum += 7
             signals.append("52주 신고가")
             roll_high = df_d["High"].rolling(252, min_periods=180).max()
-            tail = df_d["Close"].iloc[-5:]
+            tail   = df_d["Close"].iloc[-5:]
             tail_h = roll_high.iloc[-5:]
-            valid = tail_h.notna()
+            valid  = tail_h.notna()
             if valid.any():
                 consec = int((tail[valid] >= tail_h[valid] * 0.99).sum())
                 if consec >= 3:
-                    momentum += 5
+                    momentum += 3
                     signals.append("연속 신고가")
+                    core_signal_count += 1
 
-        # ─── 펀더멘털 (max 20) — 옵션 ───
+        # ═════════════════════════════════════════════
+        # 펀더멘털 (max 25, with_fundamental=True 일 때만)
+        # ═════════════════════════════════════════════
+
         if with_fundamental:
             try:
                 info = stock.info
-                rev_g  = info.get("revenueGrowth")
-                eps_g  = info.get("earningsGrowth")
-                fwd    = _safe(info.get("forwardEps"))
-                trail  = _safe(info.get("trailingEps"))
 
-                if rev_g is not None and rev_g > 0.10:
-                    fund += 5
-                    signals.append(f"매출 +{rev_g*100:.0f}%")
-                if eps_g is not None and eps_g > 0.10:
-                    fund += 5
-                    signals.append(f"EPS +{eps_g*100:.0f}%")
+                # ── 분기 매출/EPS YoY 가속 (15pt = 8+7) ──
+                try:
+                    qf = stock.quarterly_income_stmt
+                    if qf is not None and not qf.empty:
+                        # 매출 YoY 가속 (8pt)
+                        for key in ["Total Revenue", "Revenue", "TotalRevenue"]:
+                            if key in qf.index:
+                                rev = qf.loc[key].dropna().sort_index(ascending=False)
+                                if len(rev) >= 5:
+                                    yoy_q1 = (float(rev.iloc[0]) / float(rev.iloc[4]) - 1) * 100 if float(rev.iloc[4]) > 0 else 0
+                                    if yoy_q1 >= 20:
+                                        fund += 4
+                                        signals.append(f"매출 YoY +{yoy_q1:.0f}%")
+                                    # 가속 (이번 분기 YoY > 직전 분기 YoY + 5%p)
+                                    if len(rev) >= 6:
+                                        prev_yoy = (float(rev.iloc[1]) / float(rev.iloc[5]) - 1) * 100 if float(rev.iloc[5]) > 0 else 0
+                                        if yoy_q1 > prev_yoy + 5 and yoy_q1 > 0:
+                                            fund += 4
+                                            signals.append("매출 가속")
+                                            core_signal_count += 1
+                                break
+                        # EPS YoY 가속 (7pt)
+                        for key in ["Diluted EPS", "Basic EPS", "EPS"]:
+                            if key in qf.index:
+                                eps_q = qf.loc[key].dropna().sort_index(ascending=False)
+                                if len(eps_q) >= 5:
+                                    e0 = float(eps_q.iloc[0]); e4 = float(eps_q.iloc[4])
+                                    if e4 != 0:
+                                        eps_yoy = (e0 / e4 - 1) * 100 if e4 > 0 else 0
+                                        if eps_yoy >= 25:
+                                            fund += 4
+                                            signals.append(f"EPS YoY +{eps_yoy:.0f}%")
+                                        if len(eps_q) >= 6:
+                                            e1 = float(eps_q.iloc[1]); e5 = float(eps_q.iloc[5])
+                                            if e5 > 0:
+                                                eps_prev = (e1 / e5 - 1) * 100
+                                                if eps_yoy > eps_prev + 5 and eps_yoy > 0:
+                                                    fund += 3
+                                                    signals.append("EPS 가속")
+                                                    core_signal_count += 1
+                                break
+                except Exception:
+                    pass
+
+                # ── 이익률 (5pt) ──
+                op_margin = _safe(info.get("operatingMargins"))
+                if op_margin is not None:
+                    if op_margin >= 0.20:
+                        fund += 5
+                        signals.append(f"이익률 {op_margin*100:.0f}%")
+                    elif op_margin >= 0.10:
+                        fund += 3
+
+                # ── 컨센서스 상향 (5pt) ──
+                fwd   = _safe(info.get("forwardEps"))
+                trail = _safe(info.get("trailingEps"))
                 if fwd and trail and trail > 0 and fwd > trail * 1.05:
-                    fund += 10
+                    fund += 5
                     signals.append("컨센서스 상향")
+
             except Exception:
                 pass
 
-        total = tech + momentum + fund
+        # ═════════════════════════════════════════════
+        # 조정 (페널티 / 보너스)
+        # ═════════════════════════════════════════════
 
-        # 가격 NaN 체크
-        if pd.isna(last_d):
-            return None
-        last_d = float(last_d)
+        # ── 변동성 페널티 (ATR/Close > 5%) ──
+        try:
+            atr_series = (df_d["High"] - df_d["Low"]).rolling(14).mean()
+            atr = float(atr_series.iloc[-1])
+            if atr and last_d > 0:
+                atr_ratio = atr / last_d
+                if atr_ratio > 0.05:
+                    penalty = round((tech + momentum + fund) * 0.10)
+                    tech     = max(0, tech     - penalty // 3)
+                    momentum = max(0, momentum - penalty // 3)
+                    fund     = max(0, fund     - penalty // 3)
+                    signals.append(f"⚠변동성 {atr_ratio*100:.1f}%")
+        except Exception:
+            pass
+
+        # ── 시장 환경 페널티 (S&P500/KOSPI MA200 아래) ──
+        if market_ctx:
+            mc_key = "kr" if _is_korean(symbol) else "us"
+            if market_ctx.get(mc_key, {}).get("above_ma200") is False:
+                tech     = round(tech     * 0.7)
+                momentum = round(momentum * 0.7)
+                fund     = round(fund     * 0.7)
+                signals.append("⚠ 약세장")
+
+        # ── Perfect Setup 보너스 (핵심 신호 3+ 동시) ──
+        if core_signal_count >= 3:
+            tech     = round(tech     * 1.15)
+            momentum = round(momentum * 1.15)
+            fund     = round(fund     * 1.15)
+            signals.insert(0, "🔥 Perfect Setup")
+
+        total = tech + momentum + fund
 
         # 일변동률 (NaN 방지)
         change_pct = 0.0
@@ -255,17 +453,22 @@ def scan_all(stock_db, market: str = "ALL",
     log.info(f"[trends scan] market={market} candidates={total_n} est_total={est_total}")
     started = time.time()
 
-    work_done = [0]   # 리스트로 감싸서 클로저에서 mutation
+    # 시장 환경 컨텍스트 1회 fetch (모든 종목에 동일하게 전달)
+    market_ctx = fetch_market_context()
+
+    work_done = [0]
     def _bump():
         work_done[0] += 1
-        # 매번 콜백 (서버 측 진행률을 즉시 반영)
         if progress_cb:
             progress_cb(work_done[0], est_total)
 
     # ─ Pass 1 ─
     pass1 = []
     with ThreadPoolExecutor(max_workers=max_workers_pass1) as ex:
-        futs = {ex.submit(analyze_uptrend, sym, name, False): sym for sym, name in candidates}
+        futs = {
+            ex.submit(analyze_uptrend, sym, name, False, market_ctx): sym
+            for sym, name in candidates
+        }
         for fut in as_completed(futs):
             _bump()
             # 사용자 중단 요청 체크
@@ -295,7 +498,7 @@ def scan_all(stock_db, market: str = "ALL",
     if fund_targets:
         with ThreadPoolExecutor(max_workers=max_workers_pass2) as ex:
             futs = {
-                ex.submit(analyze_uptrend, r["ticker"], r["name"], True): r["ticker"]
+                ex.submit(analyze_uptrend, r["ticker"], r["name"], True, market_ctx): r["ticker"]
                 for r in fund_targets
             }
             for fut in as_completed(futs):
