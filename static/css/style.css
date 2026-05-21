@@ -710,6 +710,97 @@ body {
   color: var(--text2);
   font-weight: 400;
 }
+
+/* ── 섹터/테마 강도 리스트 ── */
+.sectors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sector-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+.sector-card:hover {
+  border-color: var(--accent);
+  background: rgba(88,166,255,0.06);
+}
+.sector-rank {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text2);
+  min-width: 28px;
+  text-align: center;
+}
+.sector-card:nth-child(1) .sector-rank { color: #f0b429; }   /* 1위 골드 */
+.sector-card:nth-child(2) .sector-rank { color: #c0c0c0; }   /* 2위 실버 */
+.sector-card:nth-child(3) .sector-rank { color: #cd7f32; }   /* 3위 브론즈 */
+.sector-info {
+  flex: 1;
+  min-width: 0;
+}
+.sector-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sector-name a {
+  color: inherit;
+  text-decoration: none;
+}
+.sector-name a:hover { color: var(--accent); }
+.sector-meta {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sector-breadth { color: var(--text2); font-family: monospace; }
+.sector-leaders { color: var(--text2); margin-left: 4px; }
+.sector-stats {
+  text-align: right;
+  flex-shrink: 0;
+}
+.sector-score {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  font-family: monospace;
+}
+.sector-score.up   { color: var(--green); }
+.sector-score.down { color: var(--red); }
+.sector-chgs {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  margin-top: 4px;
+  justify-content: flex-end;
+  font-family: monospace;
+}
+.sector-chgs span.up   { color: var(--green); }
+.sector-chgs span.down { color: var(--red); }
+
+@media (max-width: 640px) {
+  .sector-card { padding: 10px 12px; gap: 10px; }
+  .sector-rank { font-size: 15px; min-width: 22px; }
+  .sector-name { font-size: 14px; }
+  .sector-meta { font-size: 11px; }
+  .sector-score { font-size: 16px; }
+  .sector-chgs { gap: 6px; font-size: 10px; }
+}
 @keyframes live-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(248,81,73,0.7); }
   70%  { box-shadow: 0 0 0 8px rgba(248,81,73,0); }
