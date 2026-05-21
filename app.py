@@ -1673,6 +1673,27 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
     return result
 
 
+def _is_market_open(ticker: str) -> bool:
+    """대략적인 시장 개장 여부 (KR=Asia/Seoul 9:00–15:30, US=America/New_York 9:30–16:00).
+    공휴일은 고려하지 않음(yfinance가 자체 처리)."""
+    try:
+        is_kr = ticker.upper().endswith(".KS") or ticker.upper().endswith(".KQ")
+        if is_kr:
+            now = pd.Timestamp.now(tz="Asia/Seoul")
+            if now.weekday() >= 5:
+                return False
+            t = now.time()
+            return (t >= pd.Timestamp("09:00").time()) and (t <= pd.Timestamp("15:30").time())
+        else:
+            now = pd.Timestamp.now(tz="America/New_York")
+            if now.weekday() >= 5:
+                return False
+            t = now.time()
+            return (t >= pd.Timestamp("09:30").time()) and (t <= pd.Timestamp("16:00").time())
+    except Exception:
+        return False
+
+
 @app.route("/api/analyze", methods=["GET"])
 def analyze():
     ticker = request.args.get("ticker", "").strip().upper()
@@ -1780,10 +1801,44 @@ def analyze():
             "macd_hist": series("MACD_hist"),
         }
 
-        current_price = safe_float(df["Close"].iloc[-1])
-        prev_close = safe_float(df["Close"].iloc[-2])
-        price_change = round(current_price - prev_close, 2) if current_price and prev_close else None
-        price_change_pct = round((price_change / prev_close) * 100, 2) if price_change and prev_close else None
+        # ── 실시간 가격 시도 (fast_info) ──────────────────────────────
+        # 장중이면 실시간가, 장 마감 후/주말이면 마지막 종가
+        history_close      = safe_float(df["Close"].iloc[-1])
+        history_prev_close = safe_float(df["Close"].iloc[-2]) if len(df) >= 2 else None
+
+        realtime_price = None
+        realtime_prev  = None
+        try:
+            fi = stock.fast_info
+            realtime_price = safe_float(getattr(fi, "last_price", None))
+            realtime_prev  = safe_float(getattr(fi, "previous_close", None)) or \
+                             safe_float(getattr(fi, "regular_market_previous_close", None))
+        except Exception:
+            pass
+
+        # 시장 개장 여부 (대략적 — KST/EST 기준)
+        is_market_open_now = _is_market_open(ticker)
+
+        # 실시간 가격이 있고, 장중이거나 히스토리의 마지막 종가와 다르면 실시간 사용
+        if realtime_price and (is_market_open_now or
+                               (history_close and abs(realtime_price - history_close) > 1e-6)):
+            current_price = realtime_price
+            prev_close    = realtime_prev or history_close  # 어제 종가
+            is_realtime   = is_market_open_now
+        else:
+            current_price = history_close
+            prev_close    = history_prev_close
+            is_realtime   = False
+
+        price_change     = round(current_price - prev_close, 2) if (current_price and prev_close) else None
+        price_change_pct = round((price_change / prev_close) * 100, 2) if (price_change and prev_close) else None
+
+        # 데이터 기준 시각 (히스토리 마지막 봉)
+        try:
+            last_bar_ts = df.index[-1]
+            data_timestamp = last_bar_ts.isoformat() if last_bar_ts else None
+        except Exception:
+            data_timestamp = None
 
         # 52주 고가/저가
         year_high = safe_float(df["High"].tail(252).max())
@@ -2066,6 +2121,10 @@ def analyze():
             "prev_close": prev_close,
             "price_change": price_change,
             "price_change_pct": price_change_pct,
+            "is_realtime": is_realtime,
+            "is_market_open": is_market_open_now,
+            "data_timestamp": data_timestamp,
+            "fetched_at": datetime.utcnow().isoformat() + "Z",
             "market_cap": info.get("marketCap"),
             "volume": safe_float(df["Volume"].iloc[-1]),
             "avg_volume": safe_float(df["Volume"].tail(20).mean()),

@@ -1113,6 +1113,34 @@ function renderStockInfo(stock) {
     changeEl.textContent = `${sign}${fmt(stock.price_change, cur)} (${sign}${stock.price_change_pct}%)`;
     changeEl.className = 'price-change ' + (stock.price_change >= 0 ? 'up' : 'down');
   }
+
+  // ── 가격 신선도 표시: LIVE 뱃지 / 장 마감 / 데이터 시각 ──
+  const freshEl = document.getElementById('priceFreshness');
+  if (freshEl) {
+    if (stock.is_realtime) {
+      freshEl.innerHTML = `<span class="live-dot"></span> <span class="live-label">LIVE</span> · 장중 실시간`;
+      freshEl.className = 'price-freshness live';
+    } else if (stock.is_market_open) {
+      freshEl.innerHTML = `🕐 장중 (지연 시세)`;
+      freshEl.className = 'price-freshness delayed';
+    } else {
+      const tsLabel = _formatBarTimestamp(stock.data_timestamp);
+      freshEl.innerHTML = `🔒 장 마감 · ${tsLabel} 기준`;
+      freshEl.className = 'price-freshness closed';
+    }
+  }
+}
+
+// 봉 timestamp(ISO)를 "5/21 (수)" 또는 "2026-05-21" 형식으로
+function _formatBarTimestamp(iso) {
+  if (!iso) return '데이터 없음';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso.slice(0, 10);
+    const m = d.getMonth() + 1, day = d.getDate();
+    const dow = ['일','월','화','수','목','금','토'][d.getDay()];
+    return `${m}/${day} (${dow})`;
+  } catch (e) { return iso.slice(0, 10); }
 }
 
 function renderVerdict(analysis, stock) {
