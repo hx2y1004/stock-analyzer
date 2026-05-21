@@ -2978,15 +2978,16 @@ function _renderSectorsList(sectors) {
     if (footerEl) footerEl.classList.add('hidden');
     return;
   }
-  const limit = _sectorsExpanded ? sectors.length : Math.min(20, sectors.length);
+  const TOP_N = 5;
+  const limit = _sectorsExpanded ? sectors.length : Math.min(TOP_N, sectors.length);
   const visible = sectors.slice(0, limit);
   const isKR = _sectorsMarket === 'KR';
   listEl.innerHTML = visible.map((s, i) => _sectorCardHTML(s, i, isKR)).join('');
-  if (sectors.length > 20 && footerEl) {
+  if (sectors.length > TOP_N && footerEl) {
     footerEl.classList.remove('hidden');
     footerEl.innerHTML = _sectorsExpanded
       ? `접기 ▲`
-      : `더 보기 ▼ (${sectors.length - 20}개 더)`;
+      : `더 보기 ▼ (${sectors.length - TOP_N}개 더)`;
     footerEl.onclick = () => { _sectorsExpanded = !_sectorsExpanded; _renderSectorsList(sectors); };
   } else if (footerEl) {
     footerEl.classList.add('hidden');
