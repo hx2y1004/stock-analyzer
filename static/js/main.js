@@ -2920,10 +2920,13 @@ function _renderSectorStocks(stocks, market) {
   };
   const rows = stocks.map((st, i) => {
     const ticker = st.ticker || st.code || '';
+    // 한국: "삼성전자 (005930)" / 미국: "Apple (AAPL)" — 이름과 티커가 다를 때만 티커 표시
+    const showTicker = (st.ticker || st.code) && st.name && st.name.toUpperCase() !== (st.ticker || '').toUpperCase();
+    const tickerLabel = showTicker ? ` <small>(${st.code || st.ticker})</small>` : '';
     return `
       <div class="sector-stock-row" onclick="searchAndAnalyze('${ticker}')">
         <span class="ss-rank">${i + 1}</span>
-        <span class="ss-name">${st.name}${st.code ? ` <small>(${st.code})</small>` : ''}</span>
+        <span class="ss-name">${st.name}${tickerLabel}</span>
         <span class="ss-price">${_fmtPrice(st.price, st.currency)}</span>
         <span class="ss-chg ${_pctCls(st.change_1d)}">${_pct(st.change_1d)}</span>
       </div>

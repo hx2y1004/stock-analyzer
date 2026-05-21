@@ -67,6 +67,25 @@ async function loadDashboard() {
   }
 }
 
+// 자산 새로고침 — 시세/평가금액 다시 fetch
+async function refreshDashboard(btn) {
+  if (btn) {
+    btn.classList.add('spinning');
+    btn.disabled = true;
+  }
+  try {
+    await loadDashboard();
+  } finally {
+    if (btn) {
+      // 너무 빠르면 깜빡임만 되니까 최소 400ms 보여주기
+      setTimeout(() => {
+        btn.classList.remove('spinning');
+        btn.disabled = false;
+      }, 400);
+    }
+  }
+}
+
 function renderSummary(d) {
   const ret = d.total_return_pct;
   const retCls = ret > 0 ? 'up' : ret < 0 ? 'down' : 'flat';
