@@ -62,7 +62,10 @@
       <section class="card portfolio-summary">
         <div class="ps-header">
           <h2 class="card-title">💼 내 자산</h2>
-          <button class="ps-reset-btn" onclick="resetTrading()" title="초기화">🔄 초기화</button>
+          <div class="ps-actions">
+            <button class="ps-refresh-btn" onclick="refreshDashboard(this)" title="자산 새로고침">↻</button>
+            <button class="ps-reset-btn" onclick="resetTrading()" title="초기화">🔄 초기화</button>
+          </div>
         </div>
         <div class="ps-main">
           <div class="ps-total" id="psTotal">—</div>

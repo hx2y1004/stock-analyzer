@@ -484,6 +484,91 @@ US_SECTOR_HOLDINGS = {
 _CONSTITUENTS_CACHE = {}
 _CONSTITUENTS_TTL = 300  # 5분
 
+# 미국 주요 ETF/대형주 영문명 매핑 (STOCK_DB에 없는 것 보강)
+_US_NAME_FALLBACK = {
+    "BRK-B": "Berkshire Hathaway", "GOOGL": "Alphabet Class A", "GOOG": "Alphabet Class C",
+    "META": "Meta Platforms", "BKNG": "Booking Holdings", "TMUS": "T-Mobile US",
+    "CMCSA": "Comcast", "WBD": "Warner Bros. Discovery", "EA": "Electronic Arts",
+    "TTWO": "Take-Two Interactive", "OMC": "Omnicom Group", "IPG": "Interpublic Group",
+    "ORLY": "O'Reilly Automotive", "AZO": "AutoZone", "MAR": "Marriott International",
+    "HLT": "Hilton Worldwide", "DRI": "Darden Restaurants", "TJX": "TJX Companies",
+    "ROST": "Ross Stores", "LULU": "Lululemon", "STZ": "Constellation Brands",
+    "MDLZ": "Mondelez", "KMB": "Kimberly-Clark", "GIS": "General Mills",
+    "KHC": "Kraft Heinz", "SYY": "Sysco", "EL": "Estee Lauder", "DG": "Dollar General",
+    "SPGI": "S&P Global", "PGR": "Progressive", "BLK": "BlackRock", "BX": "Blackstone",
+    "FI": "Fiserv", "CME": "CME Group", "ICE": "Intercontinental Exchange",
+    "MS": "Morgan Stanley", "GS": "Goldman Sachs", "AXP": "American Express",
+    "LLY": "Eli Lilly", "UNH": "UnitedHealth Group", "JNJ": "Johnson & Johnson",
+    "ABBV": "AbbVie", "TMO": "Thermo Fisher", "ABT": "Abbott Labs", "DHR": "Danaher",
+    "ISRG": "Intuitive Surgical", "AMGN": "Amgen", "BMY": "Bristol-Myers Squibb",
+    "SYK": "Stryker", "GILD": "Gilead Sciences", "MDT": "Medtronic", "CI": "Cigna",
+    "BSX": "Boston Scientific", "ELV": "Elevance Health", "VRTX": "Vertex Pharma",
+    "REGN": "Regeneron", "MRK": "Merck", "PFE": "Pfizer",
+    "RTX": "RTX Corp", "HON": "Honeywell", "UNP": "Union Pacific", "ETN": "Eaton",
+    "LMT": "Lockheed Martin", "ADP": "Automatic Data Processing", "UPS": "UPS",
+    "NOC": "Northrop Grumman", "WM": "Waste Management", "GD": "General Dynamics",
+    "ITW": "Illinois Tool Works", "CSX": "CSX Corp", "EMR": "Emerson Electric",
+    "FDX": "FedEx",
+    "WMB": "Williams Companies", "EOG": "EOG Resources", "SLB": "Schlumberger",
+    "KMI": "Kinder Morgan", "PSX": "Phillips 66", "MPC": "Marathon Petroleum",
+    "OXY": "Occidental Petroleum", "VLO": "Valero Energy", "FANG": "Diamondback Energy",
+    "OKE": "Oneok", "BKR": "Baker Hughes", "TRGP": "Targa Resources",
+    "HAL": "Halliburton", "DVN": "Devon Energy", "EQT": "EQT Corp", "APA": "APA Corp",
+    "LIN": "Linde", "SHW": "Sherwin-Williams", "FCX": "Freeport-McMoRan", "ECL": "Ecolab",
+    "APD": "Air Products", "DD": "DuPont", "NUE": "Nucor", "NEM": "Newmont",
+    "CTVA": "Corteva", "DOW": "Dow Inc", "PPG": "PPG Industries", "VMC": "Vulcan Materials",
+    "MLM": "Martin Marietta", "IFF": "Intl Flavors & Fragrances", "STLD": "Steel Dynamics",
+    "CF": "CF Industries", "ALB": "Albemarle", "LYB": "LyondellBasell",
+    "PKG": "Packaging Corp", "IP": "International Paper",
+    "NEE": "NextEra Energy", "SO": "Southern Company", "DUK": "Duke Energy",
+    "CEG": "Constellation Energy", "SRE": "Sempra", "AEP": "American Electric Power",
+    "D": "Dominion Energy", "PCG": "PG&E", "XEL": "Xcel Energy", "EXC": "Exelon",
+    "ED": "Consolidated Edison", "WEC": "WEC Energy", "ETR": "Entergy", "ES": "Eversource",
+    "DTE": "DTE Energy", "PEG": "Public Service Enterprise", "EIX": "Edison Intl",
+    "AWK": "American Water Works", "FE": "FirstEnergy", "AEE": "Ameren",
+    "PLD": "Prologis", "AMT": "American Tower", "EQIX": "Equinix", "WELL": "Welltower",
+    "SPG": "Simon Property Group", "CCI": "Crown Castle", "DLR": "Digital Realty",
+    "O": "Realty Income", "PSA": "Public Storage", "CBRE": "CBRE Group",
+    "EXR": "Extra Space Storage", "VICI": "VICI Properties", "AVB": "AvalonBay",
+    "SBAC": "SBA Communications", "CSGP": "CoStar Group", "WY": "Weyerhaeuser",
+    "ARE": "Alexandria Real Estate", "EQR": "Equity Residential", "IRM": "Iron Mountain",
+    "INVH": "Invitation Homes",
+    "NVDA": "NVIDIA", "MSFT": "Microsoft", "AAPL": "Apple", "AVGO": "Broadcom",
+    "ORCL": "Oracle", "CRM": "Salesforce", "CSCO": "Cisco", "AMD": "AMD",
+    "ACN": "Accenture", "ADBE": "Adobe", "IBM": "IBM", "TXN": "Texas Instruments",
+    "NOW": "ServiceNow", "INTU": "Intuit", "QCOM": "Qualcomm", "PLTR": "Palantir",
+    "ADI": "Analog Devices", "AMAT": "Applied Materials", "MU": "Micron", "LRCX": "Lam Research",
+    "NFLX": "Netflix", "DIS": "Disney", "VZ": "Verizon", "T": "AT&T", "CHTR": "Charter Comm.",
+    "FOX": "Fox Corp", "FOXA": "Fox Corp A",
+    "AMZN": "Amazon", "TSLA": "Tesla", "HD": "Home Depot", "MCD": "McDonald's",
+    "LOW": "Lowe's", "NKE": "Nike", "SBUX": "Starbucks", "CMG": "Chipotle",
+    "ABNB": "Airbnb", "GM": "General Motors", "F": "Ford",
+    "COST": "Costco", "WMT": "Walmart", "PG": "Procter & Gamble", "KO": "Coca-Cola",
+    "PEP": "PepsiCo", "PM": "Philip Morris", "MO": "Altria", "CL": "Colgate-Palmolive",
+    "TGT": "Target", "HSY": "Hershey", "KR": "Kroger", "ADM": "Archer-Daniels-Midland",
+    "JPM": "JPMorgan Chase", "V": "Visa", "MA": "Mastercard", "BAC": "Bank of America",
+    "WFC": "Wells Fargo", "C": "Citigroup", "CB": "Chubb", "MMC": "Marsh McLennan",
+    "SCHW": "Charles Schwab",
+    "GE": "General Electric", "CAT": "Caterpillar", "UBER": "Uber", "BA": "Boeing",
+    "DE": "Deere", "MMM": "3M",
+    "XOM": "ExxonMobil", "CVX": "Chevron", "COP": "ConocoPhillips", "HES": "Hess Corp",
+}
+
+
+def _lookup_us_name(ticker: str) -> str:
+    """STOCK_DB → 폴백 매핑 → 티커 자체 순으로 종목명 반환."""
+    if not ticker:
+        return ""
+    # 1) STOCK_DB
+    try:
+        for s in STOCK_DB:
+            if s.get("symbol", "").upper() == ticker.upper():
+                return s.get("name") or ticker
+    except Exception:
+        pass
+    # 2) 폴백 매핑
+    return _US_NAME_FALLBACK.get(ticker.upper(), ticker)
+
 
 def _fetch_us_sector_constituents(etf_ticker: str, limit: int = 15):
     """미국 섹터 ETF의 대표 종목들 + 당일 변화율 (상승률 순)."""
@@ -521,7 +606,7 @@ def _fetch_us_sector_constituents(etf_ticker: str, limit: int = 15):
             chg  = (cur / prev - 1) * 100 if prev else 0.0
             results.append({
                 "ticker":    tk,
-                "name":      tk,           # 영문 티커만 (간결)
+                "name":      _lookup_us_name(tk),
                 "price":     round(cur, 2),
                 "change_1d": round(chg, 2),
                 "currency":  "USD",
@@ -566,24 +651,41 @@ def _fetch_kr_theme_constituents(theme_no: str, limit: int = 20):
     try:
         r = requests.get(url, headers=headers, timeout=8)
         if r.status_code != 200:
+            app.logger.warning(f"[constituents KR] {theme_no}: HTTP {r.status_code}")
             return []
-        try:
+        # 인코딩: 자동 감지 → euc-kr 폴백
+        html = None
+        for enc in ("euc-kr", "cp949", "utf-8"):
+            try:
+                html = r.content.decode(enc, errors="strict")
+                break
+            except UnicodeDecodeError:
+                continue
+        if html is None:
             html = r.content.decode("euc-kr", errors="replace")
-        except Exception:
-            html = r.text
+
         soup = BeautifulSoup(html, "html.parser")
 
-        # 테마 상세 종목 표 — type_5 클래스
-        table = soup.find("table", class_=lambda c: c and "type_5" in c)
-        if not table:
+        # 종목 행을 가진 모든 테이블 후보 수집 (code= 링크가 3개 이상 있는 테이블)
+        candidate_table = None
+        max_rows = 0
+        for tbl in soup.find_all("table"):
+            stock_links = tbl.find_all("a", href=lambda h: h and "code=" in h)
+            if len(stock_links) > max_rows:
+                candidate_table = tbl
+                max_rows = len(stock_links)
+        if not candidate_table or max_rows < 1:
+            app.logger.warning(f"[constituents KR] {theme_no}: no stock table found")
             return []
 
         results = []
-        for tr in table.find_all("tr"):
+        seen_codes = set()
+
+        for tr in candidate_table.find_all("tr"):
             tds = tr.find_all("td")
-            if len(tds) < 5:
+            if len(tds) < 4:
                 continue
-            name_a = tds[0].find("a")
+            name_a = tds[0].find("a", href=lambda h: h and "code=" in h)
             if not name_a:
                 continue
             name = name_a.get_text(strip=True)
@@ -591,40 +693,61 @@ def _fetch_kr_theme_constituents(theme_no: str, limit: int = 20):
                 continue
             href = name_a.get("href", "")
             m = re.search(r"code=(\d+)", href)
-            code = m.group(1) if m else None
-            # 컬럼 구조: [0]종목명 [1]현재가 [2]전일비 [3]등락률 [4]매수 [5]매도 [6]거래량 [7]전일거래량 [8]주체
-            # 등락 색상으로 음수/양수 판단
-            chg_pct_raw = tds[3].get_text(strip=True) if len(tds) > 3 else ""
-            chg_pct = _parse_num(chg_pct_raw)
+            if not m:
+                continue
+            code = m.group(1)
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+
+            # 컬럼 위치 — 네이버 테마 상세는 보통:
+            # [0]종목명 [1]현재가 [2]전일비(이미지) [3]등락률 [4]매수호가 [5]매도호가 [6]거래량 [7]전일거래량
+            price   = _parse_num(tds[1].get_text(strip=True)) if len(tds) > 1 else None
+            chg_pct = _parse_num(tds[3].get_text(strip=True)) if len(tds) > 3 else None
+            if chg_pct is None:
+                # 폴백: 마지막 % 숫자 셀 찾기
+                for td in tds[1:6]:
+                    txt = td.get_text(strip=True)
+                    if "%" in txt:
+                        chg_pct = _parse_num(txt)
+                        if chg_pct is not None:
+                            break
             if chg_pct is None:
                 continue
-            # 부호 보정: 네이버 등락률은 절대값으로만 표기되어 색상 클래스로 음수 판별
-            cls = " ".join(tds[3].get("class", []))
-            # 'nv01'은 보통 음수 (red), 'red' 클래스도 음수 표기
-            row_cls = " ".join(tr.get("class", []))
+
+            # 부호 보정: 네이버 등락률은 절대값으로 표기 → 색상/이미지로 음수 판별
             is_down = False
-            # 전일비 셀(2번)에 ico_down 등이 있으면 하락
-            comp_imgs = tds[2].find_all("img") if len(tds) > 2 else []
-            for im in comp_imgs:
-                src = (im.get("src") or "") + " " + (im.get("alt") or "")
-                if "down" in src or "ico_d" in src or "하락" in src:
+            for cell in tds[:5]:
+                # 이미지 alt/src
+                for im in cell.find_all("img"):
+                    src = ((im.get("src") or "") + " " + (im.get("alt") or "")).lower()
+                    if "down" in src or "ico_d" in src or "low" in src or "하락" in src:
+                        is_down = True
+                # 색상 클래스
+                cls_str = " ".join(cell.get("class", []))
+                if "nv01" in cls_str or "down" in cls_str:
                     is_down = True
-                if "low" in src.lower() or "ico_low" in src:
+                # 텍스트에 '-' 직접 (드물지만)
+                txt = cell.get_text(strip=True)
+                if txt.startswith("-") and "%" in txt:
                     is_down = True
+
             if is_down and chg_pct > 0:
                 chg_pct = -chg_pct
 
-            price = _parse_num(tds[1].get_text(strip=True)) if len(tds) > 1 else None
             results.append({
-                "ticker":    f"{code}.KS" if code else None,
+                "ticker":    f"{code}.KS",
                 "code":      code,
                 "name":      name,
                 "price":     price,
-                "change_1d": chg_pct,
+                "change_1d": round(chg_pct, 2),
                 "currency":  "KRW",
             })
 
-        # 상승률 순 정렬, 상위 limit
+        if not results:
+            app.logger.warning(f"[constituents KR] {theme_no}: parsed 0 rows from {max_rows} links")
+
+        # 상승률 순 정렬
         results.sort(key=lambda x: x["change_1d"] if x["change_1d"] is not None else -999, reverse=True)
         results = results[:limit]
         _CONSTITUENTS_CACHE[cache_key] = (now_ts, results)
