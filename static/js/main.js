@@ -162,18 +162,26 @@ function togglePortfolio() {
   renderPortfolioCards(pfAllHoldings);
 }
 
-// ── 포트폴리오 / 추세 탭 전환 ──────────────────────────
+// ── 포트폴리오 / 추세 / 섹터 탭 전환 ──────────────────────────
 function switchPfTab(tab) {
   document.querySelectorAll('.pf-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   const pfPanel  = document.getElementById('pfTabPortfolio');
   const trPanel  = document.getElementById('pfTabTrends');
+  const scPanel  = document.getElementById('pfTabSectors');
+  pfPanel.classList.add('hidden');
+  trPanel.classList.add('hidden');
+  if (scPanel) scPanel.classList.add('hidden');
   if (tab === 'portfolio') {
     pfPanel.classList.remove('hidden');
-    trPanel.classList.add('hidden');
+  } else if (tab === 'sectors') {
+    if (scPanel) scPanel.classList.remove('hidden');
+    if (!_sectorsLoadedOnce) {
+      _sectorsLoadedOnce = true;
+      loadSectors(false);
+    }
   } else {
-    pfPanel.classList.add('hidden');
     trPanel.classList.remove('hidden');
   }
 }
@@ -2717,3 +2725,127 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+
+// ── 섹터/테마 강도 ───────────────────────────────────────────
+let _sectorsLoadedOnce = false;
+let _sectorsMarket = 'US';
+let _sectorsExpanded = false;
+let _sectorsCache = { US: null, KR: null };
+
+function selectSectorsMarket(btn) {
+  document.querySelectorAll('#sectorsMarketToggle .market-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  _sectorsMarket = btn.dataset.market;
+  _sectorsExpanded = false;
+  // 강도 점수 설명 텍스트 갱신
+  const t = document.getElementById('sectorsCriteriaText');
+  if (t) {
+    t.innerHTML = _sectorsMarket === 'KR'
+      ? `<strong>1D × 0.45</strong> + <strong>3D × 0.35</strong> + <strong>상승종목폭 × 0.20</strong> (네이버 테마)`
+      : `<strong>1D × 0.3</strong> + <strong>1W × 0.4</strong> + <strong>1M × 0.3</strong> + 거래량 로그 보정 (SPDR ETF)`;
+  }
+  // 캐시 있으면 재사용, 없으면 로드
+  if (_sectorsCache[_sectorsMarket]) {
+    _renderSectorsList(_sectorsCache[_sectorsMarket]);
+  } else {
+    loadSectors(false);
+  }
+}
+
+async function loadSectors(force) {
+  const listEl = document.getElementById('sectorsList');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="pf-loading">불러오는 중...</div>';
+  try {
+    const qs = `?market=${_sectorsMarket}` + (force ? '&force=1' : '');
+    const r = await fetch('/api/sectors/strength' + qs);
+    const data = await r.json();
+    const sectors = data.sectors || [];
+    _sectorsCache[_sectorsMarket] = sectors;
+    _renderSectorsList(sectors);
+  } catch (e) {
+    listEl.innerHTML = `<div class="pf-empty">데이터를 가져올 수 없습니다: ${e.message || e}</div>`;
+  }
+}
+
+function _renderSectorsList(sectors) {
+  const listEl   = document.getElementById('sectorsList');
+  const footerEl = document.getElementById('sectorsFooter');
+  if (!listEl) return;
+  if (!sectors.length) {
+    listEl.innerHTML = '<div class="pf-empty">데이터가 없습니다</div>';
+    if (footerEl) footerEl.classList.add('hidden');
+    return;
+  }
+  const limit = _sectorsExpanded ? sectors.length : Math.min(20, sectors.length);
+  const visible = sectors.slice(0, limit);
+  const isKR = _sectorsMarket === 'KR';
+  listEl.innerHTML = visible.map((s, i) => _sectorCardHTML(s, i, isKR)).join('');
+  if (sectors.length > 20 && footerEl) {
+    footerEl.classList.remove('hidden');
+    footerEl.innerHTML = _sectorsExpanded
+      ? `접기 ▲`
+      : `더 보기 ▼ (${sectors.length - 20}개 더)`;
+    footerEl.onclick = () => { _sectorsExpanded = !_sectorsExpanded; _renderSectorsList(sectors); };
+  } else if (footerEl) {
+    footerEl.classList.add('hidden');
+  }
+}
+
+function _sectorCardHTML(s, idx, isKR) {
+  const scoreClass = s.score >= 0 ? 'up' : 'down';
+  const scoreSign  = s.score >= 0 ? '+' : '';
+  const _pct = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+  const _pctCls = (v) => v >= 0 ? 'up' : 'down';
+
+  if (isKR) {
+    const total = (s.up || 0) + (s.flat || 0) + (s.down || 0);
+    const leaders = (s.leaders || []).slice(0, 3).join(' · ');
+    return `
+      <div class="sector-card">
+        <div class="sector-rank">${idx + 1}</div>
+        <div class="sector-info">
+          <div class="sector-name"><a href="${s.url}" target="_blank" rel="noopener">${s.name}</a></div>
+          <div class="sector-meta">
+            ${total > 0 ? `<span class="sector-breadth">↑${s.up} -${s.flat} ↓${s.down}</span>` : ''}
+            ${leaders ? `<span class="sector-leaders">· ${leaders}</span>` : ''}
+          </div>
+        </div>
+        <div class="sector-stats">
+          <div class="sector-score ${scoreClass}">${scoreSign}${s.score.toFixed(1)}</div>
+          <div class="sector-chgs">
+            <span class="${_pctCls(s.change_1d)}">1D ${_pct(s.change_1d)}</span>
+            <span class="${_pctCls(s.change_3d)}">3D ${_pct(s.change_3d)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  // US
+  return `
+    <div class="sector-card" onclick="searchAndAnalyze('${s.ticker}')">
+      <div class="sector-rank">${idx + 1}</div>
+      <div class="sector-info">
+        <div class="sector-name">${s.name}</div>
+        <div class="sector-meta">${s.ticker} · 거래량 ×${s.vol_ratio.toFixed(2)}</div>
+      </div>
+      <div class="sector-stats">
+        <div class="sector-score ${scoreClass}">${scoreSign}${s.score.toFixed(1)}</div>
+        <div class="sector-chgs">
+          <span class="${_pctCls(s.change_1d)}">1D ${_pct(s.change_1d)}</span>
+          <span class="${_pctCls(s.change_1w)}">1W ${_pct(s.change_1w)}</span>
+          <span class="${_pctCls(s.change_1m)}">1M ${_pct(s.change_1m)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// 카드 클릭 → 검색창에 티커 넣고 분석
+function searchAndAnalyze(ticker) {
+  const input = document.getElementById('tickerInput');
+  if (input) { input.value = ticker; }
+  if (typeof analyze === 'function') analyze();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}

@@ -258,6 +258,209 @@ def fetch_naver_realtime_price(krx_code: str):
         return None
 
 
+# ── 섹터/테마 강도 (Sector Strength) ───────────────────────────
+US_SECTOR_ETFS = [
+    ("XLK",  "기술 (Technology)"),
+    ("XLC",  "통신 서비스"),
+    ("XLY",  "임의 소비재"),
+    ("XLP",  "필수 소비재"),
+    ("XLF",  "금융"),
+    ("XLV",  "헬스케어"),
+    ("XLI",  "산업재"),
+    ("XLE",  "에너지"),
+    ("XLB",  "소재"),
+    ("XLU",  "유틸리티"),
+    ("XLRE", "부동산"),
+]
+
+_SECTOR_CACHE = {}
+_SECTOR_TTL = 300  # 5분
+
+
+def _fetch_us_sector_strength():
+    """미국 11개 SPDR 섹터 ETF 강도 점수."""
+    import math
+    now_ts = time.time()
+    cached = _SECTOR_CACHE.get("US")
+    if cached and (now_ts - cached[0]) < _SECTOR_TTL:
+        return cached[1]
+
+    results = []
+    try:
+        tickers = [t for t, _ in US_SECTOR_ETFS]
+        data = yf.download(
+            " ".join(tickers),
+            period="3mo", interval="1d",
+            group_by="ticker", progress=False, threads=True, auto_adjust=False,
+        )
+    except Exception as e:
+        app.logger.warning(f"[sector US] download failed: {e}")
+        return []
+
+    for ticker, name in US_SECTOR_ETFS:
+        try:
+            try:
+                df = data[ticker]
+            except (KeyError, TypeError):
+                continue
+            df = df.dropna(subset=["Close"])
+            if df.empty or len(df) < 22:
+                continue
+            close = df["Close"]; vol = df["Volume"]
+            cur = float(close.iloc[-1])
+            chg_1d = (cur / float(close.iloc[-2])  - 1) * 100 if len(close) >= 2  else 0.0
+            chg_1w = (cur / float(close.iloc[-6])  - 1) * 100 if len(close) >= 6  else 0.0
+            chg_1m = (cur / float(close.iloc[-22]) - 1) * 100 if len(close) >= 22 else 0.0
+            avg_vol = float(vol.tail(20).mean()) or 1.0
+            vol_ratio = float(vol.iloc[-1]) / avg_vol if avg_vol else 1.0
+            # 강도 점수: 모멘텀 가중 + 거래량 로그 보정
+            score = (0.3 * chg_1d + 0.4 * chg_1w + 0.3 * chg_1m
+                     + math.log(max(vol_ratio, 0.1)) * 3.0)
+            results.append({
+                "ticker":    ticker,
+                "name":      name,
+                "price":     round(cur, 2),
+                "change_1d": round(chg_1d, 2),
+                "change_1w": round(chg_1w, 2),
+                "change_1m": round(chg_1m, 2),
+                "vol_ratio": round(vol_ratio, 2),
+                "score":     round(score, 2),
+            })
+        except Exception as e:
+            app.logger.warning(f"[sector US] {ticker}: {e}")
+            continue
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    _SECTOR_CACHE["US"] = (now_ts, results)
+    return results
+
+
+def _fetch_kr_theme_strength():
+    """네이버 금융 테마 페이지(6페이지) 스크래핑 → 한국 테마 강도."""
+    from bs4 import BeautifulSoup
+    now_ts = time.time()
+    cached = _SECTOR_CACHE.get("KR")
+    if cached and (now_ts - cached[0]) < _SECTOR_TTL:
+        return cached[1]
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://finance.naver.com/sise/theme.naver",
+    }
+    results = []
+    seen_names = set()
+
+    def _parse_num(text):
+        if not text: return None
+        t = text.strip().replace(",", "").replace("+", "").replace("%", "")
+        if not t or t == "-": return None
+        try: return float(t)
+        except ValueError: return None
+
+    for page in range(1, 7):  # ~200개
+        try:
+            url = f"https://finance.naver.com/sise/theme.naver?&page={page}"
+            r = requests.get(url, headers=headers, timeout=8)
+            if r.status_code != 200:
+                continue
+            # 네이버는 EUC-KR
+            try:
+                html = r.content.decode("euc-kr", errors="replace")
+            except Exception:
+                html = r.text
+            soup = BeautifulSoup(html, "html.parser")
+            # 테마 테이블 — class type_1 theme
+            table = soup.find("table", class_=lambda c: c and "type_1" in c)
+            if not table:
+                continue
+            for tr in table.find_all("tr"):
+                tds = tr.find_all("td")
+                if len(tds) < 7:
+                    continue
+                name_a = tds[0].find("a")
+                if not name_a:
+                    continue
+                theme_name = name_a.get_text(strip=True)
+                if not theme_name or theme_name in seen_names:
+                    continue
+                href = name_a.get("href", "")
+                theme_url = "https://finance.naver.com" + href if href.startswith("/") else href
+                # 컬럼: [0]테마명 [1]전일대비 [2]최근3일 [3]전일대비등락그래프?
+                # 실제 네이버 구조: [0]테마명 [1]전일대비 [2]최근3일등락률 [3]전일대비등락그래프
+                #                  [4]상승 [5]보합 [6]하락 [7]주도주
+                chg_1d = _parse_num(tds[1].get_text(strip=True))
+                chg_3d = _parse_num(tds[2].get_text(strip=True))
+                # 일부 페이지에서 컬럼 위치가 다를 수 있어 안전하게
+                up = flat = down = None
+                # 마지막 직전 세 컬럼이 상승/보합/하락
+                if len(tds) >= 7:
+                    up   = _parse_num(tds[-4].get_text(strip=True)) if len(tds) >= 8 else _parse_num(tds[4].get_text(strip=True))
+                    flat = _parse_num(tds[-3].get_text(strip=True)) if len(tds) >= 8 else _parse_num(tds[5].get_text(strip=True))
+                    down = _parse_num(tds[-2].get_text(strip=True)) if len(tds) >= 8 else _parse_num(tds[6].get_text(strip=True))
+                if chg_1d is None:
+                    continue
+                if chg_3d is None: chg_3d = chg_1d
+                up   = int(up)   if up   is not None else 0
+                flat = int(flat) if flat is not None else 0
+                down = int(down) if down is not None else 0
+                total = max(up + flat + down, 1)
+                breadth = (up - down) / total * 100  # -100 ~ +100
+                # 강도 점수: 모멘텀 가중 + 폭(breadth) 보정
+                score = 0.45 * chg_1d + 0.35 * chg_3d + 0.20 * (breadth * 0.5)
+                # 주도주(있으면)
+                leaders = []
+                if len(tds) >= 8:
+                    leader_cell = tds[-1]
+                    for a in leader_cell.find_all("a")[:3]:
+                        nm = a.get_text(strip=True)
+                        if nm:
+                            leaders.append(nm)
+                seen_names.add(theme_name)
+                results.append({
+                    "name":      theme_name,
+                    "url":       theme_url,
+                    "change_1d": round(chg_1d, 2),
+                    "change_3d": round(chg_3d, 2),
+                    "up":        up,
+                    "flat":      flat,
+                    "down":      down,
+                    "breadth":   round(breadth, 1),
+                    "leaders":   leaders,
+                    "score":     round(score, 2),
+                })
+        except Exception as e:
+            app.logger.warning(f"[sector KR] page {page}: {e}")
+            continue
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    _SECTOR_CACHE["KR"] = (now_ts, results)
+    return results
+
+
+@app.route("/api/sectors/strength", methods=["GET"])
+def sectors_strength():
+    """섹터(미국 ETF) / 테마(한국 네이버) 강도 점수 랭킹."""
+    market = (request.args.get("market") or "US").upper()
+    force  = request.args.get("force") == "1"
+    if force:
+        _SECTOR_CACHE.pop(market, None)
+    if market == "KR":
+        data = _fetch_kr_theme_strength()
+    else:
+        data = _fetch_us_sector_strength()
+        market = "US"
+    return jsonify({
+        "market": market,
+        "sectors": data,
+        "count": len(data),
+        "fetched_at": datetime.utcnow().isoformat() + "Z",
+    })
+
+
 def fetch_naver_fundamentals(krx_code):
     """
     네이버 금융 API로 한국 주식 EPS/BPS를 가져옵니다.

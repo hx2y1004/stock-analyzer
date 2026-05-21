@@ -58,6 +58,7 @@
       <!-- 탭 토글 (추세 상승 감지 먼저 + 기본 활성) -->
       <div class="pf-tabs" role="tablist">
         <button class="pf-tab active" data-tab="trends" onclick="switchPfTab('trends')">📈 추세 상승 감지</button>
+        <button class="pf-tab" data-tab="sectors" onclick="switchPfTab('sectors')">🔥 섹터 강도</button>
         <button class="pf-tab" data-tab="portfolio" onclick="switchPfTab('portfolio')">📂 내 포트폴리오</button>
       </div>
 
@@ -84,6 +85,27 @@
           <div class="pf-empty">아직 스캔 결과가 없습니다. 위 <strong>"🔍 스캔"</strong> 버튼을 눌러주세요.</div>
         </div>
         <div id="trendsFooter" class="pf-more-footer hidden"></div>
+      </div>
+
+      <!-- 섹터 강도 탭 -->
+      <div id="pfTabSectors" class="pf-tab-panel hidden">
+        <div class="portfolio-top">
+          <div class="trends-market-toggle" id="sectorsMarketToggle">
+            <button class="market-btn active" data-market="US" onclick="selectSectorsMarket(this)">🇺🇸 미국 섹터</button>
+            <button class="market-btn"        data-market="KR" onclick="selectSectorsMarket(this)">🇰🇷 한국 테마</button>
+          </div>
+          <button id="sectorsRefreshBtn" class="pf-add-btn" onclick="loadSectors(true)">🔄 새로고침</button>
+        </div>
+        <div id="sectorsCriteria" class="trends-criteria-box">
+          <span class="criteria-label">📋 강도 점수:</span>
+          <span class="criteria-text" id="sectorsCriteriaText">
+            <strong>1D × 0.3</strong> + <strong>1W × 0.4</strong> + <strong>1M × 0.3</strong> + 거래량 로그 보정
+          </span>
+        </div>
+        <div id="sectorsList" class="sectors-list">
+          <div class="pf-loading">불러오는 중...</div>
+        </div>
+        <div id="sectorsFooter" class="pf-more-footer hidden"></div>
       </div>
 
       <!-- 포트폴리오 탭 -->
