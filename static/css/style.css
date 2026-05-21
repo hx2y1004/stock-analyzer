@@ -910,6 +910,181 @@ body {
   .ss-price { font-size: 11px; }
   .ss-chg { font-size: 12px; min-width: 56px; }
 }
+
+/* ── 펀더멘탈 스코어카드 ── */
+.scorecard-panel {
+  background: linear-gradient(135deg, rgba(88,166,255,0.04), rgba(63,185,80,0.04));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.sc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--border);
+}
+.sc-title { font-size: 16px; font-weight: 600; color: var(--text1); }
+.sc-overall {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.sc-overall-grade {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: 'Georgia', serif;
+  line-height: 1;
+}
+.sc-overall-score {
+  font-size: 14px;
+  color: var(--text2);
+  font-family: monospace;
+}
+.sc-overall-score small { font-size: 10px; opacity: 0.7; }
+
+/* 4팩터 그리드 */
+.sc-factors {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.sc-factor {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.sc-factor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.sc-factor-name { font-size: 12px; color: var(--text2); font-weight: 500; }
+.sc-grade {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: 'Georgia', serif;
+  line-height: 1;
+}
+.sc-factor-score {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text1);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.sc-factor-score small { font-size: 11px; color: var(--text2); opacity: 0.6; }
+.sc-factor-bar {
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sc-factor-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease-out;
+}
+
+/* 등급별 색상 */
+.sc-a .sc-grade, .sc-a .sc-overall-grade { color: #3fb950; }
+.sc-b .sc-grade, .sc-b .sc-overall-grade { color: #58a6ff; }
+.sc-c .sc-grade, .sc-c .sc-overall-grade { color: #d8a657; }
+.sc-d .sc-grade, .sc-d .sc-overall-grade { color: #ff8c42; }
+.sc-f .sc-grade, .sc-f .sc-overall-grade { color: #f85149; }
+.sc-na .sc-grade, .sc-na .sc-overall-grade { color: var(--text2); }
+.sc-a .sc-factor-fill { background: #3fb950; }
+.sc-b .sc-factor-fill { background: #58a6ff; }
+.sc-c .sc-factor-fill { background: #d8a657; }
+.sc-d .sc-factor-fill { background: #ff8c42; }
+.sc-f .sc-factor-fill { background: #f85149; }
+.sc-na .sc-factor-fill { background: var(--text2); }
+.sc-overall.sc-a { border-color: #3fb950; }
+.sc-overall.sc-b { border-color: #58a6ff; }
+.sc-overall.sc-c { border-color: #d8a657; }
+.sc-overall.sc-d { border-color: #ff8c42; }
+.sc-overall.sc-f { border-color: #f85149; }
+
+/* 지표 상세 (접이식) */
+.sc-details {
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+}
+.sc-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text2);
+  padding: 6px 0;
+  list-style: none;
+  user-select: none;
+}
+.sc-details summary:hover { color: var(--accent); }
+.sc-details summary::before {
+  content: '▶ ';
+  font-size: 9px;
+  display: inline-block;
+  transition: transform 0.2s;
+}
+.sc-details[open] summary::before { transform: rotate(90deg); }
+.sc-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 10px;
+}
+.sc-metric-section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.sc-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text1);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.sc-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 12px;
+  border-bottom: 1px dotted var(--border);
+}
+.sc-metric-row:last-child { border-bottom: none; }
+.sc-metric-row > span:first-child { color: var(--text2); }
+.sc-metric-row > span:last-child { color: var(--text1); font-family: monospace; font-weight: 600; }
+.sc-metric-row .good { color: #3fb950; }
+.sc-metric-row .bad  { color: #f85149; }
+.sc-metric-row .m-na { color: var(--text2); opacity: 0.6; font-weight: 400; }
+.sc-metric-row small { color: var(--text2); font-weight: 400; opacity: 0.8; font-family: monospace; }
+
+@media (max-width: 768px) {
+  .sc-factors { grid-template-columns: repeat(2, 1fr); }
+  .sc-metrics { grid-template-columns: 1fr; }
+  .sc-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .sc-overall { align-self: stretch; justify-content: space-between; }
+}
+@media (max-width: 480px) {
+  .sc-factor-score { font-size: 20px; }
+  .sc-grade { font-size: 16px; }
+  .sc-overall-grade { font-size: 24px; }
+}
 @keyframes live-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(248,81,73,0.7); }
   70%  { box-shadow: 0 0 0 8px rgba(248,81,73,0); }

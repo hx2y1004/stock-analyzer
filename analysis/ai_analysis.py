@@ -306,7 +306,7 @@ def _analyze_fundamental(df, info):
     return {"details": details, "score": score}
 
 
-def analyze_signals(df, info, df_weekly=None):
+def analyze_signals(df, info, df_weekly=None, stock=None):
     latest = df.iloc[-1]
     prev   = df.iloc[-2]
     signals = []
@@ -599,6 +599,15 @@ def analyze_signals(df, info, df_weekly=None):
     fund_details = fund["details"]
     fund_score   = fund["score"]
 
+    # ── 월가 스타일 고급 펀더멘탈 (10개 지표 + 4팩터 등급) ──
+    scorecard = None
+    if stock is not None:
+        try:
+            from analysis.advanced import compute_advanced_metrics
+            scorecard = compute_advanced_metrics(stock, info, df)
+        except Exception as _e:
+            scorecard = None
+
     # ── 종합 판단 (기술 + 펀더멘털 통합) ──────────────
     combined_score = max(-100, min(100, score + fund_score))
 
@@ -851,6 +860,7 @@ def analyze_signals(df, info, df_weekly=None):
         "signals": signals,
         "details": details,
         "fundamental_details": fund_details,
+        "scorecard": scorecard,  # 월가 스타일 4팩터 + 10개 지표
         "entry_price": entry_price,
         "entry_low":   entry_low,
         "entry_high":  entry_high,
