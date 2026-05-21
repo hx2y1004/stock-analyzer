@@ -336,21 +336,17 @@
         <div class="add-field">
           <label>매입가 <span id="addCurrencyLabel">(USD)</span></label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addPrice', -1)">−</button>
             <input id="addPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" placeholder="매입 평균가" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addPrice', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addPrice', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addPrice', 1)">+</button>
           </div>
         </div>
         <div class="add-field">
           <label>보유 수량</label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addQty', -1)">−</button>
             <input id="addQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" placeholder="보유 주수" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addQty', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addQty', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepAddNum('addQty', 1)">+</button>
           </div>
         </div>
         <button class="add-submit-btn" onclick="submitAddHolding()">추가하기</button>
@@ -370,21 +366,17 @@
         <div class="add-field">
           <label>매입 평균가 <span id="editCurrencyLabel">(USD)</span></label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editPrice', -1)">−</button>
             <input id="editPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editPrice', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editPrice', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editPrice', 1)">+</button>
           </div>
         </div>
         <div class="add-field">
           <label>보유 수량</label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editQty', -1)">−</button>
             <input id="editQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editQty', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editQty', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepEditNum('editQty', 1)">+</button>
           </div>
         </div>
         <button class="add-submit-btn" onclick="submitEditHolding()">저장</button>
@@ -425,21 +417,17 @@
         <div class="add-field">
           <label>매수가 <span id="paperBuyCurLabel">(USD)</span></label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyPrice', -1)">−</button>
             <input id="paperBuyPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyPrice', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyPrice', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyPrice', 1)">+</button>
           </div>
         </div>
         <div class="add-field">
           <label>수량</label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyQty', -1)">−</button>
             <input id="paperBuyQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyQty', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyQty', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyQty', 1)">+</button>
           </div>
         </div>
         <div class="trade-summary" id="paperBuySummary"></div>
@@ -460,21 +448,17 @@
         <div class="add-field">
           <label>매도가 <span id="paperSellCurLabel">(USD)</span></label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellPrice', -1)">−</button>
             <input id="paperSellPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellPrice', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellPrice', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellPrice', 1)">+</button>
           </div>
         </div>
         <div class="add-field">
           <label>수량 (최대 <span id="paperSellMaxQty">0</span>주)</label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellQty', -1)">−</button>
             <input id="paperSellQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellQty', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellQty', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellQty', 1)">+</button>
           </div>
           <button type="button" class="sell-max-btn" onclick="setPaperSellMax()">전량 매도</button>
         </div>
