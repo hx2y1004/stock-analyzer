@@ -1392,6 +1392,34 @@ function renderDetail(details) {
   document.getElementById('detailList').innerHTML = _buildCards(details);
 }
 
+// ── 지표 설명 (툴팁) ──────────────────────────────────────
+const _SC_HELP = {
+  // Quality
+  fcf_margin:   '매출 100원 중 실제 현금으로 남는 비율. EPS는 회계 조작 가능하지만 FCF는 어려워서 \'진짜\' 수익성 지표.\n👍 15% 이상 우수',
+  fcf_yield:    '시가총액 대비 연간 잉여현금흐름. 채권 수익률처럼 비교 가능 — 높을수록 저평가.\n👍 5% 이상 매력적',
+  op_margin:    '본업으로 100원 팔아 영업단계에서 남기는 돈. 사업 모델의 효율성.\n👍 15% 이상 우수',
+  gross_margin: '원가 빼고 남는 비율. 브랜드 파워·가격 결정력의 핵심 지표.\n👍 30% 이상 우수',
+  f_score:      'Piotroski F-Score: 재무 9개 시그널(수익성·부채·효율) 종합. Joseph Piotroski 교수 개발.\n👍 7~9 우량 / 👎 0~2 위험',
+  net_debt:     '순부채 ÷ EBITDA. 영업이익으로 부채를 갚는 데 걸리는 년수.\n👍 2배 이하 안전 / 👎 4배 초과 위험',
+  // Value
+  peg:          'PER ÷ EPS 성장률. Peter Lynch 명저. 성장률 대비 비싼지 판단.\n👍 1 미만 저평가 / 👎 2 초과 고평가',
+  ev_ebitda:    'EV(부채 포함) ÷ EBITDA. M&A·LBO 관점의 진짜 기업가치. PER이 부채를 무시하는 한계 보완.\n👍 12 이하 매력 / 👎 25 초과 비쌈',
+  // Growth
+  op_yoy:       '영업이익률 작년 대비 변화(percentage points). +면 경쟁력 강화 / −면 약화.\n👍 +1pp 이상 우수',
+  gm_yoy:       '매출총이익률 작년 대비 변화. 가격 결정력 변화 — Buffett이 가장 좋아하는 추세 지표.\n👍 +1pp 이상 우수',
+  // Momentum & Signals
+  eps_rev:      '최근 30일 애널리스트 EPS 추정치 상향/하향 비율. 헤지펀드 단골 모멘텀 시그널.\n👍 +20% 이상 강세',
+  short_float:  '유동주식 중 공매도 비율. 10%+면 베어 컨센서스 강하거나 숏 스퀴즈 가능성.\n⚠️ 10%+ 주의',
+  insider:      '최근 6개월 내부자(CEO/CFO 등) 매수 - 매도 건수. CEO 매수는 가장 강력한 매수 신호.\n👍 +5건 이상 강세\n⚠️ 한국 종목/ETF는 데이터 미수집',
+  shareholder:  '배당 + 자사주 매입을 시총으로 나눈 값. 주주에게 돌려주는 총 환원율.\n👍 4% 이상 우수',
+};
+
+// 인포 아이콘 HTML (title 속성으로 네이티브 툴팁)
+const _helpIcon = (key) => {
+  const text = _SC_HELP[key] || '';
+  return text ? `<span class="m-help" title="${text}" aria-label="${text}">ⓘ</span>` : '';
+};
+
 // ── 월가 스타일 펀더멘탈 스코어카드 (4팩터 + 10지표) ────────
 function renderScorecard(sc, stock) {
   const panel = document.getElementById('scorecardPanel');
@@ -1402,6 +1430,7 @@ function renderScorecard(sc, stock) {
   }
   panel.classList.remove('hidden');
   const F = sc.factors, M = sc.metrics;
+  const isKR = stock && stock.currency === 'KRW';
 
   // 등급별 색상 클래스
   const gradeClass = (g) => {
@@ -1412,13 +1441,20 @@ function renderScorecard(sc, stock) {
     if (g.startsWith('D')) return 'd';
     return 'f';
   };
+  const _FACTOR_DESC = {
+    Quality:  '돈을 얼마나 잘 버는 사업인가\n(수익성·재무 건전성)',
+    Value:    '주가가 적정한가\n(밸류에이션 매력도)',
+    Growth:   '성장이 가속화되고 있는가\n(매출/이익/마진 추세)',
+    Momentum: '시장이 좋아하기 시작했는가\n(가격·실적 추정치 상향)',
+  };
   const factorCard = (label, emoji, f) => {
     const cls = gradeClass(f.grade);
     const score = (f.score != null) ? f.score.toFixed(0) : '—';
+    const desc = _FACTOR_DESC[label] || '';
     return `
-      <div class="sc-factor sc-${cls}">
+      <div class="sc-factor sc-${cls}" title="${desc}">
         <div class="sc-factor-head">
-          <span class="sc-factor-name">${emoji} ${label}</span>
+          <span class="sc-factor-name">${emoji} ${label} <span class="m-help-inline">ⓘ</span></span>
           <span class="sc-grade">${f.grade}</span>
         </div>
         <div class="sc-factor-score">${score}<small>/100</small></div>
@@ -1443,45 +1479,58 @@ function renderScorecard(sc, stock) {
   const rev = M.eps_revision || {};
   const ins = M.insider || {};
 
+  // 한국 종목 안내 문구 (내부자 매매·Short Interest 데이터 한계)
+  const krNotice = isKR ? `
+    <div class="sc-kr-notice">
+      ⓘ 한국 종목은 <strong>내부자 매매</strong>·<strong>Short %</strong>·<strong>F-Score</strong> 데이터가
+      yfinance로 제공되지 않을 수 있어 일부 지표가 비어있을 수 있습니다.
+    </div>` : '';
+
   const metricsHTML = `
     <div class="sc-metrics">
       <div class="sc-metric-section">
-        <div class="sc-section-title">💎 Quality</div>
-        <div class="sc-metric-row"><span>FCF Margin</span><span class="${_gradeFmt(M.fcf_margin, 15, 0)}">${_fmt(M.fcf_margin, '%')}</span></div>
-        <div class="sc-metric-row"><span>FCF Yield</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
-        <div class="sc-metric-row"><span>영업이익률</span><span class="${_gradeFmt(M.operating_margin, 15, 0)}">${_fmt(M.operating_margin, '%')}</span></div>
-        <div class="sc-metric-row"><span>매출총이익률</span><span class="${_gradeFmt(M.gross_margin, 30, 0)}">${_fmt(M.gross_margin, '%')}</span></div>
-        <div class="sc-metric-row"><span>Piotroski F-Score</span><span class="${_gradeFmt(M.f_score, 7, 3)}">${M.f_score != null ? M.f_score + '/9' : '<span class="m-na">—</span>'}</span></div>
-        <div class="sc-metric-row"><span>Net Debt / EBITDA</span><span class="${M.net_debt_to_ebitda != null ? (M.net_debt_to_ebitda < 2 ? 'good' : (M.net_debt_to_ebitda > 4 ? 'bad' : '')) : ''}">${_fmt(M.net_debt_to_ebitda, 'x')}</span></div>
+        <div class="sc-section-title">💎 Quality <small>품질 — 진짜 수익성</small></div>
+        <div class="sc-metric-row"><span>FCF Margin ${_helpIcon('fcf_margin')}</span><span class="${_gradeFmt(M.fcf_margin, 15, 0)}">${_fmt(M.fcf_margin, '%')}</span></div>
+        <div class="sc-metric-row"><span>FCF Yield ${_helpIcon('fcf_yield')}</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
+        <div class="sc-metric-row"><span>영업이익률 ${_helpIcon('op_margin')}</span><span class="${_gradeFmt(M.operating_margin, 15, 0)}">${_fmt(M.operating_margin, '%')}</span></div>
+        <div class="sc-metric-row"><span>매출총이익률 ${_helpIcon('gross_margin')}</span><span class="${_gradeFmt(M.gross_margin, 30, 0)}">${_fmt(M.gross_margin, '%')}</span></div>
+        <div class="sc-metric-row"><span>Piotroski F-Score ${_helpIcon('f_score')}</span><span class="${_gradeFmt(M.f_score, 7, 3)}">${M.f_score != null ? M.f_score + '/9' : '<span class="m-na">—</span>'}</span></div>
+        <div class="sc-metric-row"><span>Net Debt / EBITDA ${_helpIcon('net_debt')}</span><span class="${M.net_debt_to_ebitda != null ? (M.net_debt_to_ebitda < 2 ? 'good' : (M.net_debt_to_ebitda > 4 ? 'bad' : '')) : ''}">${_fmt(M.net_debt_to_ebitda, 'x')}</span></div>
       </div>
 
       <div class="sc-metric-section">
-        <div class="sc-section-title">💰 Value</div>
-        <div class="sc-metric-row"><span>PEG Ratio</span><span class="${M.peg != null ? (M.peg < 1 ? 'good' : (M.peg > 2 ? 'bad' : '')) : ''}">${_fmt(M.peg, 'x')}</span></div>
-        <div class="sc-metric-row"><span>EV / EBITDA</span><span class="${M.ev_ebitda != null ? (M.ev_ebitda < 12 ? 'good' : (M.ev_ebitda > 25 ? 'bad' : '')) : ''}">${_fmt(M.ev_ebitda, 'x')}</span></div>
-        <div class="sc-metric-row"><span>FCF Yield</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
+        <div class="sc-section-title">💰 Value <small>밸류에이션 — 비싼가/싼가</small></div>
+        <div class="sc-metric-row"><span>PEG Ratio ${_helpIcon('peg')}</span><span class="${M.peg != null ? (M.peg < 1 ? 'good' : (M.peg > 2 ? 'bad' : '')) : ''}">${_fmt(M.peg, 'x')}</span></div>
+        <div class="sc-metric-row"><span>EV / EBITDA ${_helpIcon('ev_ebitda')}</span><span class="${M.ev_ebitda != null ? (M.ev_ebitda < 12 ? 'good' : (M.ev_ebitda > 25 ? 'bad' : '')) : ''}">${_fmt(M.ev_ebitda, 'x')}</span></div>
+        <div class="sc-metric-row"><span>FCF Yield ${_helpIcon('fcf_yield')}</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
       </div>
 
       <div class="sc-metric-section">
-        <div class="sc-section-title">📈 Growth</div>
-        <div class="sc-metric-row"><span>마진 추세 (영업 YoY)</span><span class="${_signClass(M.operating_margin_yoy)}">${_fmt(M.operating_margin_yoy, 'pp')}</span></div>
-        <div class="sc-metric-row"><span>마진 추세 (매출총 YoY)</span><span class="${_signClass(M.gross_margin_yoy)}">${_fmt(M.gross_margin_yoy, 'pp')}</span></div>
+        <div class="sc-section-title">📈 Growth <small>성장 — 마진 추세</small></div>
+        <div class="sc-metric-row"><span>마진 추세 (영업 YoY) ${_helpIcon('op_yoy')}</span><span class="${_signClass(M.operating_margin_yoy)}">${_fmt(M.operating_margin_yoy, 'pp')}</span></div>
+        <div class="sc-metric-row"><span>마진 추세 (매출총 YoY) ${_helpIcon('gm_yoy')}</span><span class="${_signClass(M.gross_margin_yoy)}">${_fmt(M.gross_margin_yoy, 'pp')}</span></div>
       </div>
 
       <div class="sc-metric-section">
-        <div class="sc-section-title">⚡ Momentum & Signals</div>
-        <div class="sc-metric-row"><span>EPS Revision (30일)</span><span class="${_signClass(rev.score_pct)}">${rev.score_pct != null ? ((rev.score_pct>=0?'+':'') + rev.score_pct + '%') : '<span class="m-na">—</span>'}${rev.up_30d != null ? ` <small>(↑${rev.up_30d} ↓${rev.down_30d})</small>` : ''}</span></div>
-        <div class="sc-metric-row"><span>Short % of Float</span><span class="${M.short_pct_of_float != null ? (M.short_pct_of_float > 10 ? 'bad' : '') : ''}">${_fmt(M.short_pct_of_float, '%')}</span></div>
-        <div class="sc-metric-row"><span>내부자 매매 (6M)</span><span class="${ins.net > 0 ? 'good' : (ins.net < 0 ? 'bad' : '')}">${ins.net != null ? `${ins.net >= 0 ? '+' : ''}${ins.net}건 <small>(↑${ins.buys} ↓${ins.sells})</small>` : '<span class="m-na">—</span>'}</span></div>
-        <div class="sc-metric-row"><span>주주환원 수익률</span><span class="${_gradeFmt(M.shareholder_yield_pct, 4, 0)}">${_fmt(M.shareholder_yield_pct, '%')}${M.buyback_yield_pct != null ? ` <small>(배당 ${(M.dividend_yield_pct||0).toFixed(1)}+자사주 ${M.buyback_yield_pct.toFixed(1)})</small>` : ''}</span></div>
+        <div class="sc-section-title">⚡ Momentum & Signals <small>수급 시그널</small></div>
+        <div class="sc-metric-row"><span>EPS Revision (30일) ${_helpIcon('eps_rev')}</span><span class="${_signClass(rev.score_pct)}">${rev.score_pct != null ? ((rev.score_pct>=0?'+':'') + rev.score_pct + '%') : '<span class="m-na">—</span>'}${rev.up_30d != null ? ` <small>(↑${rev.up_30d} ↓${rev.down_30d})</small>` : ''}</span></div>
+        <div class="sc-metric-row"><span>Short % of Float ${_helpIcon('short_float')}</span><span class="${M.short_pct_of_float != null ? (M.short_pct_of_float > 10 ? 'bad' : '') : ''}">${_fmt(M.short_pct_of_float, '%')}</span></div>
+        <div class="sc-metric-row"><span>내부자 매매 (6M) ${_helpIcon('insider')}</span><span class="${ins.net > 0 ? 'good' : (ins.net < 0 ? 'bad' : '')}">${ins.net != null ? `${ins.net >= 0 ? '+' : ''}${ins.net}건 <small>(↑${ins.buys} ↓${ins.sells})</small>` : '<span class="m-na">—</span>'}</span></div>
+        <div class="sc-metric-row"><span>주주환원 수익률 ${_helpIcon('shareholder')}</span><span class="${_gradeFmt(M.shareholder_yield_pct, 4, 0)}">${_fmt(M.shareholder_yield_pct, '%')}${M.buyback_yield_pct != null ? ` <small>(배당 ${(M.dividend_yield_pct||0).toFixed(1)}+자사주 ${M.buyback_yield_pct.toFixed(1)})</small>` : ''}</span></div>
       </div>
     </div>
+    ${krNotice}
   `;
+
+  const _gradeHelp = 'A+ ~ A: 우수 (매수 관점)\nB+ ~ B: 양호 (적정 수준)\nC+ ~ C: 보통 (다른 시그널 확인 필요)\nD ~ F: 주의/위험 (펀더멘탈 약함)\n\n각 팩터 점수는 0~100, 등급은 그 점수의 변환입니다.';
 
   panel.innerHTML = `
     <div class="sc-header">
-      <div class="sc-title">📊 펀더멘탈 스코어카드</div>
-      <div class="sc-overall sc-${ovCls}">
+      <div>
+        <div class="sc-title">📊 펀더멘탈 스코어카드 <span class="m-help-inline" title="${_gradeHelp}">ⓘ</span></div>
+        <div class="sc-subtitle">월가 표준 4팩터 (Quality · Value · Growth · Momentum) 종합 등급</div>
+      </div>
+      <div class="sc-overall sc-${ovCls}" title="${_gradeHelp}">
         <div class="sc-overall-grade">${ovGrade}</div>
         <div class="sc-overall-score">${ovScore}<small>/100</small></div>
       </div>
@@ -1493,7 +1542,7 @@ function renderScorecard(sc, stock) {
       ${factorCard('Momentum', '⚡', F.momentum)}
     </div>
     <details class="sc-details">
-      <summary>📋 10개 지표 상세 보기</summary>
+      <summary>📋 10개 지표 상세 보기 <small>(각 지표 옆 ⓘ 마우스 올리면 설명)</small></summary>
       ${metricsHTML}
     </details>
   `;
