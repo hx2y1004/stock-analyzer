@@ -958,6 +958,30 @@ body {
 }
 .sc-kr-notice strong { color: #d8a657; font-weight: 600; }
 
+/* 한국 시장 시그널 섹션 강조 */
+.sc-kr-section {
+  grid-column: 1 / -1;  /* 전체 너비 차지 */
+  background: linear-gradient(135deg, rgba(0,82,165,0.08), rgba(205,46,45,0.04));
+  border-color: rgba(0,82,165,0.3);
+}
+.sc-kr-section .sc-section-title { color: #4a90e2; }
+
+/* DART 링크 */
+.sc-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.sc-link:hover { opacity: 0.8; }
+.sc-dart-link {
+  background: rgba(88,166,255,0.06);
+  margin: 4px -4px 0;
+  padding: 6px 8px !important;
+  border-radius: 6px;
+  border-bottom: none !important;
+}
+
 /* 카테고리 설명 부제목 */
 .sc-section-title small {
   font-weight: 400;

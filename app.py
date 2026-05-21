@@ -258,6 +258,187 @@ def fetch_naver_realtime_price(krx_code: str):
         return None
 
 
+# ── 한국 종목 보충 데이터: 공매도 / 외국인·기관 수급 ─────────────
+_KR_SUPPLEMENT_CACHE = {}
+_KR_SUPPLEMENT_TTL = 1800  # 30분 (일별 데이터라 자주 변경 안 됨)
+
+
+def _naver_request(url):
+    """네이버 모바일/PC 페이지 GET — 인코딩 처리 포함."""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://finance.naver.com/",
+    }
+    r = requests.get(url, headers=headers, timeout=8)
+    if r.status_code != 200:
+        return None
+    # 인코딩 자동 감지
+    for enc in ("euc-kr", "cp949", "utf-8"):
+        try:
+            return r.content.decode(enc, errors="strict")
+        except UnicodeDecodeError:
+            continue
+    return r.content.decode("euc-kr", errors="replace")
+
+
+def fetch_kr_short_interest(krx_code: str):
+    """네이버 일별 공매도 → 최근일 공매도 비율 + 5일 평균.
+
+    URL: https://finance.naver.com/item/dailyShort.naver?code=005930
+    컬럼: 날짜 | 공매도거래량 | 거래량 | 공매도비중(%) | 공매도잔고(주) | 공매도잔고비중(%)
+
+    Returns: dict {date, short_ratio_pct, short_balance_pct, short_5d_avg_pct} 또는 None
+    """
+    if not krx_code:
+        return None
+    try:
+        from bs4 import BeautifulSoup
+        url = f"https://finance.naver.com/item/dailyShort.naver?code={krx_code}"
+        html = _naver_request(url)
+        if not html:
+            return None
+        soup = BeautifulSoup(html, "html.parser")
+
+        def _num(s):
+            if not s: return None
+            t = s.strip().replace(",", "").replace("+", "").replace("%", "")
+            if not t or t == "-": return None
+            try: return float(t)
+            except ValueError: return None
+
+        # 데이터 테이블: rows 안에 첫번째 셀이 날짜 형식인 것
+        rows = []
+        for tr in soup.find_all("tr"):
+            tds = tr.find_all("td")
+            if len(tds) < 5:
+                continue
+            date_txt = tds[0].get_text(strip=True)
+            if not re.match(r"^\d{4}\.\d{2}\.\d{2}$", date_txt):
+                continue
+            short_qty   = _num(tds[1].get_text(strip=True))
+            total_qty   = _num(tds[2].get_text(strip=True))
+            short_ratio = _num(tds[3].get_text(strip=True))
+            bal_qty     = _num(tds[4].get_text(strip=True)) if len(tds) > 4 else None
+            bal_pct     = _num(tds[5].get_text(strip=True)) if len(tds) > 5 else None
+            rows.append({
+                "date": date_txt,
+                "short_ratio": short_ratio,
+                "balance_pct": bal_pct,
+            })
+            if len(rows) >= 10:
+                break
+
+        if not rows:
+            return None
+
+        latest = rows[0]
+        five = [r["short_ratio"] for r in rows[:5] if r["short_ratio"] is not None]
+        five_avg = round(sum(five) / len(five), 2) if five else None
+
+        return {
+            "date":              latest["date"],
+            "short_ratio_pct":   latest["short_ratio"],
+            "short_balance_pct": latest["balance_pct"],
+            "short_5d_avg_pct":  five_avg,
+        }
+    except Exception as e:
+        try: app.logger.warning(f"[kr-short] {krx_code}: {e}")
+        except Exception: pass
+        return None
+
+
+def fetch_kr_supply_demand(krx_code: str):
+    """네이버 외국인/기관 → 외국인 보유율 + 최근 5일 순매수.
+
+    URL: https://finance.naver.com/item/frgn.naver?code=005930
+    컬럼: 날짜 | 종가 | 전일비 | 등락률 | 거래량 | 기관순매매 | 외국인순매매 | 보유주식수 | 보유율
+
+    Returns: dict {foreign_ratio_pct, foreign_net_5d, inst_net_5d, latest_date}
+    """
+    if not krx_code:
+        return None
+    try:
+        from bs4 import BeautifulSoup
+        url = f"https://finance.naver.com/item/frgn.naver?code={krx_code}"
+        html = _naver_request(url)
+        if not html:
+            return None
+        soup = BeautifulSoup(html, "html.parser")
+
+        def _num(s):
+            if not s: return None
+            t = s.strip().replace(",", "").replace("+", "").replace("%", "")
+            if not t or t == "-": return None
+            try: return float(t)
+            except ValueError: return None
+
+        rows = []
+        for tr in soup.find_all("tr"):
+            tds = tr.find_all("td")
+            if len(tds) < 9:
+                continue
+            date_txt = tds[0].get_text(strip=True)
+            if not re.match(r"^\d{4}\.\d{2}\.\d{2}$", date_txt):
+                continue
+            # 부호 보정: 빨강(상승=매수) 또는 파랑(하락=매도)
+            def _signed(td):
+                v = _num(td.get_text(strip=True))
+                if v is None:
+                    return None
+                cls = " ".join(td.get("class", []))
+                if "nv01" in cls or "down" in cls:
+                    return -v
+                return v
+            inst_net    = _signed(tds[5])
+            foreign_net = _signed(tds[6])
+            foreign_pct = _num(tds[8].get_text(strip=True))
+            rows.append({
+                "date": date_txt,
+                "inst_net": inst_net,
+                "foreign_net": foreign_net,
+                "foreign_pct": foreign_pct,
+            })
+            if len(rows) >= 5:
+                break
+
+        if not rows:
+            return None
+
+        inst_5d    = sum((r["inst_net"]    or 0) for r in rows[:5])
+        foreign_5d = sum((r["foreign_net"] or 0) for r in rows[:5])
+
+        return {
+            "latest_date":      rows[0]["date"],
+            "foreign_ratio_pct": rows[0]["foreign_pct"],
+            "foreign_net_5d":    int(foreign_5d) if foreign_5d else 0,
+            "inst_net_5d":       int(inst_5d) if inst_5d else 0,
+        }
+    except Exception as e:
+        try: app.logger.warning(f"[kr-supply] {krx_code}: {e}")
+        except Exception: pass
+        return None
+
+
+def fetch_kr_supplements(krx_code: str):
+    """한국 종목 보충 데이터(공매도/수급) 통합 — 30분 캐시."""
+    if not krx_code:
+        return None
+    now_ts = time.time()
+    cached = _KR_SUPPLEMENT_CACHE.get(krx_code)
+    if cached and (now_ts - cached[0]) < _KR_SUPPLEMENT_TTL:
+        return cached[1]
+    result = {
+        "short":  fetch_kr_short_interest(krx_code),
+        "supply": fetch_kr_supply_demand(krx_code),
+    }
+    _KR_SUPPLEMENT_CACHE[krx_code] = (now_ts, result)
+    return result
+
+
 # ── 섹터/테마 강도 (Sector Strength) ───────────────────────────
 US_SECTOR_ETFS = [
     ("XLK",  "기술 (Technology)"),
@@ -2355,6 +2536,37 @@ def analyze():
             df_weekly = None
 
         ai_result = analyze_signals(df, info, df_weekly=df_weekly, stock=stock)
+
+        # ── 한국 종목 보충: 공매도 + 외국인/기관 수급 ──────────────
+        if is_korean:
+            try:
+                krx_code_supp = ticker.split(".")[0]
+                kr_supp = fetch_kr_supplements(krx_code_supp)
+                sc = ai_result.get("scorecard") or {}
+                metrics = sc.get("metrics") if isinstance(sc, dict) else None
+                if metrics is None and sc is not None:
+                    sc["metrics"] = {}; metrics = sc["metrics"]
+                if metrics is not None and kr_supp:
+                    sh = kr_supp.get("short") or {}
+                    su = kr_supp.get("supply") or {}
+                    # 공매도 비율을 short_pct_of_float에 매핑 (UI 호환)
+                    if sh.get("short_ratio_pct") is not None:
+                        metrics["short_pct_of_float"]   = sh["short_ratio_pct"]
+                        metrics["kr_short_balance_pct"] = sh.get("short_balance_pct")
+                        metrics["kr_short_5d_avg_pct"]  = sh.get("short_5d_avg_pct")
+                        metrics["kr_short_date"]        = sh.get("date")
+                    # 외국인/기관 수급 (한국 전용)
+                    if su:
+                        metrics["kr_foreign_ratio_pct"] = su.get("foreign_ratio_pct")
+                        metrics["kr_foreign_net_5d"]    = su.get("foreign_net_5d")
+                        metrics["kr_inst_net_5d"]       = su.get("inst_net_5d")
+                        metrics["kr_supply_date"]       = su.get("latest_date")
+                    # DART 공시 직링크 (corp_code 없이 종목코드로 검색)
+                    metrics["kr_dart_url"] = (
+                        f"https://dart.fss.or.kr/dsab007/main.do?option=corp&textCrpNm={krx_code_supp}"
+                    )
+            except Exception as _e:
+                app.logger.warning(f"[kr-supplements] inject failed: {_e}")
 
         # 차트용 데이터
         chart_df = df.tail(chart_bars).copy()

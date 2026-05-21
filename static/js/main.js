@@ -1412,6 +1412,12 @@ const _SC_HELP = {
   short_float:  '유동주식 중 공매도 비율. 10%+면 베어 컨센서스 강하거나 숏 스퀴즈 가능성.\n⚠️ 10%+ 주의',
   insider:      '최근 6개월 내부자(CEO/CFO 등) 매수 - 매도 건수. CEO 매수는 가장 강력한 매수 신호.\n👍 +5건 이상 강세\n⚠️ 한국 종목/ETF는 데이터 미수집',
   shareholder:  '배당 + 자사주 매입을 시총으로 나눈 값. 주주에게 돌려주는 총 환원율.\n👍 4% 이상 우수',
+  // 한국 전용
+  kr_foreign:   '외국인이 들고있는 비율. 한국 시장은 외국인이 주가에 큰 영향.\n👍 30%+ = 우량주 신호 / 변화율이 더 중요',
+  kr_for_net:   '최근 5거래일 외국인 누적 순매수 주식수. 한국 증시에서 외국인 매매는 가장 강력한 단기 시그널.\n👍 + (사고있음) / 👎 − (팔고있음)',
+  kr_inst_net:  '최근 5거래일 기관 누적 순매수. 외국인+기관 둘 다 +면 가장 강한 매수세.\n👍 + 강세 / 👎 − 약세',
+  kr_short_bal: '전체 유통주식 중 공매도 잔고 비율. 누적 베어 포지션의 크기.\n⚠️ 3%+ 주의 / 5%+ 위험',
+  kr_short_5d:  '최근 5일 평균 일일 공매도 비중. 단기 공매도 트렌드.\n⚠️ 10%+ 지속 매도 압력',
 };
 
 // 인포 아이콘 HTML (title 속성으로 네이티브 툴팁)
@@ -1479,11 +1485,46 @@ function renderScorecard(sc, stock) {
   const rev = M.eps_revision || {};
   const ins = M.insider || {};
 
-  // 한국 종목 안내 문구 (내부자 매매·Short Interest 데이터 한계)
+  // 한국 종목 전용 보충 데이터 (네이버 스크래핑)
+  const krShortBal = M.kr_short_balance_pct;
+  const krShort5d  = M.kr_short_5d_avg_pct;
+  const krForRatio = M.kr_foreign_ratio_pct;
+  const krForNet5d = M.kr_foreign_net_5d;
+  const krInstNet5d = M.kr_inst_net_5d;
+  const krSupplyDate = M.kr_supply_date;
+  const krDartUrl    = M.kr_dart_url;
+  const hasKrSupply = krForRatio != null || krForNet5d != null || krInstNet5d != null;
+
+  // 거래대금 표기 (단위: 주 → 천주/만주/억주)
+  const _fmtShares = (v) => {
+    if (v == null || isNaN(v)) return '—';
+    const sign = v >= 0 ? '+' : '';
+    const av = Math.abs(v);
+    if (av >= 100000000) return sign + (v/100000000).toFixed(1) + '억';
+    if (av >= 10000)     return sign + (v/10000).toFixed(0) + '만';
+    if (av >= 1000)      return sign + (v/1000).toFixed(0) + '천';
+    return sign + v.toLocaleString();
+  };
+
+  // 한국 전용 섹션 (네이버에서 가져온 데이터)
+  const krSupplySection = isKR ? `
+    <div class="sc-metric-section sc-kr-section">
+      <div class="sc-section-title">🇰🇷 한국 시장 시그널 <small>네이버 금융 · ${krSupplyDate || '최근'}</small></div>
+      <div class="sc-metric-row"><span>외국인 보유율 ${_helpIcon('kr_foreign')}</span><span>${krForRatio != null ? krForRatio.toFixed(2) + '%' : '<span class="m-na">—</span>'}</span></div>
+      <div class="sc-metric-row"><span>외국인 순매수 (5일) ${_helpIcon('kr_for_net')}</span><span class="${krForNet5d != null ? (krForNet5d > 0 ? 'good' : (krForNet5d < 0 ? 'bad' : '')) : ''}">${_fmtShares(krForNet5d)}주</span></div>
+      <div class="sc-metric-row"><span>기관 순매수 (5일) ${_helpIcon('kr_inst_net')}</span><span class="${krInstNet5d != null ? (krInstNet5d > 0 ? 'good' : (krInstNet5d < 0 ? 'bad' : '')) : ''}">${_fmtShares(krInstNet5d)}주</span></div>
+      <div class="sc-metric-row"><span>공매도 잔고 비중 ${_helpIcon('kr_short_bal')}</span><span class="${krShortBal != null ? (krShortBal > 3 ? 'bad' : '') : ''}">${krShortBal != null ? krShortBal.toFixed(2) + '%' : '<span class="m-na">—</span>'}</span></div>
+      <div class="sc-metric-row"><span>공매도 비중 (5일 평균) ${_helpIcon('kr_short_5d')}</span><span class="${krShort5d != null ? (krShort5d > 10 ? 'bad' : '') : ''}">${krShort5d != null ? krShort5d.toFixed(2) + '%' : '<span class="m-na">—</span>'}</span></div>
+      ${krDartUrl ? `<div class="sc-metric-row sc-dart-link"><span>내부자 매매</span><a href="${krDartUrl}" target="_blank" rel="noopener" class="sc-link">DART 공시 보러가기 ↗</a></div>` : ''}
+    </div>
+  ` : '';
+
+  // 한국 종목 안내 문구
   const krNotice = isKR ? `
     <div class="sc-kr-notice">
-      ⓘ 한국 종목은 <strong>내부자 매매</strong>·<strong>Short %</strong>·<strong>F-Score</strong> 데이터가
-      yfinance로 제공되지 않을 수 있어 일부 지표가 비어있을 수 있습니다.
+      ⓘ 한국 종목은 yfinance에서 <strong>내부자 매매</strong>·<strong>F-Score</strong>가 비어있는 경우가 많아,
+      위 <strong>🇰🇷 한국 시장 시그널</strong>(네이버 스크래핑)을 참고하세요.
+      외국인 순매수와 기관 순매수가 동시에 양(+)이면 강한 매수세입니다.
     </div>` : '';
 
   const metricsHTML = `
@@ -1514,10 +1555,11 @@ function renderScorecard(sc, stock) {
       <div class="sc-metric-section">
         <div class="sc-section-title">⚡ Momentum & Signals <small>수급 시그널</small></div>
         <div class="sc-metric-row"><span>EPS Revision (30일) ${_helpIcon('eps_rev')}</span><span class="${_signClass(rev.score_pct)}">${rev.score_pct != null ? ((rev.score_pct>=0?'+':'') + rev.score_pct + '%') : '<span class="m-na">—</span>'}${rev.up_30d != null ? ` <small>(↑${rev.up_30d} ↓${rev.down_30d})</small>` : ''}</span></div>
-        <div class="sc-metric-row"><span>Short % of Float ${_helpIcon('short_float')}</span><span class="${M.short_pct_of_float != null ? (M.short_pct_of_float > 10 ? 'bad' : '') : ''}">${_fmt(M.short_pct_of_float, '%')}</span></div>
-        <div class="sc-metric-row"><span>내부자 매매 (6M) ${_helpIcon('insider')}</span><span class="${ins.net > 0 ? 'good' : (ins.net < 0 ? 'bad' : '')}">${ins.net != null ? `${ins.net >= 0 ? '+' : ''}${ins.net}건 <small>(↑${ins.buys} ↓${ins.sells})</small>` : '<span class="m-na">—</span>'}</span></div>
+        <div class="sc-metric-row"><span>${isKR ? '공매도 비중 (당일)' : 'Short % of Float'} ${_helpIcon('short_float')}</span><span class="${M.short_pct_of_float != null ? (M.short_pct_of_float > 10 ? 'bad' : '') : ''}">${_fmt(M.short_pct_of_float, '%')}</span></div>
+        ${!isKR ? `<div class="sc-metric-row"><span>내부자 매매 (6M) ${_helpIcon('insider')}</span><span class="${ins.net > 0 ? 'good' : (ins.net < 0 ? 'bad' : '')}">${ins.net != null ? `${ins.net >= 0 ? '+' : ''}${ins.net}건 <small>(↑${ins.buys} ↓${ins.sells})</small>` : '<span class="m-na">—</span>'}</span></div>` : ''}
         <div class="sc-metric-row"><span>주주환원 수익률 ${_helpIcon('shareholder')}</span><span class="${_gradeFmt(M.shareholder_yield_pct, 4, 0)}">${_fmt(M.shareholder_yield_pct, '%')}${M.buyback_yield_pct != null ? ` <small>(배당 ${(M.dividend_yield_pct||0).toFixed(1)}+자사주 ${M.buyback_yield_pct.toFixed(1)})</small>` : ''}</span></div>
       </div>
+      ${krSupplySection}
     </div>
     ${krNotice}
   `;
