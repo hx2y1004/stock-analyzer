@@ -134,21 +134,17 @@
         <div class="add-field">
           <label>매수가 <span id="buyCurrencyLabel">(USD)</span></label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', -1)">−</button>
             <input id="buyPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', 1)">+</button>
           </div>
         </div>
         <div class="add-field">
           <label>수량</label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyQty', -1)">−</button>
             <input id="buyQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyQty', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyQty', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyQty', 1)">+</button>
           </div>
         </div>
         <div class="trade-summary" id="buySummary"></div>
@@ -169,21 +165,17 @@
         <div class="add-field">
           <label>매도가 <span id="sellCurrencyLabel">(USD)</span></label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', -1)">−</button>
             <input id="sellPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', 1)">+</button>
           </div>
         </div>
         <div class="add-field">
           <label>수량 (최대 <span id="sellMaxQty">0</span>주)</label>
           <div class="num-input-wrap">
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellQty', -1)">−</button>
             <input id="sellQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
-            <div class="num-steppers">
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellQty', 1)">▲</button>
-              <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellQty', -1)">▼</button>
-            </div>
+            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellQty', 1)">+</button>
           </div>
           <button type="button" class="sell-max-btn" onclick="setSellMax()">전량 매도</button>
         </div>
