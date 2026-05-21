@@ -2799,46 +2799,141 @@ function _sectorCardHTML(s, idx, isKR) {
   const _pct = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
   const _pctCls = (v) => v >= 0 ? 'up' : 'down';
 
+  // 카드 식별자 (펼침 패널용)
+  const cardKey = isKR
+    ? `kr-${s.theme_no || s.name.replace(/[^a-zA-Z0-9가-힣]/g,'')}`
+    : `us-${s.ticker}`;
+  const dataAttr = isKR
+    ? `data-market="KR" data-theme-no="${s.theme_no || ''}" data-name="${s.name}"`
+    : `data-market="US" data-ticker="${s.ticker}"`;
+
   if (isKR) {
     const total = (s.up || 0) + (s.flat || 0) + (s.down || 0);
     const leaders = (s.leaders || []).slice(0, 3).join(' · ');
     return `
-      <div class="sector-card">
-        <div class="sector-rank">${idx + 1}</div>
-        <div class="sector-info">
-          <div class="sector-name"><a href="${s.url}" target="_blank" rel="noopener">${s.name}</a></div>
-          <div class="sector-meta">
-            ${total > 0 ? `<span class="sector-breadth">↑${s.up} -${s.flat} ↓${s.down}</span>` : ''}
-            ${leaders ? `<span class="sector-leaders">· ${leaders}</span>` : ''}
+      <div class="sector-card-wrap">
+        <div class="sector-card" onclick="toggleSectorExpand('${cardKey}', this)" ${dataAttr}>
+          <div class="sector-rank">${idx + 1}</div>
+          <div class="sector-info">
+            <div class="sector-name">${s.name}
+              <a class="sector-ext" href="${s.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗</a>
+            </div>
+            <div class="sector-meta">
+              ${total > 0 ? `<span class="sector-breadth">↑${s.up} -${s.flat} ↓${s.down}</span>` : ''}
+              ${leaders ? `<span class="sector-leaders">· ${leaders}</span>` : ''}
+            </div>
           </div>
-        </div>
-        <div class="sector-stats">
-          <div class="sector-score ${scoreClass}">${scoreSign}${s.score.toFixed(1)}</div>
-          <div class="sector-chgs">
-            <span class="${_pctCls(s.change_1d)}">1D ${_pct(s.change_1d)}</span>
-            <span class="${_pctCls(s.change_3d)}">3D ${_pct(s.change_3d)}</span>
+          <div class="sector-stats">
+            <div class="sector-score ${scoreClass}">${scoreSign}${s.score.toFixed(1)}</div>
+            <div class="sector-chgs">
+              <span class="${_pctCls(s.change_1d)}">1D ${_pct(s.change_1d)}</span>
+              <span class="${_pctCls(s.change_3d)}">3D ${_pct(s.change_3d)}</span>
+            </div>
           </div>
+          <div class="sector-expand-arrow">▼</div>
         </div>
+        <div class="sector-expand-panel hidden" id="exp-${cardKey}"></div>
       </div>
     `;
   }
   // US
   return `
-    <div class="sector-card" onclick="searchAndAnalyze('${s.ticker}')">
-      <div class="sector-rank">${idx + 1}</div>
-      <div class="sector-info">
-        <div class="sector-name">${s.name}</div>
-        <div class="sector-meta">${s.ticker} · 거래량 ×${s.vol_ratio.toFixed(2)}</div>
-      </div>
-      <div class="sector-stats">
-        <div class="sector-score ${scoreClass}">${scoreSign}${s.score.toFixed(1)}</div>
-        <div class="sector-chgs">
-          <span class="${_pctCls(s.change_1d)}">1D ${_pct(s.change_1d)}</span>
-          <span class="${_pctCls(s.change_1w)}">1W ${_pct(s.change_1w)}</span>
-          <span class="${_pctCls(s.change_1m)}">1M ${_pct(s.change_1m)}</span>
+    <div class="sector-card-wrap">
+      <div class="sector-card" onclick="toggleSectorExpand('${cardKey}', this)" ${dataAttr}>
+        <div class="sector-rank">${idx + 1}</div>
+        <div class="sector-info">
+          <div class="sector-name">${s.name}
+            <a class="sector-ext" href="javascript:void(0)" onclick="event.stopPropagation();searchAndAnalyze('${s.ticker}')">↗</a>
+          </div>
+          <div class="sector-meta">${s.ticker} · 거래량 ×${s.vol_ratio.toFixed(2)}</div>
         </div>
+        <div class="sector-stats">
+          <div class="sector-score ${scoreClass}">${scoreSign}${s.score.toFixed(1)}</div>
+          <div class="sector-chgs">
+            <span class="${_pctCls(s.change_1d)}">1D ${_pct(s.change_1d)}</span>
+            <span class="${_pctCls(s.change_1w)}">1W ${_pct(s.change_1w)}</span>
+            <span class="${_pctCls(s.change_1m)}">1M ${_pct(s.change_1m)}</span>
+          </div>
+        </div>
+        <div class="sector-expand-arrow">▼</div>
       </div>
+      <div class="sector-expand-panel hidden" id="exp-${cardKey}"></div>
     </div>
+  `;
+}
+
+// ── 섹터/테마 카드 펼침 (대표 종목 상승률 순) ───────────────
+const _sectorExpandCache = {};
+
+async function toggleSectorExpand(cardKey, cardEl) {
+  const panel = document.getElementById('exp-' + cardKey);
+  if (!panel) return;
+  const isOpen = !panel.classList.contains('hidden');
+  if (isOpen) {
+    panel.classList.add('hidden');
+    cardEl.classList.remove('expanded');
+    return;
+  }
+  cardEl.classList.add('expanded');
+  panel.classList.remove('hidden');
+
+  // 캐시 있으면 즉시
+  if (_sectorExpandCache[cardKey]) {
+    panel.innerHTML = _sectorExpandCache[cardKey];
+    return;
+  }
+
+  panel.innerHTML = '<div class="sector-stocks-loading">종목 불러오는 중...</div>';
+  const market = cardEl.dataset.market;
+  try {
+    let qs;
+    if (market === 'KR') {
+      const themeNo = cardEl.dataset.themeNo;
+      if (!themeNo) { panel.innerHTML = '<div class="sector-stocks-empty">테마 번호를 찾을 수 없습니다</div>'; return; }
+      qs = `?market=KR&theme_no=${encodeURIComponent(themeNo)}`;
+    } else {
+      const ticker = cardEl.dataset.ticker;
+      qs = `?market=US&ticker=${encodeURIComponent(ticker)}`;
+    }
+    const r = await fetch('/api/sectors/constituents' + qs);
+    const data = await r.json();
+    const stocks = data.stocks || [];
+    if (!stocks.length) {
+      panel.innerHTML = '<div class="sector-stocks-empty">구성 종목 데이터가 없습니다</div>';
+      return;
+    }
+    const html = _renderSectorStocks(stocks, market);
+    _sectorExpandCache[cardKey] = html;
+    panel.innerHTML = html;
+  } catch (e) {
+    panel.innerHTML = `<div class="sector-stocks-empty">데이터를 가져올 수 없습니다: ${e.message || e}</div>`;
+  }
+}
+
+function _renderSectorStocks(stocks, market) {
+  const _pct = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+  const _pctCls = (v) => v == null ? '' : (v >= 0 ? 'up' : 'down');
+  const _fmtPrice = (v, cur) => {
+    if (v == null) return '—';
+    if (cur === 'KRW') return Math.round(v).toLocaleString('ko-KR') + '원';
+    return '$' + v.toFixed(2);
+  };
+  const rows = stocks.map((st, i) => {
+    const ticker = st.ticker || st.code || '';
+    return `
+      <div class="sector-stock-row" onclick="searchAndAnalyze('${ticker}')">
+        <span class="ss-rank">${i + 1}</span>
+        <span class="ss-name">${st.name}${st.code ? ` <small>(${st.code})</small>` : ''}</span>
+        <span class="ss-price">${_fmtPrice(st.price, st.currency)}</span>
+        <span class="ss-chg ${_pctCls(st.change_1d)}">${_pct(st.change_1d)}</span>
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="sector-stocks-header">
+      <span>대표 종목 ${stocks.length}개 · 당일 상승률 순</span>
+    </div>
+    <div class="sector-stocks-list">${rows}</div>
   `;
 }
 
