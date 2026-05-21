@@ -800,6 +800,22 @@ body {
   .sector-meta { font-size: 11px; }
   .sector-score { font-size: 16px; }
   .sector-chgs { gap: 6px; font-size: 10px; }
+  /* 섹터 강도 새로고침 버튼 — 모바일 컴팩트 (아이콘만) */
+  #sectorsRefreshBtn {
+    font-size: 14px;
+    padding: 0;
+    white-space: nowrap;
+    min-width: 36px;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  #sectorsRefreshBtn .btn-label-desktop { display: none; }
 }
 
 /* 섹터 카드 펼침 (대표 종목) */
