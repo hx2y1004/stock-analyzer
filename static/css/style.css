@@ -801,6 +801,115 @@ body {
   .sector-score { font-size: 16px; }
   .sector-chgs { gap: 6px; font-size: 10px; }
 }
+
+/* 섹터 카드 펼침 (대표 종목) */
+.sector-card-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.sector-expand-arrow {
+  font-size: 11px;
+  color: var(--text2);
+  margin-left: 4px;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.sector-card.expanded .sector-expand-arrow { transform: rotate(180deg); }
+.sector-card.expanded { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-color: var(--accent); }
+
+.sector-ext {
+  font-size: 11px;
+  color: var(--text2);
+  text-decoration: none;
+  margin-left: 6px;
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
+}
+.sector-ext:hover { opacity: 1; color: var(--accent); }
+
+.sector-expand-panel {
+  background: var(--bg1);
+  border: 1px solid var(--accent);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 8px 12px 12px;
+  margin-top: -1px;
+  animation: sec-expand 0.18s ease-out;
+}
+@keyframes sec-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sector-stocks-loading,
+.sector-stocks-empty {
+  text-align: center;
+  padding: 16px;
+  color: var(--text2);
+  font-size: 13px;
+}
+.sector-stocks-header {
+  font-size: 11px;
+  color: var(--text2);
+  padding: 4px 4px 8px;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 4px;
+}
+.sector-stocks-list {
+  display: flex;
+  flex-direction: column;
+}
+.sector-stock-row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.sector-stock-row:last-child { border-bottom: none; }
+.sector-stock-row:hover { background: rgba(88,166,255,0.06); }
+.ss-rank {
+  font-size: 11px;
+  color: var(--text2);
+  text-align: center;
+  font-family: monospace;
+}
+.ss-name {
+  color: var(--text1);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-name small {
+  color: var(--text2);
+  font-weight: 400;
+  font-size: 11px;
+}
+.ss-price {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text2);
+  text-align: right;
+}
+.ss-chg {
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+  min-width: 64px;
+}
+.ss-chg.up   { color: var(--green); }
+.ss-chg.down { color: var(--red); }
+
+@media (max-width: 640px) {
+  .sector-stock-row { font-size: 12px; gap: 8px; grid-template-columns: 20px 1fr auto auto; }
+  .ss-price { font-size: 11px; }
+  .ss-chg { font-size: 12px; min-width: 56px; }
+}
 @keyframes live-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(248,81,73,0.7); }
   70%  { box-shadow: 0 0 0 8px rgba(248,81,73,0); }

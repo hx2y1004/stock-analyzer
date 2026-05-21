@@ -389,6 +389,9 @@ def _fetch_kr_theme_strength():
                     continue
                 href = name_a.get("href", "")
                 theme_url = "https://finance.naver.com" + href if href.startswith("/") else href
+                # 테마 번호 추출 (?no=123)
+                m_no = re.search(r"[?&]no=(\d+)", href or "")
+                theme_no = m_no.group(1) if m_no else None
                 # 컬럼: [0]테마명 [1]전일대비 [2]최근3일 [3]전일대비등락그래프?
                 # 실제 네이버 구조: [0]테마명 [1]전일대비 [2]최근3일등락률 [3]전일대비등락그래프
                 #                  [4]상승 [5]보합 [6]하락 [7]주도주
@@ -423,6 +426,7 @@ def _fetch_kr_theme_strength():
                 results.append({
                     "name":      theme_name,
                     "url":       theme_url,
+                    "theme_no":  theme_no,
                     "change_1d": round(chg_1d, 2),
                     "change_3d": round(chg_3d, 2),
                     "up":        up,
@@ -458,6 +462,198 @@ def sectors_strength():
         "sectors": data,
         "count": len(data),
         "fetched_at": datetime.utcnow().isoformat() + "Z",
+    })
+
+
+# ── 섹터 구성종목 (대표 종목 상승률 순) ───────────────────────
+# SPDR 11개 섹터 ETF의 대표 종목 ~15개 (구성 비중 상위, 2025 기준)
+US_SECTOR_HOLDINGS = {
+    "XLK":  ["NVDA","MSFT","AAPL","AVGO","ORCL","CRM","CSCO","AMD","ACN","ADBE","IBM","TXN","NOW","INTU","QCOM","PLTR","ADI","AMAT","MU","LRCX"],
+    "XLC":  ["META","GOOGL","GOOG","NFLX","TMUS","DIS","CMCSA","VZ","T","CHTR","WBD","EA","TTWO","FOX","FOXA","OMC","IPG"],
+    "XLY":  ["AMZN","TSLA","HD","MCD","BKNG","LOW","TJX","NKE","SBUX","CMG","ABNB","ORLY","AZO","MAR","GM","F","DRI","HLT","ROST","LULU"],
+    "XLP":  ["COST","WMT","PG","KO","PEP","PM","MO","MDLZ","CL","TGT","KMB","GIS","KHC","SYY","STZ","HSY","KR","ADM","DG","EL"],
+    "XLF":  ["BRK-B","JPM","V","MA","BAC","WFC","GS","MS","AXP","BLK","C","SPGI","PGR","CB","MMC","SCHW","BX","FI","CME","ICE"],
+    "XLV":  ["LLY","UNH","JNJ","ABBV","MRK","TMO","ABT","PFE","DHR","ISRG","AMGN","BMY","SYK","GILD","MDT","CI","BSX","ELV","VRTX","REGN"],
+    "XLI":  ["GE","RTX","CAT","UBER","HON","UNP","BA","ETN","LMT","DE","ADP","UPS","NOC","WM","GD","ITW","CSX","EMR","MMM","FDX"],
+    "XLE":  ["XOM","CVX","COP","WMB","EOG","SLB","KMI","PSX","MPC","OXY","VLO","HES","FANG","OKE","BKR","TRGP","HAL","DVN","EQT","APA"],
+    "XLB":  ["LIN","SHW","FCX","ECL","APD","DD","NUE","NEM","CTVA","DOW","PPG","VMC","MLM","IFF","STLD","CF","ALB","LYB","PKG","IP"],
+    "XLU":  ["NEE","SO","DUK","CEG","SRE","AEP","D","PCG","XEL","EXC","ED","WEC","ETR","ES","DTE","PEG","EIX","AWK","FE","AEE"],
+    "XLRE": ["PLD","AMT","EQIX","WELL","SPG","CCI","DLR","O","PSA","CBRE","EXR","VICI","AVB","SBAC","CSGP","WY","ARE","EQR","IRM","INVH"],
+}
+
+_CONSTITUENTS_CACHE = {}
+_CONSTITUENTS_TTL = 300  # 5분
+
+
+def _fetch_us_sector_constituents(etf_ticker: str, limit: int = 15):
+    """미국 섹터 ETF의 대표 종목들 + 당일 변화율 (상승률 순)."""
+    holdings = US_SECTOR_HOLDINGS.get(etf_ticker.upper())
+    if not holdings:
+        return []
+
+    cache_key = f"US:{etf_ticker.upper()}"
+    now_ts = time.time()
+    cached = _CONSTITUENTS_CACHE.get(cache_key)
+    if cached and (now_ts - cached[0]) < _CONSTITUENTS_TTL:
+        return cached[1]
+
+    results = []
+    try:
+        data = yf.download(
+            " ".join(holdings), period="5d", interval="1d",
+            group_by="ticker", progress=False, threads=True, auto_adjust=False,
+        )
+    except Exception as e:
+        app.logger.warning(f"[constituents US] download failed: {e}")
+        return []
+
+    for tk in holdings:
+        try:
+            try:
+                df = data[tk]
+            except (KeyError, TypeError):
+                continue
+            df = df.dropna(subset=["Close"])
+            if df.empty or len(df) < 2:
+                continue
+            cur  = float(df["Close"].iloc[-1])
+            prev = float(df["Close"].iloc[-2])
+            chg  = (cur / prev - 1) * 100 if prev else 0.0
+            results.append({
+                "ticker":    tk,
+                "name":      tk,           # 영문 티커만 (간결)
+                "price":     round(cur, 2),
+                "change_1d": round(chg, 2),
+                "currency":  "USD",
+            })
+        except Exception:
+            continue
+
+    results.sort(key=lambda x: x["change_1d"], reverse=True)
+    results = results[:limit]
+    _CONSTITUENTS_CACHE[cache_key] = (now_ts, results)
+    return results
+
+
+def _fetch_kr_theme_constituents(theme_no: str, limit: int = 20):
+    """네이버 테마 상세 페이지 → 구성 종목 + 당일 등락률 (상승률 순)."""
+    if not theme_no:
+        return []
+    cache_key = f"KR:{theme_no}"
+    now_ts = time.time()
+    cached = _CONSTITUENTS_CACHE.get(cache_key)
+    if cached and (now_ts - cached[0]) < _CONSTITUENTS_TTL:
+        return cached[1]
+
+    from bs4 import BeautifulSoup
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://finance.naver.com/sise/theme.naver",
+    }
+    url = f"https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no={theme_no}"
+
+    def _parse_num(text):
+        if not text: return None
+        t = text.strip().replace(",", "").replace("+", "").replace("%", "")
+        if not t or t in ("-", ""): return None
+        try: return float(t)
+        except ValueError: return None
+
+    try:
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code != 200:
+            return []
+        try:
+            html = r.content.decode("euc-kr", errors="replace")
+        except Exception:
+            html = r.text
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 테마 상세 종목 표 — type_5 클래스
+        table = soup.find("table", class_=lambda c: c and "type_5" in c)
+        if not table:
+            return []
+
+        results = []
+        for tr in table.find_all("tr"):
+            tds = tr.find_all("td")
+            if len(tds) < 5:
+                continue
+            name_a = tds[0].find("a")
+            if not name_a:
+                continue
+            name = name_a.get_text(strip=True)
+            if not name:
+                continue
+            href = name_a.get("href", "")
+            m = re.search(r"code=(\d+)", href)
+            code = m.group(1) if m else None
+            # 컬럼 구조: [0]종목명 [1]현재가 [2]전일비 [3]등락률 [4]매수 [5]매도 [6]거래량 [7]전일거래량 [8]주체
+            # 등락 색상으로 음수/양수 판단
+            chg_pct_raw = tds[3].get_text(strip=True) if len(tds) > 3 else ""
+            chg_pct = _parse_num(chg_pct_raw)
+            if chg_pct is None:
+                continue
+            # 부호 보정: 네이버 등락률은 절대값으로만 표기되어 색상 클래스로 음수 판별
+            cls = " ".join(tds[3].get("class", []))
+            # 'nv01'은 보통 음수 (red), 'red' 클래스도 음수 표기
+            row_cls = " ".join(tr.get("class", []))
+            is_down = False
+            # 전일비 셀(2번)에 ico_down 등이 있으면 하락
+            comp_imgs = tds[2].find_all("img") if len(tds) > 2 else []
+            for im in comp_imgs:
+                src = (im.get("src") or "") + " " + (im.get("alt") or "")
+                if "down" in src or "ico_d" in src or "하락" in src:
+                    is_down = True
+                if "low" in src.lower() or "ico_low" in src:
+                    is_down = True
+            if is_down and chg_pct > 0:
+                chg_pct = -chg_pct
+
+            price = _parse_num(tds[1].get_text(strip=True)) if len(tds) > 1 else None
+            results.append({
+                "ticker":    f"{code}.KS" if code else None,
+                "code":      code,
+                "name":      name,
+                "price":     price,
+                "change_1d": chg_pct,
+                "currency":  "KRW",
+            })
+
+        # 상승률 순 정렬, 상위 limit
+        results.sort(key=lambda x: x["change_1d"] if x["change_1d"] is not None else -999, reverse=True)
+        results = results[:limit]
+        _CONSTITUENTS_CACHE[cache_key] = (now_ts, results)
+        return results
+    except Exception as e:
+        app.logger.warning(f"[constituents KR] {theme_no}: {e}")
+        return []
+
+
+@app.route("/api/sectors/constituents", methods=["GET"])
+def sector_constituents():
+    """섹터/테마 구성 종목을 등락률 순으로 반환.
+
+    Query:
+        market: US | KR
+        ticker (US): SPDR ETF 티커 (XLK 등)
+        theme_no (KR): 네이버 테마 번호
+    """
+    market = (request.args.get("market") or "US").upper()
+    if market == "KR":
+        theme_no = (request.args.get("theme_no") or "").strip()
+        stocks = _fetch_kr_theme_constituents(theme_no)
+    else:
+        ticker = (request.args.get("ticker") or "").strip().upper()
+        stocks = _fetch_us_sector_constituents(ticker)
+    return jsonify({
+        "market": market,
+        "stocks": stocks,
+        "count": len(stocks),
     })
 
 
