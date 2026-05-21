@@ -1067,6 +1067,7 @@ async function analyze() {
     renderVerdict(data.analysis, data.stock);
     renderDetail(data.analysis.details || []);
     renderFundamental(data.analysis.fundamental_details || [], data.stock);
+    renderScorecard(data.analysis.scorecard, data.stock);
     renderMetrics(data.stock, data.analysis);
     renderPositionCard(data.position || null, data.stock);
     renderPaperTradeActions(data.stock);
@@ -1355,7 +1356,8 @@ function switchDetailTab(tab) {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
   document.getElementById('detailList').classList.toggle('hidden', tab !== 'technical');
-  document.getElementById('fundamentalList').classList.toggle('hidden', tab !== 'fundamental');
+  const fundCont = document.getElementById('fundamentalContainer');
+  if (fundCont) fundCont.classList.toggle('hidden', tab !== 'fundamental');
   document.getElementById('zonesList').classList.toggle('hidden', tab !== 'zones');
 }
 
@@ -1388,6 +1390,113 @@ function _buildCards(details) {
 // ── 기술적 분석 카드 ──────────────────────────────────────
 function renderDetail(details) {
   document.getElementById('detailList').innerHTML = _buildCards(details);
+}
+
+// ── 월가 스타일 펀더멘탈 스코어카드 (4팩터 + 10지표) ────────
+function renderScorecard(sc, stock) {
+  const panel = document.getElementById('scorecardPanel');
+  if (!panel) return;
+  if (!sc || !sc.factors || !sc.metrics) {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+  const F = sc.factors, M = sc.metrics;
+
+  // 등급별 색상 클래스
+  const gradeClass = (g) => {
+    if (!g || g === '—') return 'na';
+    if (g.startsWith('A')) return 'a';
+    if (g.startsWith('B')) return 'b';
+    if (g.startsWith('C')) return 'c';
+    if (g.startsWith('D')) return 'd';
+    return 'f';
+  };
+  const factorCard = (label, emoji, f) => {
+    const cls = gradeClass(f.grade);
+    const score = (f.score != null) ? f.score.toFixed(0) : '—';
+    return `
+      <div class="sc-factor sc-${cls}">
+        <div class="sc-factor-head">
+          <span class="sc-factor-name">${emoji} ${label}</span>
+          <span class="sc-grade">${f.grade}</span>
+        </div>
+        <div class="sc-factor-score">${score}<small>/100</small></div>
+        <div class="sc-factor-bar"><div class="sc-factor-fill" style="width:${score === '—' ? 0 : score}%"></div></div>
+      </div>
+    `;
+  };
+  // 종합 등급
+  const ovScore = F.overall && F.overall.score != null ? F.overall.score.toFixed(0) : '—';
+  const ovGrade = F.overall ? F.overall.grade : '—';
+  const ovCls   = gradeClass(ovGrade);
+
+  // 지표 행 헬퍼
+  const _fmt = (v, suffix = '', digits = 2) => v == null ? '<span class="m-na">—</span>' : `${(+v).toFixed(digits)}${suffix}`;
+  const _signClass = (v, good_pos = true) => v == null ? '' : ((v >= 0) === good_pos ? 'good' : 'bad');
+  const _gradeFmt = (s, good_thr, bad_thr) => {
+    if (s == null) return '';
+    return s >= good_thr ? 'good' : (s <= bad_thr ? 'bad' : '');
+  };
+
+  // 10개 지표 카테고리별 정리
+  const rev = M.eps_revision || {};
+  const ins = M.insider || {};
+
+  const metricsHTML = `
+    <div class="sc-metrics">
+      <div class="sc-metric-section">
+        <div class="sc-section-title">💎 Quality</div>
+        <div class="sc-metric-row"><span>FCF Margin</span><span class="${_gradeFmt(M.fcf_margin, 15, 0)}">${_fmt(M.fcf_margin, '%')}</span></div>
+        <div class="sc-metric-row"><span>FCF Yield</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
+        <div class="sc-metric-row"><span>영업이익률</span><span class="${_gradeFmt(M.operating_margin, 15, 0)}">${_fmt(M.operating_margin, '%')}</span></div>
+        <div class="sc-metric-row"><span>매출총이익률</span><span class="${_gradeFmt(M.gross_margin, 30, 0)}">${_fmt(M.gross_margin, '%')}</span></div>
+        <div class="sc-metric-row"><span>Piotroski F-Score</span><span class="${_gradeFmt(M.f_score, 7, 3)}">${M.f_score != null ? M.f_score + '/9' : '<span class="m-na">—</span>'}</span></div>
+        <div class="sc-metric-row"><span>Net Debt / EBITDA</span><span class="${M.net_debt_to_ebitda != null ? (M.net_debt_to_ebitda < 2 ? 'good' : (M.net_debt_to_ebitda > 4 ? 'bad' : '')) : ''}">${_fmt(M.net_debt_to_ebitda, 'x')}</span></div>
+      </div>
+
+      <div class="sc-metric-section">
+        <div class="sc-section-title">💰 Value</div>
+        <div class="sc-metric-row"><span>PEG Ratio</span><span class="${M.peg != null ? (M.peg < 1 ? 'good' : (M.peg > 2 ? 'bad' : '')) : ''}">${_fmt(M.peg, 'x')}</span></div>
+        <div class="sc-metric-row"><span>EV / EBITDA</span><span class="${M.ev_ebitda != null ? (M.ev_ebitda < 12 ? 'good' : (M.ev_ebitda > 25 ? 'bad' : '')) : ''}">${_fmt(M.ev_ebitda, 'x')}</span></div>
+        <div class="sc-metric-row"><span>FCF Yield</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
+      </div>
+
+      <div class="sc-metric-section">
+        <div class="sc-section-title">📈 Growth</div>
+        <div class="sc-metric-row"><span>마진 추세 (영업 YoY)</span><span class="${_signClass(M.operating_margin_yoy)}">${_fmt(M.operating_margin_yoy, 'pp')}</span></div>
+        <div class="sc-metric-row"><span>마진 추세 (매출총 YoY)</span><span class="${_signClass(M.gross_margin_yoy)}">${_fmt(M.gross_margin_yoy, 'pp')}</span></div>
+      </div>
+
+      <div class="sc-metric-section">
+        <div class="sc-section-title">⚡ Momentum & Signals</div>
+        <div class="sc-metric-row"><span>EPS Revision (30일)</span><span class="${_signClass(rev.score_pct)}">${rev.score_pct != null ? ((rev.score_pct>=0?'+':'') + rev.score_pct + '%') : '<span class="m-na">—</span>'}${rev.up_30d != null ? ` <small>(↑${rev.up_30d} ↓${rev.down_30d})</small>` : ''}</span></div>
+        <div class="sc-metric-row"><span>Short % of Float</span><span class="${M.short_pct_of_float != null ? (M.short_pct_of_float > 10 ? 'bad' : '') : ''}">${_fmt(M.short_pct_of_float, '%')}</span></div>
+        <div class="sc-metric-row"><span>내부자 매매 (6M)</span><span class="${ins.net > 0 ? 'good' : (ins.net < 0 ? 'bad' : '')}">${ins.net != null ? `${ins.net >= 0 ? '+' : ''}${ins.net}건 <small>(↑${ins.buys} ↓${ins.sells})</small>` : '<span class="m-na">—</span>'}</span></div>
+        <div class="sc-metric-row"><span>주주환원 수익률</span><span class="${_gradeFmt(M.shareholder_yield_pct, 4, 0)}">${_fmt(M.shareholder_yield_pct, '%')}${M.buyback_yield_pct != null ? ` <small>(배당 ${(M.dividend_yield_pct||0).toFixed(1)}+자사주 ${M.buyback_yield_pct.toFixed(1)})</small>` : ''}</span></div>
+      </div>
+    </div>
+  `;
+
+  panel.innerHTML = `
+    <div class="sc-header">
+      <div class="sc-title">📊 펀더멘탈 스코어카드</div>
+      <div class="sc-overall sc-${ovCls}">
+        <div class="sc-overall-grade">${ovGrade}</div>
+        <div class="sc-overall-score">${ovScore}<small>/100</small></div>
+      </div>
+    </div>
+    <div class="sc-factors">
+      ${factorCard('Quality',  '💎', F.quality)}
+      ${factorCard('Value',    '💰', F.value)}
+      ${factorCard('Growth',   '📈', F.growth)}
+      ${factorCard('Momentum', '⚡', F.momentum)}
+    </div>
+    <details class="sc-details">
+      <summary>📋 10개 지표 상세 보기</summary>
+      ${metricsHTML}
+    </details>
+  `;
 }
 
 // ── 투자 판단 카드 ────────────────────────────────────────

@@ -2354,7 +2354,7 @@ def analyze():
         except Exception:
             df_weekly = None
 
-        ai_result = analyze_signals(df, info, df_weekly=df_weekly)
+        ai_result = analyze_signals(df, info, df_weekly=df_weekly, stock=stock)
 
         # 차트용 데이터
         chart_df = df.tail(chart_bars).copy()
