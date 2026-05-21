@@ -1420,11 +1420,61 @@ const _SC_HELP = {
   kr_short_5d:  '최근 5일 평균 일일 공매도 비중. 단기 공매도 트렌드.\n⚠️ 10%+ 지속 매도 압력',
 };
 
-// 인포 아이콘 HTML (title 속성으로 네이티브 툴팁)
+// 인포 아이콘 HTML — 데스크톱은 hover, 모바일은 tap-to-show
+// data-help에 텍스트 저장 → toggleScHelp가 인라인 박스로 펼침
+const _escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const _helpIcon = (key) => {
   const text = _SC_HELP[key] || '';
-  return text ? `<span class="m-help" title="${text}" aria-label="${text}">ⓘ</span>` : '';
+  if (!text) return '';
+  const safe = _escAttr(text);
+  return `<span class="m-help" data-help="${safe}" onclick="toggleScHelp(this, event)" title="${safe}" aria-label="${safe}" role="button" tabindex="0">ⓘ</span>`;
 };
+// 인라인 (4팩터·헤더용 — 텍스트 직접 받기)
+const _helpInline = (text) => {
+  if (!text) return '';
+  const safe = _escAttr(text);
+  return `<span class="m-help-inline" data-help="${safe}" onclick="toggleScHelp(this, event)" title="${safe}" aria-label="${safe}" role="button" tabindex="0">ⓘ</span>`;
+};
+
+// ── 도움말 토글 (모바일 친화) ────────────────────────
+function toggleScHelp(iconEl, event) {
+  if (event) { event.stopPropagation(); event.preventDefault(); }
+  const text = iconEl.getAttribute('data-help');
+  if (!text) return;
+
+  // 부모 컨테이너 찾기 (우선순위)
+  const anchor = iconEl.closest('.sc-metric-row')
+              || iconEl.closest('.sc-factor')
+              || iconEl.closest('.sc-header');
+  if (!anchor) return;
+
+  // 같은 anchor에 이미 펼친 박스가 있으면 닫기 (토글)
+  const existing = anchor.querySelector(':scope > .sc-help-bubble');
+  if (existing) {
+    existing.remove();
+    iconEl.classList.remove('m-help-open');
+    return;
+  }
+
+  // 다른 모든 박스 닫기
+  document.querySelectorAll('.sc-help-bubble').forEach(b => b.remove());
+  document.querySelectorAll('.m-help-open').forEach(el => el.classList.remove('m-help-open'));
+
+  // 새 박스 생성
+  const bubble = document.createElement('div');
+  bubble.className = 'sc-help-bubble';
+  bubble.innerHTML = text.replace(/\n/g, '<br>');
+  anchor.appendChild(bubble);
+  iconEl.classList.add('m-help-open');
+}
+
+// 빈 공간 탭/클릭 시 모든 도움말 박스 닫기
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.m-help, .m-help-inline, .sc-help-bubble')) {
+    document.querySelectorAll('.sc-help-bubble').forEach(b => b.remove());
+    document.querySelectorAll('.m-help-open').forEach(el => el.classList.remove('m-help-open'));
+  }
+});
 
 // ── 월가 스타일 펀더멘탈 스코어카드 (4팩터 + 10지표) ────────
 function renderScorecard(sc, stock) {
@@ -1460,7 +1510,7 @@ function renderScorecard(sc, stock) {
     return `
       <div class="sc-factor sc-${cls}" title="${desc}">
         <div class="sc-factor-head">
-          <span class="sc-factor-name">${emoji} ${label} <span class="m-help-inline">ⓘ</span></span>
+          <span class="sc-factor-name">${emoji} ${label} ${_helpInline(desc)}</span>
           <span class="sc-grade">${f.grade}</span>
         </div>
         <div class="sc-factor-score">${score}<small>/100</small></div>
@@ -1568,11 +1618,11 @@ function renderScorecard(sc, stock) {
 
   panel.innerHTML = `
     <div class="sc-header">
-      <div>
-        <div class="sc-title">📊 펀더멘탈 스코어카드 <span class="m-help-inline" title="${_gradeHelp}">ⓘ</span></div>
+      <div class="sc-header-left">
+        <div class="sc-title">📊 펀더멘탈 스코어카드 ${_helpInline(_gradeHelp)}</div>
         <div class="sc-subtitle">월가 표준 4팩터 (Quality · Value · Growth · Momentum) 종합 등급</div>
       </div>
-      <div class="sc-overall sc-${ovCls}" title="${_gradeHelp}">
+      <div class="sc-overall sc-${ovCls}" title="${_gradeHelp}" onclick="toggleScHelp(this.parentElement.querySelector('.m-help-inline'), event)">
         <div class="sc-overall-grade">${ovGrade}</div>
         <div class="sc-overall-score">${ovScore}<small>/100</small></div>
       </div>
