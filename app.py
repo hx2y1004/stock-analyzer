@@ -2684,30 +2684,42 @@ def analyze():
         # ── 실시간 가격 시도 ──────────────────────────────────────────
         # 우선순위:
         #   1. 한국 종목 → 네이버 폴링 API (~1분 지연)
-        #   2. 폴백 → yfinance fast_info (15~20분 지연)
-        # 장중이면 실시간가, 장 마감 후/주말이면 마지막 종가
+        #   2. 폴백 → yfinance fast_info.last_price (15~20분 지연)
+        # ⚠️ fast_info.previous_close는 가끔 틀린 값을 줘서(이틀 전 종가 등)
+        #    이전 종가는 항상 히스토리(df)에서 직접 계산합니다.
         history_close      = safe_float(df["Close"].iloc[-1])
         history_prev_close = safe_float(df["Close"].iloc[-2]) if len(df) >= 2 else None
 
+        # 마지막 히스토리 봉이 '오늘' 인지 판별 → prev_close 정확도 결정
+        is_last_bar_today = False
+        try:
+            last_ts = df.index[-1]
+            market_tz = "Asia/Seoul" if is_korean else "America/New_York"
+            if hasattr(last_ts, "tz"):
+                last_ts_local = (
+                    last_ts.tz_localize(market_tz) if last_ts.tz is None
+                    else last_ts.tz_convert(market_tz)
+                )
+                today_market = pd.Timestamp.now(tz=market_tz).normalize()
+                is_last_bar_today = last_ts_local.normalize() >= today_market
+        except Exception:
+            pass
+
         realtime_price  = None
-        realtime_prev   = None
         realtime_source = None  # "naver" | "yfinance"
 
         # 1) 한국 종목 → 네이버 우선
         if is_korean:
             nv = fetch_naver_realtime_price(ticker.split(".")[0])
-            if nv:
+            if nv and nv.get("current_price"):
                 realtime_price  = nv.get("current_price")
-                realtime_prev   = nv.get("previous_close")
                 realtime_source = "naver"
 
-        # 2) 폴백: yfinance fast_info (미국 종목 / 네이버 실패 시)
+        # 2) 폴백: yfinance fast_info.last_price (previous_close는 신뢰 안함)
         if not realtime_price:
             try:
                 fi = stock.fast_info
                 realtime_price = safe_float(getattr(fi, "last_price", None))
-                realtime_prev  = safe_float(getattr(fi, "previous_close", None)) or \
-                                 safe_float(getattr(fi, "regular_market_previous_close", None))
                 if realtime_price:
                     realtime_source = "yfinance"
             except Exception:
@@ -2716,13 +2728,22 @@ def analyze():
         # 시장 개장 여부 (대략적 — KST/EST 기준)
         is_market_open_now = _is_market_open(ticker)
 
-        # 실시간 가격이 있고, 장중이거나 히스토리의 마지막 종가와 다르면 실시간 사용
-        if realtime_price and (is_market_open_now or
-                               (history_close and abs(realtime_price - history_close) > 1e-6)):
+        # ── 가격/이전 종가 결정 (히스토리 우선) ──
+        # 실시간가가 있고 (장중 OR 히스토리 종가와 다름)면 실시간 사용
+        realtime_useful = (
+            realtime_price is not None and
+            (is_market_open_now or
+             (history_close and abs(realtime_price - history_close) > 1e-6))
+        )
+
+        if realtime_useful:
             current_price = realtime_price
-            prev_close    = realtime_prev or history_close  # 어제 종가
-            is_realtime   = is_market_open_now
+            # 마지막 봉이 오늘 인트라데이면 → 이전 종가는 iloc[-2] (어제)
+            # 마지막 봉이 어제 종가면 → iloc[-1] 자체가 이전 종가
+            prev_close  = history_prev_close if is_last_bar_today else history_close
+            is_realtime = is_market_open_now
         else:
+            # 실시간 데이터 없음 → 가장 최근 종가 표시
             current_price = history_close
             prev_close    = history_prev_close
             is_realtime   = False
