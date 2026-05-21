@@ -946,20 +946,74 @@ body {
 .sc-title { font-size: 16px; font-weight: 600; color: var(--text1); }
 .sc-subtitle { font-size: 12px; color: var(--text2); margin-top: 3px; }
 
-/* 인포 아이콘 (툴팁) */
+/* 인포 아이콘 (툴팁) — 데스크톱 hover + 모바일 tap-to-show */
 .m-help, .m-help-inline {
-  display: inline-block;
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
   color: var(--text2);
-  opacity: 0.55;
-  cursor: help;
-  margin-left: 3px;
+  opacity: 0.7;
+  cursor: pointer;
+  margin-left: 4px;
   vertical-align: middle;
-  transition: opacity 0.15s, color 0.15s;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
   user-select: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  -webkit-tap-highlight-color: transparent;
 }
-.m-help:hover, .m-help-inline:hover { opacity: 1; color: var(--accent); }
-.m-help-inline { font-size: 11px; }
+.m-help:hover, .m-help-inline:hover,
+.m-help:focus, .m-help-inline:focus { opacity: 1; color: var(--accent); outline: none; }
+.m-help-inline { font-size: 12px; }
+.m-help-open, .m-help-inline.m-help-open {
+  opacity: 1;
+  color: var(--accent);
+  background: rgba(88,166,255,0.18);
+}
+
+/* 인라인 도움말 박스 */
+.sc-help-bubble {
+  flex-basis: 100%;
+  width: 100%;
+  background: rgba(88,166,255,0.08);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 400;
+  color: var(--text1);
+  line-height: 1.6;
+  margin-top: 8px;
+  white-space: normal;
+  text-align: left;
+  animation: sc-help-fade 0.18s ease-out;
+  position: relative;
+}
+.sc-help-bubble::before {
+  content: '💡';
+  margin-right: 6px;
+}
+@keyframes sc-help-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* 메트릭 행 — 도움말 박스가 다음 줄로 가도록 */
+.sc-metric-row { flex-wrap: wrap; }
+.sc-metric-row .sc-help-bubble { margin-top: 4px; margin-bottom: 4px; }
+
+/* 모바일에서 ⓘ 더 크게 (터치 영역 확보) */
+@media (max-width: 768px) {
+  .m-help, .m-help-inline {
+    font-size: 12px;
+    width: 22px;
+    height: 22px;
+    opacity: 0.85;
+  }
+  .sc-help-bubble { font-size: 13px; padding: 12px 14px; }
+}
 
 /* 한국 종목 알림 */
 .sc-kr-notice {
