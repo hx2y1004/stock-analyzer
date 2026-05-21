@@ -1117,11 +1117,18 @@ function renderStockInfo(stock) {
   // ── 가격 신선도 표시: LIVE 뱃지 / 장 마감 / 데이터 시각 ──
   const freshEl = document.getElementById('priceFreshness');
   if (freshEl) {
+    const srcLabel = stock.realtime_source === 'naver'
+      ? '네이버 ~1분'
+      : stock.realtime_source === 'yfinance'
+        ? 'Yahoo 15~20분'
+        : '';
     if (stock.is_realtime) {
-      freshEl.innerHTML = `<span class="live-dot"></span> <span class="live-label">LIVE</span> · 장중 실시간`;
+      freshEl.innerHTML =
+        `<span class="live-dot"></span> <span class="live-label">LIVE</span>` +
+        (srcLabel ? ` · <span class="src-tag">${srcLabel}</span>` : '');
       freshEl.className = 'price-freshness live';
     } else if (stock.is_market_open) {
-      freshEl.innerHTML = `🕐 장중 (지연 시세)`;
+      freshEl.innerHTML = `🕐 장중 (지연 시세)` + (srcLabel ? ` · ${srcLabel}` : '');
       freshEl.className = 'price-freshness delayed';
     } else {
       const tsLabel = _formatBarTimestamp(stock.data_timestamp);

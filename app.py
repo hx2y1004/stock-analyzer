@@ -194,6 +194,70 @@ def _calc_dividend_yield(info, current_price):
     return None
 
 
+# 네이버 실시간 시세 캐시 (남용 방지 — 30초)
+_NAVER_RT_CACHE = {}
+_NAVER_RT_TTL = 30  # seconds
+
+
+def fetch_naver_realtime_price(krx_code: str):
+    """네이버 금융 폴링 API → 한국 주식 실시간 시세 (~1분 지연).
+
+    yfinance(15~20분 지연)보다 훨씬 빠름. 장중 한국 종목에 우선 사용.
+
+    Returns:
+        dict {current_price, previous_close, market_status, source} 또는 None
+    """
+    if not krx_code:
+        return None
+
+    # 30초 캐시
+    now_ts = time.time()
+    cached = _NAVER_RT_CACHE.get(krx_code)
+    if cached and (now_ts - cached[0]) < _NAVER_RT_TTL:
+        return cached[1]
+
+    try:
+        url = f"https://polling.finance.naver.com/api/realtime/domestic/stock/{krx_code}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Referer": f"https://finance.naver.com/item/main.naver?code={krx_code}",
+            "Accept": "application/json, text/plain, */*",
+        }
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code != 200:
+            return None
+        data = r.json() or {}
+        areas = (data.get("result") or {}).get("areas") or []
+        if not areas:
+            return None
+        datas = areas[0].get("datas") or []
+        if not datas:
+            return None
+        d = datas[0]
+        current = safe_float(d.get("nv"))    # 현재가
+        prev    = safe_float(d.get("pcv"))   # 전일 종가
+        if not current:
+            return None
+        result = {
+            "current_price":  current,
+            "previous_close": prev,
+            "market_status":  d.get("ms"),   # "OPEN" / "CLOSE"
+            "source":         "naver",
+        }
+        _NAVER_RT_CACHE[krx_code] = (now_ts, result)
+        return result
+    except Exception as e:
+        try:
+            app.logger.warning(f"[naver-realtime] {krx_code}: {e}")
+        except Exception:
+            pass
+        return None
+
+
 def fetch_naver_fundamentals(krx_code):
     """
     네이버 금융 API로 한국 주식 EPS/BPS를 가져옵니다.
@@ -1801,20 +1865,37 @@ def analyze():
             "macd_hist": series("MACD_hist"),
         }
 
-        # ── 실시간 가격 시도 (fast_info) ──────────────────────────────
+        # ── 실시간 가격 시도 ──────────────────────────────────────────
+        # 우선순위:
+        #   1. 한국 종목 → 네이버 폴링 API (~1분 지연)
+        #   2. 폴백 → yfinance fast_info (15~20분 지연)
         # 장중이면 실시간가, 장 마감 후/주말이면 마지막 종가
         history_close      = safe_float(df["Close"].iloc[-1])
         history_prev_close = safe_float(df["Close"].iloc[-2]) if len(df) >= 2 else None
 
-        realtime_price = None
-        realtime_prev  = None
-        try:
-            fi = stock.fast_info
-            realtime_price = safe_float(getattr(fi, "last_price", None))
-            realtime_prev  = safe_float(getattr(fi, "previous_close", None)) or \
-                             safe_float(getattr(fi, "regular_market_previous_close", None))
-        except Exception:
-            pass
+        realtime_price  = None
+        realtime_prev   = None
+        realtime_source = None  # "naver" | "yfinance"
+
+        # 1) 한국 종목 → 네이버 우선
+        if is_korean:
+            nv = fetch_naver_realtime_price(ticker.split(".")[0])
+            if nv:
+                realtime_price  = nv.get("current_price")
+                realtime_prev   = nv.get("previous_close")
+                realtime_source = "naver"
+
+        # 2) 폴백: yfinance fast_info (미국 종목 / 네이버 실패 시)
+        if not realtime_price:
+            try:
+                fi = stock.fast_info
+                realtime_price = safe_float(getattr(fi, "last_price", None))
+                realtime_prev  = safe_float(getattr(fi, "previous_close", None)) or \
+                                 safe_float(getattr(fi, "regular_market_previous_close", None))
+                if realtime_price:
+                    realtime_source = "yfinance"
+            except Exception:
+                pass
 
         # 시장 개장 여부 (대략적 — KST/EST 기준)
         is_market_open_now = _is_market_open(ticker)
@@ -1829,6 +1910,7 @@ def analyze():
             current_price = history_close
             prev_close    = history_prev_close
             is_realtime   = False
+            realtime_source = None
 
         price_change     = round(current_price - prev_close, 2) if (current_price and prev_close) else None
         price_change_pct = round((price_change / prev_close) * 100, 2) if (price_change and prev_close) else None
@@ -2125,6 +2207,7 @@ def analyze():
             "is_market_open": is_market_open_now,
             "data_timestamp": data_timestamp,
             "fetched_at": datetime.utcnow().isoformat() + "Z",
+            "realtime_source": realtime_source,  # "naver" | "yfinance" | null
             "market_cap": info.get("marketCap"),
             "volume": safe_float(df["Volume"].iloc[-1]),
             "avg_volume": safe_float(df["Volume"].tail(20).mean()),
