@@ -263,10 +263,22 @@ function renderPositions(positions) {
                                           : `<div class="trend-rank trend-rank-num">#${idx + 1}</div>`;
     const cls = p.pnl_pct > 0 ? 'up' : p.pnl_pct < 0 ? 'down' : 'flat';
     const icon = p.pnl_pct > 0 ? '▲' : p.pnl_pct < 0 ? '▼' : '·';
-    const badgeCls = p.pnl_pct >= 30 ? 'score-high' : p.pnl_pct >= 5 ? 'score-mid' : p.pnl_pct >= -5 ? 'score-low' : 'score-neg';
+    // 뱃지: 방향 우선, 진하기는 절댓값
+    let badgeCls;
+    if (p.pnl_pct == null)      badgeCls = 'score-flat';
+    else if (p.pnl_pct >= 15)   badgeCls = 'score-gain-strong';
+    else if (p.pnl_pct > 0)     badgeCls = 'score-gain';
+    else if (p.pnl_pct === 0)   badgeCls = 'score-flat';
+    else if (p.pnl_pct > -15)   badgeCls = 'score-loss';
+    else                        badgeCls = 'score-loss-strong';
+    // 카드 좌측 보더/배경용 방향 클래스
+    const dirClass =
+      p.pnl_pct == null   ? 'pf-dir-flat' :
+      p.pnl_pct >  0      ? 'pf-dir-gain' :
+      p.pnl_pct === 0     ? 'pf-dir-flat' : 'pf-dir-loss';
     const tierClass = (idx < 3 && p.pnl_pct > 0) ? `trend-tier-${idx + 1}` : '';
     return `
-      <div class="pf-card trend-card-v2 ${tierClass}">
+      <div class="pf-card trend-card-v2 ${tierClass} ${dirClass}">
         <div class="trend-card-row">
           ${rank}
           <div class="trend-name-block">
@@ -276,7 +288,7 @@ function renderPositions(positions) {
           <div class="trend-spark-wrap"></div>
           <div class="trend-price-block">
             <div class="trend-price-val">${fmtNative(p.current_price, p.currency)}</div>
-            <div class="trend-chg pf-${cls}">${(p.pnl_krw >= 0 ? '+' : '') + fmtKRW(p.pnl_krw)}</div>
+            <div class="trend-chg pf-${cls} pf-amount">${(p.pnl_krw >= 0 ? '+' : '') + fmtKRW(p.pnl_krw)}</div>
           </div>
           <div class="trend-score-v2 ${badgeCls}">
             ${icon} ${Math.abs(p.pnl_pct).toFixed(1)}<span class="score-suffix">%</span>
