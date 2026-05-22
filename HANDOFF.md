@@ -1,23 +1,25 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-05-22 KST
+> 마지막 업데이트: 2026-05-22 KST (저녁 세션)
 
 ---
 
-## 🚀 현재 상태 (2026-05-21)
+## 🚀 현재 상태 (2026-05-22 저녁)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `3cf54ea` (전일 종가 계산 버그 수정)
-- Service Worker: **`sa-v26`**
-- **이번 세션에서 14개의 큰 기능/수정 추가** — §5에 모두 기록
+- 최신 커밋: `d69cd95` (모의투자 포지션 카드 수익/손실 색상 개선)
+- Service Worker: **`sa-v31`**
+- 정적 자산 캐시 버스팅: HTML에 `?v=30` 쿼리 사용 중
+- **이번 저녁 세션 6개 커밋 추가** — 자산 차트 + 벤치마크 + 챌린지/랭킹/닉네임 + UX 개선
 
 ### 다음 우선 작업 후보 (사용자 결정 대기)
-- [ ] **자산 변화 차트** — 모의투자 일별 총자산 스냅샷 시계열 (DB 모델 추가 필요)
-- [ ] **벤치마크 비교** — KOSPI/S&P500 대비 모의투자 수익률
-- [ ] **챌린지 시스템 / 사용자 랭킹**
 - [ ] **DART API 키 등록** — 한국 임원 주식 변동 보고 자동 fetch (API 키만 필요)
-- [ ] **자동 손절 / 백테스트 / AI 코치**
+- [ ] **자동 손절** — 매수 시 손절가 입력 → 도달 시 알림/자동 매도
+- [ ] **백테스트** — 과거 데이터로 전략 검증
+- [ ] **AI 코치** — 매매 패턴 학습 후 피드백
+- [ ] **랭킹 시즌제** — 월간/시즌별 리셋 + 시즌 보상 배지
+- [ ] **포지션 노트** — 종목별 매매 일지/메모
 
 ---
 
@@ -48,7 +50,8 @@
 stock-analyzer/
 ├─ app.py                    # Flask 메인 (모든 라우트/API)
 ├─ auth.py                   # OAuth (Google/Kakao) 블루프린트
-├─ models.py                 # SQLAlchemy 모델 (User, Holding, Transaction)
+├─ models.py                 # SQLAlchemy 모델 (User, Holding, Transaction, AssetSnapshot, UserBadge)
+├─ badges.py                 # NEW — 25개 배지 정의 + evaluate 엔진
 ├─ trends_scanner.py         # 트렌드 스캐너 v2 (RS/OBV/Base/Perfect Setup)
 ├─ build_stock_db.py         # 종목 DB 빌더 → stock_db.json
 ├─ stock_db.json             # 종목명/티커 매핑 + 메타 (자동완성용)
@@ -58,16 +61,18 @@ stock-analyzer/
 │  └─ indicators.py          # 기술지표 (MA, RSI, OBV, 스테이지 등)
 ├─ templates/
 │  ├─ index.html             # 메인 (분석 + 포트폴리오)
-│  └─ trading.html           # 모의투자
+│  ├─ trading.html           # 모의투자 (자산 차트 + 배지 + 닉네임 모달)
+│  └─ leaderboard.html       # NEW — 랭킹 페이지
 ├─ static/
 │  ├─ js/
 │  │  ├─ main.js             # 메인 페이지 클라이언트
-│  │  ├─ trading.js          # 모의투자 클라이언트
+│  │  ├─ trading.js          # 모의투자 + 자산 차트 + 배지/닉네임
+│  │  ├─ leaderboard.js      # NEW — 랭킹 페이지 클라이언트
 │  │  └─ chart.js            # LightweightCharts 헬퍼
 │  ├─ css/style.css          # 전체 스타일 (다크 테마)
 │  ├─ icons/                 # PWA 아이콘
 │  ├─ manifest.json          # PWA 매니페스트
-│  └─ service-worker.js      # SW (현재 sa-v26)
+│  └─ service-worker.js      # SW (현재 sa-v31)
 ├─ scripts/                  # 일회성 스크립트들
 ├─ instance/                 # 로컬 SQLite
 ├─ railway.toml              # Railway 배포 설정
@@ -86,7 +91,10 @@ stock-analyzer/
 - **모의투자 필드**:
   - `cash_balance` Float, default `INITIAL_CAPITAL_KRW` (1억원)
   - `initial_capital` Float, default 1억원 (수익률 계산 기준)
-- 관계: `holdings`, `transactions` (cascade delete)
+- **랭킹/프로필 필드** (2026-05-22 추가):
+  - `nickname` String(30), unique, nullable (설정 안 하면 랭킹 미노출)
+  - `is_public` Boolean, default True (랭킹 공개 여부)
+- 관계: `holdings`, `transactions`, `asset_snapshots`, `badges` (cascade delete)
 - 유니크: `(provider, provider_id)`
 
 ### `Holding` (테이블 `holdings`) — 실제 포트폴리오
@@ -96,6 +104,21 @@ stock-analyzer/
 - `id`, `user_id`, `ticker`, `name`, `type`('buy'|'sell')
 - `price` (native), `quantity`, `currency`, `exchange_rate` (당시 USD/KRW; KRW면 1.0)
 - `fee_krw` (수수료 0.1% 환산), `amount_krw` (총액 KRW), `realized_pnl_krw` (매도시), `timestamp`
+
+### `AssetSnapshot` (테이블 `asset_snapshots`) — NEW
+- `id`, `user_id`, `date` (DATE, KST 기준 일별)
+- `total_assets_krw`, `cash_krw`, `positions_value_krw`
+- `created_at`
+- 유니크: `(user_id, date)` — 같은 날 1회만 (upsert)
+- `trading_dashboard()` 호출 시마다 자동 upsert
+- `trading_reset` 시 모두 삭제
+
+### `UserBadge` (테이블 `user_badges`) — NEW
+- `id`, `user_id`, `badge_key` (String 50)
+- `earned_at` DateTime
+- 유니크: `(user_id, badge_key)`
+- `badges.py`의 BADGES 정의와 키로 연결
+- `trading_reset` 시 모두 삭제
 
 ### 상수
 - `INITIAL_CAPITAL_KRW = 100_000_000` (모의투자 초기자본 1억원)
@@ -132,10 +155,22 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 - `GET /api/trading/transactions` — 거래 내역
 - `POST /api/trading/reset` — 전체 초기화 + 1억원 재지급
 
-### 시장 데이터 / 섹터 (신규 — 2026-05-21)
+### 시장 데이터 / 섹터 (2026-05-21)
 - `GET /api/sectors/strength?market=US|KR&force=1` — 섹터/테마 강도 랭킹
 - `GET /api/sectors/constituents?market=US&ticker=XLK` — US 섹터 ETF 대표 종목 (15개, 등락률순)
 - `GET /api/sectors/constituents?market=KR&theme_no=123` — KR 테마 구성 종목 (20개)
+
+### 자산 변화 차트 (NEW — 2026-05-22 저녁)
+- `GET /api/trading/history?days=7|30|90|all` — 일별 자산 스냅샷 + KOSPI/S&P500 벤치마크 (시작일 기준 % 정규화)
+- 응답: `{ snapshots[], benchmarks: {kospi[], sp500[]}, initial_capital_krw, start_date }`
+
+### 챌린지/랭킹/닉네임 (NEW — 2026-05-22 저녁)
+- `GET  /api/me/badges` — 획득 배지 + 전체 정의 (잠금 포함)
+- `GET  /api/me/nickname` — 내 닉네임
+- `POST /api/me/nickname` body `{nickname}` — 설정 (2~20자, 한글/영문/숫자/_)
+- `GET  /api/leaderboard?metric=total|7d|30d&limit=50` — 랭킹 (스냅샷 기반)
+- `GET  /leaderboard` — 랭킹 페이지
+- dashboard 응답에 `newly_earned_badges`, `nickname` 추가됨
 
 ### 헬퍼 (app.py 내부)
 - `_get_usd_krw_rate()` — yfinance `KRW=X`, **10분 캐시**
@@ -151,10 +186,110 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 - `_groq_chat(...)` — 모든 Groq 호출 공용 (model fallback + retry + 한자 필터 자동 적용)
 - `US_SECTOR_HOLDINGS` — SPDR 11개 ETF별 대표 종목 ~20개 (하드코딩)
 - `_US_NAME_FALLBACK` — 미국 주요 종목 영문명 매핑 ~150개
+- **NEW (저녁 세션)**:
+  - `_save_today_snapshot(user_id, total, cash, positions)` — KST 일별 자산 스냅샷 upsert
+  - `_fetch_benchmark_history(symbol, lookback_days)` — KOSPI/S&P500 yfinance 1h 캐시
+  - `_normalize_benchmark(history, start_date_str)` — 시작일 기준 % 변환
+  - `_build_badge_context(user, summary, positions, holdings_count)` — 배지 평가용 ctx 빌더
+  - `_check_and_award_badges(user, ctx)` — 자격 충족된 배지 자동 부여, 새 키 리스트 반환
 
 ---
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
+
+### 📌 2026-05-22 저녁 — 모의투자 포지션 카드 색상도 개선 (`d69cd95`)
+**문제**: ed3cf61 에서 분석 페이지 포트폴리오 카드(`main.js _pfCardHTML`)만 수정.
+모의투자 페이지는 별도 함수(`trading.js renderPositions`)가 카드를 그리는데 옛
+`score-high/mid/low/neg` 클래스 그대로였음.
+
+**해결** (`static/js/trading.js`):
+- renderPositions의 badgeCls/dirClass 로직을 main.js와 동일하게 통일
+- 방향 우선 (`score-gain-strong/gain/flat/loss/loss-strong`)
+- 카드에 `pf-dir-gain/loss/flat` 추가 → 좌측 컬러 보더
+- 손익 금액 `pf-amount` 클래스 (굵기/크기 강조)
+- 캐시 버스팅 `?v=29 → ?v=30`, SW `sa-v30 → sa-v31`
+
+### 📌 2026-05-22 저녁 — SW 캐시 우회 (`994ac68`)
+**문제**: 클라이언트가 옛 Service Worker 캐시로 인해 새 main.js/style.css를 못 받음
+**해결**: 모든 HTML의 정적 자산에 `?v=29` 쿼리 추가 → URL 자체가 달라져 옛 SW
+캐시 미스 → 강제 네트워크 fetch. SW `sa-v29 → sa-v30`.
+
+### 📌 2026-05-22 저녁 — 포트폴리오 카드 수익/손실 한눈에 (`ed3cf61`)
+**문제**: 기존 뱃지 색이 강도 기준 (high=노랑, mid=파랑, low=회색, neg=빨강) 이라
++10%와 -3% 가 모두 파랑·노랑으로 보여 수익/손실 즉시 구분이 어려움.
+
+**해결** (`static/js/main.js` + `static/css/style.css`):
+- 뱃지 색은 방향이 1순위: 녹(이익) / 회(보합) / 적(손실)
+- 진하기는 절댓값: `gain-strong(15%+) / gain / flat / loss / loss-strong(-15%+)`
+- 카드 좌측 4px 컬러 보더 (`pf-dir-gain/loss/flat`)
+- 좌측 그라데이션 배경 (수익=연녹/손실=연적)
+- 손익 금액 `+/-원` 13px bold 강조
+- ⚠️ 분석 페이지의 _pfCardHTML 만 수정 — trading.js는 d69cd95에서 보완
+
+### 📌 2026-05-22 저녁 — 챌린지(배지 25종) + 랭킹 + 닉네임 (`7ae81d7`)
+**DB**:
+- User에 `nickname`(unique), `is_public` 컬럼 추가
+- 신규 `UserBadge` 모델
+- PostgreSQL 마이그레이션 SQL 추가
+
+**`badges.py` (NEW)**:
+- 25개 배지 7카테고리 5티어: 활동(4) / 수익(6) / 트레이딩(3) / 포트폴리오(3)
+  / 글로벌(3) / 성과(3) / 꾸준함(3)
+- 티어: 브론즈/실버/골드/다이아/전설
+- `evaluate_badges(ctx, earned_keys)` — 이미 획득한 키 제외하고 새로 자격된 키 반환
+- `badge_public_dict(b)` — 프론트로 보낼 때 check 함수 제외
+
+**`app.py` 통합**:
+- `_build_badge_context()` — 거래 통계/포지션/스냅샷 일수 등 ctx 빌드
+- `_check_and_award_badges()` — DB에 새 배지 insert + 새 키 반환
+- `trading_dashboard()`에서 자동 호출, 응답에 `newly_earned_badges` 포함
+
+**새 API**:
+- `GET /api/me/badges`, `GET/POST /api/me/nickname`, `GET /api/leaderboard`
+- `GET /leaderboard` 페이지 라우트
+
+**UI**:
+- `/leaderboard` 신규 페이지 (탭 3개: 전체/30일/7일, 금/은/동 메달, 내 행 하이라이트)
+- `/trading` 닉네임 변경 버튼(🏷️) + 모달 (최초 1회 자동 안내)
+- `/trading` 🏅 내 배지 섹션 (카테고리별 그룹, 잠금/획득 시각화, 티어 색상)
+- 새 배지 획득 시 우측 하단 토스트 알림 (3.2초 간격 순차)
+- 헤더 nav에 `🏆 랭킹` 링크 추가 (모든 페이지)
+
+**규칙**:
+- 닉네임 설정 안 한 사용자는 랭킹에 등장 안 함 (옵트인)
+- 다른 유저의 user_id는 응답에서 제거 (프라이버시)
+- `trading_reset` 시 배지/스냅샷도 삭제 (완전 리셋)
+
+### 📌 2026-05-22 — 시가총액 None 포맷 오류 수정 (`fdaa822`)
+**문제**: 288980.KS 분석 시 "unsupported format string passed to NoneType.__format__"
+**원인**: `fetch_company_overview` 프롬프트의 `{mktcap:,} {currency}` 가 yfinance의
+None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
+
+**해결**:
+- 시가총액/PER/선행PER 모두 None-safe 포맷 헬퍼로 분리 (조원/억원 단위 자동 선택)
+- analyze() except 블록에 traceback 로깅 추가 (향후 디버깅용)
+
+### 📌 2026-05-22 저녁 — 자산 변화 차트 + KOSPI/S&P500 벤치마크 (`4e0bf61`)
+**DB**:
+- 새 모델 `AssetSnapshot` (user_id, date, total_assets_krw, cash_krw, positions_value_krw)
+- `(user_id, date)` 유니크 → KST 기준 일별 1회 upsert
+- PostgreSQL CREATE TABLE IF NOT EXISTS + index
+
+**`app.py`**:
+- `_save_today_snapshot()` — `trading_dashboard()` 호출 시 자동 upsert
+- `_fetch_benchmark_history(symbol, days)` — ^KS11/^GSPC yfinance, 1시간 메모리 캐시
+- `_normalize_benchmark(history, start_date)` — 시작일 첫 종가를 100% 기준으로 정규화
+- 새 엔드포인트 `GET /api/trading/history?days=7|30|90|all`
+- `trading_reset()`에서 스냅샷 함께 삭제
+
+**프런트** (`trading.html` + `trading.js`):
+- LightweightCharts CDN 추가
+- `📈 자산 변화 추이` 카드 (포트폴리오 요약 ↔ 빠른 매수 사이)
+- 기간 토글 7D/30D/90D/전체
+- 3-line chart: 내 자산(녹) / KOSPI(파) / S&P500(주황) 모두 `% return`
+- 헤더 우측 비교 요약 (`내 +5.3% · KOSPI +1.2% · S&P +0.8%`)
+- 0% baseline 점선
+- 데이터 부족 시 안내 문구
 
 ### 📌 2026-05-22 — 전일 종가 계산 오류 수정 (`3cf54ea`)
 **문제**: RKLB처럼 변동성 큰 종목에서 `fast_info.previous_close`가 이틀 전 종가 반환 → 실제 -5.1%인데 +3.6%로 표시
@@ -401,7 +536,15 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 
 ## 6. 다음 할 일 (우선순위 순)
 
-### ✅ 최근 완료 (2026-05-22 세션)
+### ✅ 최근 완료 (2026-05-22 저녁 세션)
+- [x] **자산 변화 차트** + KOSPI/S&P500 벤치마크 (4e0bf61)
+- [x] 시가총액 None 포맷 오류 수정 (fdaa822)
+- [x] **챌린지 25배지** + **랭킹 시스템** + **닉네임 프로필** (7ae81d7)
+- [x] 포트폴리오 카드 수익/손실 색상 한눈에 — 분석 페이지 (ed3cf61)
+- [x] SW 캐시 우회 ?v= 쿼리 패치 (994ac68)
+- [x] 모의투자 페이지 포지션 카드도 색상 개선 (d69cd95)
+
+### ✅ 이전 완료 (2026-05-22 낮 세션)
 - [x] 분석↔모의투자 통합
 - [x] 숫자 스테퍼 UX (`[−] input [+]`)
 - [x] 장중 실시간 가격 + LIVE 뱃지 (yfinance + 네이버 폴링)
@@ -414,18 +557,13 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 - [x] Groq AI 프롬프트 강화 + 한자 자동 변환
 - [x] 전일 종가 계산 버그 수정
 
-### 📋 모의투자 Step 2 (계획됨)
-- [ ] **자산 변화 차트** — 일별 총자산 스냅샷 시계열 (새 DB 모델 필요)
-- [ ] **벤치마크 비교** — KOSPI/S&P500 대비 수익률
-
-### 📋 Step 3 (게이미피케이션)
-- [ ] 챌린지 시스템
-- [ ] 사용자 랭킹 (수익률 기반)
-
-### 📋 Step 4 (고급)
-- [ ] 자동 손절
-- [ ] 백테스트
-- [ ] AI 코치 (매매 패턴 피드백)
+### 📋 Step 4 (고급 — 다음 후보)
+- [ ] DART API 키 등록 (한국 임원 매매 자동 fetch — 키만 발급받으면 됨)
+- [ ] 자동 손절 (매수 시 손절가 입력 → 도달 시 알림/자동 매도)
+- [ ] 백테스트 (과거 데이터로 전략 검증)
+- [ ] AI 코치 (매매 패턴 학습 후 피드백)
+- [ ] 랭킹 시즌제 (월간/시즌별 리셋 + 시즌 배지)
+- [ ] 포지션 노트 (종목별 매매 일지/메모)
 
 ### 📋 데이터 보강 (옵션)
 - [ ] **DART API 키 등록** — 한국 임원 주식 변동 자동 fetch
@@ -439,7 +577,9 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 
 ### 7.1 Service Worker 캐싱
 - **JS/CSS 변경 시 `static/service-worker.js`의 `CACHE_VERSION` 올려야** 사용자에게 반영됨
-- 현재: `sa-v26`
+- 현재: `sa-v31`
+- HTML 의 정적 자산은 **`?v=NN` 쿼리 캐시 버스팅** 사용 (현재 v=30) —
+  옛 SW 캐시 우회용. CSS/JS 큰 변경 시 SW 버전과 함께 v 도 올릴 것
 - `/static/js/*`, `style.css`, `manifest.json` → **network-first** (실시간 반영)
 - `/api/trends/status` → 캐싱 완전 제외
 - 기타 정적자산 → cache-first
@@ -492,6 +632,24 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 - `fetch_kr_supplements(krx_code)` 자동 호출 → `scorecard.metrics.kr_*` 주입
 - 30분 캐시. force 무효화는 아직 없음 (필요 시 추가)
 
+### 7.13 자산 스냅샷 (자산 변화 차트)
+- `trading_dashboard()` 호출 시마다 KST 기준 오늘 자산 자동 upsert
+- 하루 1회 (사용자가 들어와야 기록됨). 매일 자동 cron은 없음
+- ⚠️ 종가 기준이 아니라 호출 시점의 평가금액 → 차트는 "참고용" 트렌드
+- 정확한 일별 마감 종가가 필요하면 별도 daily cron 필요 (TODO)
+
+### 7.14 배지 시스템
+- `badges.py`의 `BADGES` 배열에서 추가/수정
+- 각 배지는 `{key, name, icon, tier, category, desc, check(ctx)}` 형식
+- ctx 키 추가 시 `_build_badge_context()`도 함께 수정 필수
+- 새 배지는 다음 dashboard 호출에서 자동 평가/부여
+- 기존 사용자에게 소급 적용됨 (이미 자격 충족 상태면 다음 접속 시 부여)
+
+### 7.15 랭킹 노출 정책
+- 닉네임 설정 + `is_public=True` 사용자만 노출 (옵트인)
+- 다른 사용자의 `user_id`는 API 응답에서 제거 (프라이버시)
+- 본인 행에만 `is_me: true` + `user_id` 포함
+
 ---
 
 ## 8. 외부 의존성 / 환경변수
@@ -538,6 +696,7 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
 ## 10. 미해결/주시 중
 
 - [x] ~~Railway "Limited Access"~~ 해결됨 (2026-05-21)
+- [x] ~~모의투자 일별 자산 스냅샷 DB 모델~~ 완료 (4e0bf61)
 - [ ] **한국 테마 상세 페이지 스크래핑 일부 실패** 가능성 — 네이버가 페이지 구조 바꿀 때마다 `_fetch_kr_theme_constituents` 셀렉터 영향
   - 자동 폴백 로직 있음 (`code= 링크 가장 많은 테이블`) 이지만 0행 반환 시 Railway 로그 `[constituents KR] {no}: parsed 0 rows` 확인
 - [ ] **yfinance fast_info 일부 필드 불안정** — `previous_close`는 폐기했지만 `last_price`도 가끔 None 반환
@@ -545,16 +704,26 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
 - [ ] **한국 종목 Piotroski F-Score / 내부자 데이터 부족** — yfinance 한계, DART API 키 등록하면 보강 가능
 - [ ] AI 분석 응답 길이/품질 들쭉날쭉 (fallback 모델 차이)
 - [ ] 트렌드 스캐너 풀스캔 시 응답 시간 (gthread 8개라 여유 있지만 모니터 필요)
-- [ ] 모의투자 일별 자산 스냅샷 DB 모델 미구현 (자산 변화 차트 위해 필요)
+- [ ] **자산 스냅샷이 종가 기준이 아님** — dashboard 호출 시점의 평가금액
+  - 정확한 일별 종가 기록 위해 매일 16:00 KST + 17:00 EST cron 도입 검토
+- [ ] **랭킹 캐싱 없음** — 사용자 늘면 `/api/leaderboard` 가 매 호출마다 모든 사용자 스냅샷 조회
+  - 사용자 100명 초과 시 5분 캐시 도입
 
 ---
 
-## 11. Git 상태 스냅샷 (2026-05-22)
+## 11. Git 상태 스냅샷 (2026-05-22 저녁)
 
 ```
 main 브랜치 (origin/main과 동기화됨, 모두 정상 배포)
 
-3cf54ea fix: 전일 종가 계산 오류 (fast_info.previous_close 신뢰 안함)         ← HEAD
+d69cd95 ux: 모의투자 페이지의 포지션 카드도 수익/손실 색상 개선 적용         ← HEAD
+994ac68 fix: 옛 Service Worker 캐시 우회 — JS/CSS에 ?v=29 쿼리 추가
+ed3cf61 ux: 포트폴리오 카드 수익/손실 한눈에 보이도록 개선
+7ae81d7 feat: 챌린지(배지 25종) + 랭킹 시스템 + 닉네임 프로필
+fdaa822 fix: 시가총액 None일 때 format 오류로 분석 실패하던 문제 수정
+4e0bf61 feat: 자산 변화 차트 + KOSPI/S&P500 벤치마크 비교
+5a9938f docs: HANDOFF.md 최신화 — 2026-05-22 세션 작업 14건 반영
+3cf54ea fix: 전일 종가 계산 오류 (fast_info.previous_close 신뢰 안함)
 5535259 feat: Groq AI 프롬프트 강화 + 한자 자동 변환/제거
 7b61525 feat: 스코어카드 ⓘ 모바일에서도 탭하면 인라인 도움말 펼침
 a49abc9 ux: 섹터 강도 새로고침 버튼 모바일에서 아이콘만 (원형 36x36)
@@ -573,13 +742,20 @@ b52dfcb feat: 섹터/테마 강도 랭킹 탭 추가 (모멘텀+거래량/breadt
 68d0575 feat: 분석↔모의투자 통합 - 분석 페이지에서 바로 모의 매수/매도
 ```
 
-**Service Worker**: `sa-v26`
-**최신 변경 핵심 파일**:
-- `app.py` (실시간 시세, 섹터 강도, 한국 보충, 프롬프트, prev_close 수정)
-- `analysis/advanced.py` (NEW — 월가 스코어카드)
-- `analysis/ai_analysis.py` (analyze_signals에 stock 인자 추가, scorecard 키)
-- `templates/index.html` (섹터 탭, 스코어카드 패널, 가격 신선도 표시, 스테퍼)
-- `templates/trading.html` (스테퍼, 자산 새로고침 버튼)
-- `static/js/main.js` (스코어카드, 섹터, 도움말 토글, 가격 표시)
-- `static/js/trading.js` (refreshDashboard)
-- `static/css/style.css` (모든 신규 UI 스타일)
+**Service Worker**: `sa-v31`
+**HTML 캐시 버스팅 쿼리**: `?v=30`
+
+**저녁 세션 신규/수정 파일**:
+- `models.py` — `AssetSnapshot`, `UserBadge` 모델 추가 + User.nickname/is_public
+- `badges.py` (NEW) — 25개 배지 정의 + evaluate 엔진
+- `app.py` — 마이그레이션 SQL, 스냅샷 헬퍼, 벤치마크 fetcher, 배지 ctx 빌더/부여 엔진,
+  `/api/trading/history`, `/api/me/badges`, `/api/me/nickname`, `/api/leaderboard`,
+  `/leaderboard` 라우트, 시가총액 None 안전 포맷
+- `templates/leaderboard.html` (NEW)
+- `templates/index.html`, `templates/trading.html` — 랭킹 nav 링크, ?v= 캐시 버스팅
+- `templates/trading.html` — 자산 차트 카드 + LightweightCharts CDN + 닉네임 모달 +
+  배지 섹션 + 새 배지 토스트
+- `static/js/main.js` — 포트폴리오 카드 색상 로직 개편 (방향 우선)
+- `static/js/trading.js` — 자산 차트, 배지 로딩/렌더링, 닉네임 모달, 포지션 카드 색상
+- `static/js/leaderboard.js` (NEW)
+- `static/css/style.css` — 자산 차트, 랭킹, 배지 그리드/토스트, 카드 방향 색상
