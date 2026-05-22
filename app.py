@@ -2442,6 +2442,27 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
     fwd_pe   = info.get("forwardPE")
     eng_desc = (info.get("longBusinessSummary") or "")[:600]
 
+    # 시가총액 포맷 (None 대응)
+    if is_krw and mktcap:
+        if mktcap >= 1e12:
+            mktcap_str = f"{mktcap/1e12:.1f}조원"
+        elif mktcap >= 1e8:
+            mktcap_str = f"{mktcap/1e8:.0f}억원"
+        else:
+            mktcap_str = f"{mktcap:,.0f}원"
+    elif mktcap:
+        if mktcap >= 1e9:
+            mktcap_str = f"${mktcap/1e9:.1f}B"
+        elif mktcap >= 1e6:
+            mktcap_str = f"${mktcap/1e6:.0f}M"
+        else:
+            mktcap_str = f"${mktcap:,.0f}"
+    else:
+        mktcap_str = "정보 없음"
+
+    pe_str     = f"{pe:.1f}" if pe else "정보 없음"
+    fwd_pe_str = f"{fwd_pe:.1f}" if fwd_pe else "정보 없음"
+
     # 매출 추이 텍스트
     rev_ctx = ""
     if revenue_quarters:
@@ -2473,8 +2494,8 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
 [기업 기본 정보]
 - 종목: {name} ({ticker})
 - 섹터/산업: {sector} / {industry}
-- 시가총액: {mktcap:,} {currency} (있을 경우)
-- PER: {pe} / 선행PER: {fwd_pe}{rev_ctx}
+- 시가총액: {mktcap_str}
+- PER: {pe_str} / 선행PER: {fwd_pe_str}{rev_ctx}
 - 영문 사업 개요: {eng_desc}
 
 아래 3개 섹션을 정확한 레이블로 시작해 작성하세요. 각 섹션은 의사결정에 활용 가능한 깊이로.
@@ -3198,6 +3219,8 @@ def analyze():
         )
 
     except Exception as e:
+        import traceback
+        app.logger.error(f"[analyze] {ticker if 'ticker' in locals() else '?'} failed: {e}\n{traceback.format_exc()}")
         return jsonify({"error": f"분석 중 오류 발생: {str(e)}"}), 500
 
 
