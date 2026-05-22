@@ -76,29 +76,40 @@ function _pfCardHTML(h, rank, compact = false) {
     : `<div class="trend-rank trend-rank-num">#${rank}</div>`;
   const tierClass = showMedal ? `trend-tier-${rank}` : '';
 
-  // 수익률 뱃지 색상
-  const retBadgeColor =
-    retPct == null ? 'low' :
-    retPct >= 30   ? 'high' :
-    retPct >= 5    ? 'mid' :
-    retPct >= -5   ? 'low' : 'neg';
+  // 수익률 뱃지 색상 — 방향 우선, 진하기는 절댓값
+  let retBadgeColor;
+  if (retPct == null)        retBadgeColor = 'flat';
+  else if (retPct >= 15)     retBadgeColor = 'gain-strong';
+  else if (retPct > 0)       retBadgeColor = 'gain';
+  else if (retPct === 0)     retBadgeColor = 'flat';
+  else if (retPct > -15)     retBadgeColor = 'loss';
+  else                       retBadgeColor = 'loss-strong';
+
+  // 카드 자체 방향 클래스 (좌측 보더/배경 틴트용)
+  const dirClass =
+    retPct == null   ? 'pf-dir-flat' :
+    retPct >  0      ? 'pf-dir-gain' :
+    retPct === 0     ? 'pf-dir-flat' : 'pf-dir-loss';
 
   // 수익률 뱃지 콘텐츠 (% 큰 글씨, 변화 없으면 dash)
   const retBadgeText = retPct != null
     ? `${retIcon} ${Math.abs(retPct).toFixed(1)}<span class="score-suffix">%</span>`
     : '—';
 
-  // 가격 / 일변동 (포트폴리오는 일변동 없으니 매입가 표시)
+  // 가격 / 손익금액 (방향에 따라 강조)
+  const retAmtStr = retAmt != null
+    ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt))
+    : '';
   const priceBlock = `
     <div class="trend-price-block">
       <div class="trend-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
-      <div class="trend-chg pf-${retClass}">${retAmt != null ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt)) : ''}</div>
+      <div class="trend-chg pf-${retClass} pf-amount">${retAmtStr}</div>
     </div>`;
 
   // 컴팩트: 한 줄 (순위, 종목명, 현재가, 수익률뱃지)
   if (compact) {
     return `
-    <div class="pf-card trend-card-v2 ${tierClass}" onclick="quickSearch('${h.ticker}')">
+    <div class="pf-card trend-card-v2 ${tierClass} ${dirClass}" onclick="quickSearch('${h.ticker}')">
       <div class="trend-card-row">
         ${rankBlock}
         <div class="trend-name-block">
@@ -114,7 +125,7 @@ function _pfCardHTML(h, rank, compact = false) {
 
   // 풀: 보유수량 + 매입가 + 삭제 버튼 추가
   return `
-  <div class="pf-card trend-card-v2 ${tierClass}" onclick="quickSearch('${h.ticker}')">
+  <div class="pf-card trend-card-v2 ${tierClass} ${dirClass}" onclick="quickSearch('${h.ticker}')">
     <div class="trend-card-row">
       ${rankBlock}
       <div class="trend-name-block">

@@ -3941,3 +3941,57 @@ body {
     max-width: none;
   }
 }
+
+/* 포트폴리오 카드 — 수익/손실 한눈에 보기 (UX 개선) */
+
+/* 뱃지 색: 방향 우선, 진하기는 절댓값 */
+.trend-score-v2.score-gain-strong {
+  background: rgba(63,185,80,0.22);
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px rgba(63,185,80,0.35);
+}
+.trend-score-v2.score-gain {
+  background: rgba(63,185,80,0.12);
+  color: var(--green);
+}
+.trend-score-v2.score-flat {
+  background: rgba(154,164,178,0.12);
+  color: #9aa4b2;
+}
+.trend-score-v2.score-loss {
+  background: rgba(248,81,73,0.12);
+  color: var(--red);
+}
+.trend-score-v2.score-loss-strong {
+  background: rgba(248,81,73,0.22);
+  color: var(--red);
+  box-shadow: inset 0 0 0 1px rgba(248,81,73,0.35);
+}
+
+/* 카드 좌측 4px 컬러 보더 — 멀리서도 방향 즉시 인식 */
+.pf-card.pf-dir-gain {
+  border-left: 4px solid var(--green);
+  background: linear-gradient(90deg, rgba(63,185,80,0.05) 0%, transparent 60%);
+}
+.pf-card.pf-dir-loss {
+  border-left: 4px solid var(--red);
+  background: linear-gradient(90deg, rgba(248,81,73,0.05) 0%, transparent 60%);
+}
+.pf-card.pf-dir-flat {
+  border-left: 4px solid #2a3340;
+}
+
+/* 메달 카드(top 3 수익자)는 좌측 보더 그라데이션 강화 */
+.pf-card.trend-tier-1.pf-dir-gain { background: linear-gradient(90deg, rgba(251,191,36,0.08), rgba(63,185,80,0.04) 50%, transparent 80%); }
+.pf-card.trend-tier-2.pf-dir-gain { background: linear-gradient(90deg, rgba(209,213,219,0.08), rgba(63,185,80,0.04) 50%, transparent 80%); }
+.pf-card.trend-tier-3.pf-dir-gain { background: linear-gradient(90deg, rgba(217,119,6,0.08),  rgba(63,185,80,0.04) 50%, transparent 80%); }
+
+/* 손익 금액 강조 — 작아서 안 보였던 부분 */
+.trend-chg.pf-amount {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: -0.2px;
+}
+.trend-chg.pf-up.pf-amount    { color: var(--green); }
+.trend-chg.pf-down.pf-amount  { color: var(--red); }
+.trend-chg.pf-neutral.pf-amount { color: #9aa4b2; }
