@@ -62,8 +62,125 @@ async function loadDashboard() {
     renderSummary(data);
     renderPositions(data.positions || []);
     await loadTransactions();
+    // 차트는 dashboard 호출 후 (오늘 스냅샷이 저장된 다음) 로드
+    loadAssetHistory(_ahCurrentDays || 30);
   } catch (e) {
     console.error('loadDashboard', e);
+  }
+}
+
+// ─── 자산 변화 차트 ─────────────────────────────────────────
+let _ahChart = null;
+let _ahSeriesMe = null, _ahSeriesKospi = null, _ahSeriesSp = null;
+let _ahCurrentDays = 30;
+
+async function loadAssetHistory(days, btn) {
+  _ahCurrentDays = days;
+  // 버튼 active 토글
+  document.querySelectorAll('.ah-period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) {
+    btn.classList.add('active');
+  } else {
+    const t = document.querySelector(`.ah-period-btn[data-days="${days}"]`);
+    if (t) t.classList.add('active');
+  }
+  try {
+    const r = await fetch(`/api/trading/history?days=${days}`);
+    if (!r.ok) throw new Error('history load failed');
+    const data = await r.json();
+    renderAssetHistoryChart(data);
+  } catch (e) {
+    console.error('loadAssetHistory', e);
+  }
+}
+
+function _ahFmtPct(p) {
+  if (p == null || isNaN(p)) return '—';
+  const sign = p > 0 ? '+' : '';
+  return sign + p.toFixed(2) + '%';
+}
+
+function renderAssetHistoryChart(data) {
+  const wrap = document.getElementById('assetHistoryChart');
+  const empty = document.getElementById('ahEmpty');
+  const summary = document.getElementById('ahSummary');
+  if (!wrap || typeof LightweightCharts === 'undefined') return;
+
+  const snaps = data.snapshots || [];
+  const bm = data.benchmarks || {};
+  const kospi = bm.kospi || [];
+  const sp500 = bm.sp500 || [];
+
+  // 데이터가 1개 이하면 차트 의미 없음
+  if (snaps.length < 2 && kospi.length < 2 && sp500.length < 2) {
+    wrap.style.display = 'none';
+    if (empty) empty.classList.remove('hidden');
+    if (summary) summary.textContent = '';
+    return;
+  }
+  wrap.style.display = '';
+  if (empty) empty.classList.add('hidden');
+
+  // 차트 인스턴스 lazy 생성
+  if (!_ahChart) {
+    _ahChart = LightweightCharts.createChart(wrap, {
+      autoSize: true,
+      layout: {
+        background: { type: 'solid', color: 'transparent' },
+        textColor: '#9aa4b2',
+        fontSize: 11,
+      },
+      rightPriceScale: {
+        borderColor: '#2a3340',
+      },
+      timeScale: {
+        borderColor: '#2a3340',
+        timeVisible: false,
+      },
+      grid: {
+        vertLines: { color: 'rgba(255,255,255,0.04)' },
+        horzLines: { color: 'rgba(255,255,255,0.04)' },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+      },
+      localization: {
+        priceFormatter: (p) => (p >= 0 ? '+' : '') + p.toFixed(2) + '%',
+      },
+    });
+    _ahSeriesMe    = _ahChart.addLineSeries({ color: '#22c55e', lineWidth: 2, title: '내 자산',
+                                              priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
+    _ahSeriesKospi = _ahChart.addLineSeries({ color: '#3b82f6', lineWidth: 1, title: 'KOSPI',
+                                              priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
+    _ahSeriesSp    = _ahChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, title: 'S&P500',
+                                              priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
+
+    // baseline 0% 가로선 추가
+    _ahSeriesMe.createPriceLine({
+      price: 0, color: '#5a6675', lineWidth: 1, lineStyle: 2, axisLabelVisible: false,
+    });
+  }
+
+  // 시리즈 데이터 셋
+  const toSeries = (arr, key) => arr
+    .filter(p => p && p.date && p[key] != null)
+    .map(p => ({ time: p.date, value: p[key] }));
+
+  _ahSeriesMe.setData(toSeries(snaps, 'return_pct'));
+  _ahSeriesKospi.setData(toSeries(kospi, 'return_pct'));
+  _ahSeriesSp.setData(toSeries(sp500, 'return_pct'));
+
+  _ahChart.timeScale().fitContent();
+
+  // 헤더 summary: 최신 값 비교
+  const last = (arr) => arr.length ? arr[arr.length - 1].return_pct : null;
+  const me = last(snaps), ks = last(kospi), sp = last(sp500);
+  if (summary) {
+    const parts = [];
+    if (me != null) parts.push(`<span style="color:#22c55e">내 ${_ahFmtPct(me)}</span>`);
+    if (ks != null) parts.push(`<span style="color:#3b82f6">KOSPI ${_ahFmtPct(ks)}</span>`);
+    if (sp != null) parts.push(`<span style="color:#f59e0b">S&P ${_ahFmtPct(sp)}</span>`);
+    summary.innerHTML = parts.join(' &nbsp;·&nbsp; ');
   }
 }
 

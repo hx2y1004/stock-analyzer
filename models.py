@@ -88,3 +88,27 @@ class Transaction(db.Model):
             "realized_pnl_krw": self.realized_pnl_krw,
             "timestamp":     self.timestamp.isoformat() if self.timestamp else None,
         }
+
+
+class AssetSnapshot(db.Model):
+    """모의투자 일별 자산 스냅샷 (자산 변화 차트용)."""
+    __tablename__ = "asset_snapshots"
+    id                  = db.Column(db.Integer, primary_key=True)
+    user_id             = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    date                = db.Column(db.Date, nullable=False)
+    total_assets_krw    = db.Column(db.Float, nullable=False)
+    cash_krw            = db.Column(db.Float, nullable=False)
+    positions_value_krw = db.Column(db.Float, nullable=False)
+    created_at          = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "date", name="uq_user_snapshot_date"),
+    )
+
+    def to_dict(self):
+        return {
+            "date":                self.date.isoformat() if self.date else None,
+            "total_assets_krw":    round(self.total_assets_krw),
+            "cash_krw":            round(self.cash_krw),
+            "positions_value_krw": round(self.positions_value_krw),
+        }

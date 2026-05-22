@@ -51,7 +51,7 @@ from flask_login import LoginManager, login_required, current_user
 
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
-from models import db, User, Holding, Transaction, INITIAL_CAPITAL_KRW
+from models import db, User, Holding, Transaction, AssetSnapshot, INITIAL_CAPITAL_KRW
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -100,6 +100,23 @@ with app.app_context():
             ))
             conn.execute(text(
                 "UPDATE users SET initial_capital = 100000000 WHERE initial_capital IS NULL"
+            ))
+            # asset_snapshots 테이블 (자산 변화 차트용)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS asset_snapshots (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    date DATE NOT NULL,
+                    total_assets_krw DOUBLE PRECISION NOT NULL,
+                    cash_krw DOUBLE PRECISION NOT NULL,
+                    positions_value_krw DOUBLE PRECISION NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_user_snapshot_date UNIQUE (user_id, date)
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_asset_snapshots_user_date "
+                "ON asset_snapshots (user_id, date)"
             ))
     except Exception as e:
         # SQLite 등에서는 ALTER TABLE 문법이 다를 수 있어 무시
@@ -3480,6 +3497,88 @@ def _fetch_current_price(ticker):
         return None
 
 
+_BENCHMARK_CACHE = {}   # symbol -> {"ts": epoch, "data": [{date, close}, ...]}
+_BENCHMARK_TTL = 3600   # 1시간 캐시
+
+def _fetch_benchmark_history(symbol, lookback_days=400):
+    """KOSPI/S&P500 일봉 히스토리 (1시간 캐시).
+    Returns: list of {"date": "YYYY-MM-DD", "close": float}
+    """
+    import time
+    now = time.time()
+    cached = _BENCHMARK_CACHE.get(symbol)
+    if cached and (now - cached["ts"] < _BENCHMARK_TTL):
+        return cached["data"]
+    try:
+        days = max(lookback_days, 30) + 10
+        df = yf.Ticker(symbol).history(period=f"{days}d", auto_adjust=False)
+        if df is None or df.empty:
+            return cached["data"] if cached else []
+        data = [
+            {"date": idx.strftime("%Y-%m-%d"), "close": float(row["Close"])}
+            for idx, row in df.iterrows() if row.get("Close") is not None
+        ]
+        _BENCHMARK_CACHE[symbol] = {"ts": now, "data": data}
+        return data
+    except Exception as e:
+        app.logger.warning(f"[benchmark] {symbol} fetch failed: {e}")
+        return cached["data"] if cached else []
+
+
+def _normalize_benchmark(history, start_date_str):
+    """벤치마크 종가 시계열을 start_date 기준 % 수익률로 변환.
+    Returns: list of {"date": "YYYY-MM-DD", "return_pct": float}
+    """
+    if not history or not start_date_str:
+        return []
+    # start_date 이후 첫 종가를 baseline으로 사용
+    baseline = None
+    out = []
+    for pt in history:
+        if pt["date"] < start_date_str:
+            continue
+        if baseline is None:
+            baseline = pt["close"]
+            if not baseline or baseline <= 0:
+                baseline = None
+                continue
+        out.append({
+            "date": pt["date"],
+            "return_pct": round((pt["close"] / baseline - 1) * 100, 3),
+        })
+    return out
+
+
+def _save_today_snapshot(user_id, total_assets_krw, cash_krw, positions_value_krw):
+    """오늘 날짜로 자산 스냅샷 upsert (시장 타임존 KST 기준)."""
+    try:
+        from datetime import date
+        import pytz
+        today = datetime.now(pytz.timezone("Asia/Seoul")).date()
+    except Exception:
+        from datetime import date
+        today = date.today()
+
+    try:
+        existing = AssetSnapshot.query.filter_by(user_id=user_id, date=today).first()
+        if existing:
+            existing.total_assets_krw    = total_assets_krw
+            existing.cash_krw            = cash_krw
+            existing.positions_value_krw = positions_value_krw
+        else:
+            snap = AssetSnapshot(
+                user_id=user_id, date=today,
+                total_assets_krw=total_assets_krw,
+                cash_krw=cash_krw,
+                positions_value_krw=positions_value_krw,
+            )
+            db.session.add(snap)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning(f"[snapshot] failed for user {user_id}: {e}")
+
+
 @app.route("/api/trading/dashboard")
 @login_required
 def trading_dashboard():
@@ -3549,6 +3648,14 @@ def trading_dashboard():
     sells    = Transaction.query.filter_by(user_id=user.id, type="sell").all()
     wins     = sum(1 for s in sells if (s.realized_pnl_krw or 0) > 0)
     win_rate = (wins / len(sells) * 100) if sells else 0
+
+    # 오늘 자산 스냅샷 저장 (자산 변화 차트용)
+    _save_today_snapshot(
+        user.id,
+        total_assets_krw=total_assets_krw,
+        cash_krw=user.cash_balance,
+        positions_value_krw=positions_value_krw,
+    )
 
     return jsonify({
         "cash_krw":            round(user.cash_balance),
@@ -3722,6 +3829,59 @@ def trading_transactions():
     return jsonify([t.to_dict() for t in txs])
 
 
+@app.route("/api/trading/history")
+@login_required
+def trading_history():
+    """자산 변화 차트 데이터.
+    Query: days=7|30|90|365|all (default 30)
+    Returns: { snapshots, benchmarks: {kospi, sp500}, initial_capital_krw }
+    """
+    from datetime import date, timedelta
+    days_param = (request.args.get("days") or "30").strip().lower()
+    if days_param == "all":
+        cutoff = None
+    else:
+        try:
+            n = int(days_param)
+        except Exception:
+            n = 30
+        cutoff = date.today() - timedelta(days=n)
+
+    user = current_user
+    q = AssetSnapshot.query.filter_by(user_id=user.id)
+    if cutoff:
+        q = q.filter(AssetSnapshot.date >= cutoff)
+    snaps = q.order_by(AssetSnapshot.date.asc()).all()
+
+    initial = user.initial_capital or INITIAL_CAPITAL_KRW
+
+    snap_series = []
+    for s in snaps:
+        snap_series.append({
+            "date":             s.date.isoformat() if s.date else None,
+            "total_assets_krw": round(s.total_assets_krw),
+            "return_pct":       round((s.total_assets_krw / initial - 1) * 100, 3) if initial > 0 else 0,
+        })
+
+    # 벤치마크 시작일 = 사용자 첫 스냅샷일 (없으면 오늘)
+    start_date_str = snap_series[0]["date"] if snap_series else date.today().isoformat()
+
+    lookback = 400 if days_param == "all" else max(int(days_param) if days_param.isdigit() else 30, 30) + 30
+
+    kospi_hist = _fetch_benchmark_history("^KS11", lookback_days=lookback)
+    sp500_hist = _fetch_benchmark_history("^GSPC", lookback_days=lookback)
+
+    return jsonify({
+        "snapshots":           snap_series,
+        "initial_capital_krw": round(initial),
+        "benchmarks": {
+            "kospi": _normalize_benchmark(kospi_hist, start_date_str),
+            "sp500": _normalize_benchmark(sp500_hist, start_date_str),
+        },
+        "start_date": start_date_str,
+    })
+
+
 @app.route("/api/trading/reset", methods=["POST"])
 @login_required
 def trading_reset():
@@ -3729,6 +3889,7 @@ def trading_reset():
     user = current_user
     Holding.query.filter_by(user_id=user.id).delete()
     Transaction.query.filter_by(user_id=user.id).delete()
+    AssetSnapshot.query.filter_by(user_id=user.id).delete()
     user.cash_balance    = INITIAL_CAPITAL_KRW
     user.initial_capital = INITIAL_CAPITAL_KRW
     db.session.commit()
