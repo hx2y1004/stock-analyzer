@@ -23,6 +23,10 @@ class User(UserMixin, db.Model):
     cash_balance    = db.Column(db.Float, default=INITIAL_CAPITAL_KRW)   # 현재 보유 현금 (KRW)
     initial_capital = db.Column(db.Float, default=INITIAL_CAPITAL_KRW)   # 시작 자본 (수익률 계산용)
 
+    # 랭킹/프로필
+    nickname        = db.Column(db.String(30), unique=True, nullable=True)
+    is_public       = db.Column(db.Boolean, default=True)   # 랭킹 공개 여부
+
     holdings = db.relationship(
         "Holding", backref="user", lazy=True, cascade="all, delete-orphan"
     )
@@ -111,4 +115,23 @@ class AssetSnapshot(db.Model):
             "total_assets_krw":    round(self.total_assets_krw),
             "cash_krw":            round(self.cash_krw),
             "positions_value_krw": round(self.positions_value_krw),
+        }
+
+
+class UserBadge(db.Model):
+    """사용자가 획득한 배지."""
+    __tablename__ = "user_badges"
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    badge_key  = db.Column(db.String(50), nullable=False)   # BADGES 의 key
+    earned_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "badge_key", name="uq_user_badge_key"),
+    )
+
+    def to_dict(self):
+        return {
+            "badge_key": self.badge_key,
+            "earned_at": self.earned_at.isoformat() if self.earned_at else None,
         }

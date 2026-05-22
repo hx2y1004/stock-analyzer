@@ -64,6 +64,18 @@ async function loadDashboard() {
     await loadTransactions();
     // 차트는 dashboard 호출 후 (오늘 스냅샷이 저장된 다음) 로드
     loadAssetHistory(_ahCurrentDays || 30);
+
+    // 새 배지 획득 알림
+    if (data.newly_earned_badges && data.newly_earned_badges.length) {
+      _showBadgeToasts(data.newly_earned_badges);
+    }
+    // 배지 목록 새로고침
+    loadBadges();
+    // 닉네임 미설정 → 자동 안내 모달
+    if (!data.nickname && !_nicknamePromptShown) {
+      _nicknamePromptShown = true;
+      setTimeout(() => openNicknameModal(true), 800);
+    }
   } catch (e) {
     console.error('loadDashboard', e);
   }
@@ -587,4 +599,142 @@ function setupTradeInputs() {
       if (e.key === 'ArrowDown') { e.preventDefault(); _stepTradeNum('sell', id, -1); }
     });
   });
+}
+
+// ─── 배지 시스템 ─────────────────────────────────────
+let _nicknamePromptShown = false;
+let _badgesCache = null;
+
+async function loadBadges() {
+  try {
+    const r = await fetch('/api/me/badges');
+    if (!r.ok) return;
+    const data = await r.json();
+    _badgesCache = data;
+    renderBadges(data);
+  } catch (e) {
+    console.warn('badges load failed', e);
+  }
+}
+
+function renderBadges(data) {
+  const wrap = document.getElementById('badgesList');
+  const prog = document.getElementById('badgeProgress');
+  if (!wrap) return;
+  if (prog) prog.textContent = `${data.earned_count} / ${data.total_count}`;
+
+  // 카테고리별 그룹
+  const byCat = {};
+  for (const b of data.badges) {
+    if (!byCat[b.category]) byCat[b.category] = [];
+    byCat[b.category].push(b);
+  }
+  const order = ['활동', '수익', '트레이딩', '포트폴리오', '글로벌', '성과', '꾸준함'];
+  const sortedCats = Object.keys(byCat).sort((a, b) => {
+    const ai = order.indexOf(a); const bi = order.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  wrap.innerHTML = sortedCats.map(cat => `
+    <div class="badge-cat">
+      <div class="badge-cat-title">${cat}</div>
+      <div class="badge-cat-grid">
+        ${byCat[cat].map(b => _badgeHTML(b)).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function _badgeHTML(b) {
+  const cls = b.earned ? `badge-card badge-earned tier-${b.tier}` : 'badge-card badge-locked';
+  const tierLabel = { bronze:'브론즈', silver:'실버', gold:'골드', diamond:'다이아', legend:'전설' }[b.tier] || '';
+  const icon = b.earned ? b.icon : '🔒';
+  return `
+    <div class="${cls}" title="${b.desc.replace(/"/g, '&quot;')}" onclick="_toggleBadgeDetail(this)">
+      <div class="badge-icon">${icon}</div>
+      <div class="badge-name">${b.name}</div>
+      <div class="badge-tier">${tierLabel}</div>
+      <div class="badge-desc">${b.desc}</div>
+    </div>`;
+}
+
+function _toggleBadgeDetail(el) {
+  el.classList.toggle('badge-show-detail');
+}
+
+function _showBadgeToasts(keys) {
+  if (!_badgesCache || !_badgesCache.badges) {
+    // 아직 캐시 없으면 잠깐 후 다시 시도
+    setTimeout(() => _showBadgeToasts(keys), 1200);
+    return;
+  }
+  const byKey = {};
+  for (const b of _badgesCache.badges) byKey[b.key] = b;
+  let delay = 0;
+  for (const k of keys) {
+    const b = byKey[k];
+    if (!b) continue;
+    setTimeout(() => _showBadgeToast(b), delay);
+    delay += 3200;
+  }
+}
+
+function _showBadgeToast(b) {
+  const t = document.getElementById('badgeToast');
+  if (!t) return;
+  document.getElementById('badgeToastIcon').textContent = b.icon || '🎉';
+  document.getElementById('badgeToastName').textContent = `${b.name} — ${b.desc}`;
+  t.classList.remove('hidden');
+  t.classList.add('show');
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.classList.add('hidden'), 350);
+  }, 3000);
+}
+
+// ─── 닉네임 모달 ─────────────────────────────────────
+function openNicknameModal(isFirstTime) {
+  const modal = document.getElementById('nicknameModal');
+  if (!modal) return;
+  document.getElementById('nicknameError').textContent = '';
+  const input = document.getElementById('nicknameInput');
+  if (dashboardData && dashboardData.nickname) input.value = dashboardData.nickname;
+  else input.value = '';
+  modal.classList.remove('hidden');
+  setTimeout(() => input.focus(), 80);
+}
+
+function closeNicknameModal() {
+  const modal = document.getElementById('nicknameModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function submitNickname() {
+  const input = document.getElementById('nicknameInput');
+  const err = document.getElementById('nicknameError');
+  const nick = (input.value || '').trim();
+  err.textContent = '';
+  if (!nick) {
+    err.textContent = '닉네임을 입력해주세요';
+    return;
+  }
+  try {
+    const r = await fetch('/api/me/nickname', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: nick }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      err.textContent = data.error || '저장 실패';
+      return;
+    }
+    closeNicknameModal();
+    if (dashboardData) dashboardData.nickname = data.nickname;
+    // 헤더 표시 갱신
+    const nameEl = document.querySelector('.profile-name');
+    if (nameEl) nameEl.textContent = data.nickname;
+  } catch (e) {
+    err.textContent = '네트워크 오류';
+  }
 }

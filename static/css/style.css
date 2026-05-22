@@ -3701,3 +3701,243 @@ body {
     flex-basis: 100%;
   }
 }
+
+/* 랭킹 페이지 */
+.leaderboard-main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.lb-hero { text-align: center; }
+.lb-title {
+  font-size: 24px;
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+.lb-subtitle {
+  color: var(--text2);
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+.lb-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.lb-link:hover { text-decoration: underline; }
+.lb-tabs {
+  display: inline-flex;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 2px;
+}
+.lb-tab {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.lb-tab:hover { color: var(--text); }
+.lb-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+.lb-meta {
+  color: var(--text2);
+  font-size: 12px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.lb-list { display: flex; flex-direction: column; gap: 6px; }
+.lb-row {
+  display: grid;
+  grid-template-columns: 44px 32px 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: background 100ms;
+}
+.lb-row:hover { background: rgba(255,255,255,0.04); }
+.lb-row.lb-me {
+  background: rgba(59,130,246,0.10);
+  border-color: rgba(59,130,246,0.4);
+}
+.lb-rank {
+  font-weight: 700;
+  font-size: 16px;
+  text-align: center;
+  color: var(--text2);
+}
+.lb-rank-1 { color: #fbbf24; font-size: 22px; }
+.lb-rank-2 { color: #d1d5db; font-size: 20px; }
+.lb-rank-3 { color: #d97706; font-size: 20px; }
+.lb-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--border);
+}
+.lb-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+}
+.lb-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-me-tag {
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 4px;
+}
+.lb-pct { font-weight: 700; font-size: 15px; }
+.lb-pct.pos { color: #22c55e; }
+.lb-pct.neg { color: #ef4444; }
+.lb-assets { color: var(--text2); font-size: 12px; }
+
+@media (max-width: 640px) {
+  .lb-row {
+    grid-template-columns: 30px 28px 1fr auto;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .lb-assets { display: none; }
+  .lb-pct { font-size: 14px; }
+}
+
+/* 배지 시스템 */
+.badges-card { }
+.badges-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.badge-progress {
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  margin-left: 6px;
+}
+.badges-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.badge-cat-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.badge-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+.badge-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 120ms, box-shadow 120ms;
+  position: relative;
+  overflow: hidden;
+}
+.badge-card:hover { transform: translateY(-2px); }
+.badge-icon { font-size: 28px; margin-bottom: 4px; line-height: 1; }
+.badge-name {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.badge-tier {
+  font-size: 10px;
+  color: var(--text2);
+  font-weight: 600;
+}
+.badge-desc {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 6px;
+  display: none;
+  line-height: 1.4;
+}
+.badge-card.badge-show-detail .badge-desc { display: block; }
+
+.badge-locked {
+  opacity: 0.4;
+  filter: grayscale(0.5);
+}
+.badge-earned.tier-bronze  { border-color: rgba(217,119,6,0.6);  box-shadow: 0 0 0 1px rgba(217,119,6,0.2); }
+.badge-earned.tier-silver  { border-color: rgba(209,213,219,0.6); box-shadow: 0 0 0 1px rgba(209,213,219,0.2); }
+.badge-earned.tier-gold    { border-color: rgba(251,191,36,0.7); box-shadow: 0 0 0 1px rgba(251,191,36,0.25); }
+.badge-earned.tier-diamond { border-color: rgba(59,130,246,0.7); box-shadow: 0 0 0 1px rgba(59,130,246,0.25); }
+.badge-earned.tier-legend  {
+  border-color: rgba(168,85,247,0.8);
+  box-shadow: 0 0 0 1px rgba(168,85,247,0.3), 0 0 16px rgba(168,85,247,0.15);
+  background: linear-gradient(135deg, rgba(168,85,247,0.05), rgba(236,72,153,0.05));
+}
+
+/* 배지 획득 토스트 */
+.badge-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  padding: 14px 18px;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(99,102,241,0.4);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 300ms, transform 300ms;
+  max-width: 320px;
+}
+.badge-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.badge-toast-icon { font-size: 32px; }
+.badge-toast-title { font-size: 11px; font-weight: 700; opacity: 0.85; }
+.badge-toast-name  { font-size: 14px; font-weight: 700; margin-top: 2px; }
+
+@media (max-width: 640px) {
+  .badge-toast {
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    max-width: none;
+  }
+}

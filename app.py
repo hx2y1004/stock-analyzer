@@ -51,7 +51,7 @@ from flask_login import LoginManager, login_required, current_user
 
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
-from models import db, User, Holding, Transaction, AssetSnapshot, INITIAL_CAPITAL_KRW
+from models import db, User, Holding, Transaction, AssetSnapshot, UserBadge, INITIAL_CAPITAL_KRW
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -117,6 +117,27 @@ with app.app_context():
             conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_asset_snapshots_user_date "
                 "ON asset_snapshots (user_id, date)"
+            ))
+            # 랭킹/프로필: nickname + is_public
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname VARCHAR(30) UNIQUE"
+            ))
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT TRUE"
+            ))
+            # user_badges 테이블
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS user_badges (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    badge_key VARCHAR(50) NOT NULL,
+                    earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uq_user_badge_key UNIQUE (user_id, badge_key)
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_badges_user "
+                "ON user_badges (user_id)"
             ))
     except Exception as e:
         # SQLite 등에서는 ALTER TABLE 문법이 다를 수 있어 무시
@@ -3572,6 +3593,91 @@ def _normalize_benchmark(history, start_date_str):
     return out
 
 
+def _build_badge_context(user, dashboard_summary, positions, holdings_count):
+    """배지 평가용 context 빌더.
+    dashboard_summary: dict with total_assets_krw, total_return_pct, realized_pnl_krw, etc.
+    positions: 보유 종목 (KRW 평가금액 포함)
+    holdings_count: 동시 보유 종목 수
+    """
+    txs = Transaction.query.filter_by(user_id=user.id).all()
+    buy_count  = sum(1 for t in txs if t.type == "buy")
+    sell_count = sum(1 for t in txs if t.type == "sell")
+    sells      = [t for t in txs if t.type == "sell"]
+    wins       = sum(1 for s in sells if (s.realized_pnl_krw or 0) > 0)
+    win_rate   = (wins / len(sells) * 100) if sells else 0
+
+    # 단일 매도 최대 실현 수익률 (price 기준)
+    max_single_pct = 0.0
+    loss_cut_count = 0
+    for s in sells:
+        # 매수 평균가를 정확히 다시 찾기 어려우므로, realized_pnl_krw 기반 근사
+        if s.amount_krw and s.amount_krw > 0:
+            pct = (s.realized_pnl_krw or 0) / s.amount_krw * 100
+            if pct > max_single_pct:
+                max_single_pct = pct
+            if -15 <= pct <= -1:
+                loss_cut_count += 1
+
+    # 한국/미국 종목 누적 매수
+    kr_tickers = set()
+    us_tickers = set()
+    for t in txs:
+        if t.type != "buy":
+            continue
+        if t.currency == "KRW":
+            kr_tickers.add(t.ticker)
+        else:
+            us_tickers.add(t.ticker)
+
+    # 현재 보유 한/미 여부
+    has_kr = any(p.get("currency") == "KRW" for p in positions)
+    has_us = any(p.get("currency") == "USD" for p in positions)
+
+    # 단일 종목 최대 평가금액
+    max_pos_value = max((p.get("value_krw") or 0) for p in positions) if positions else 0
+
+    # 스냅샷 일수
+    snapshot_days = AssetSnapshot.query.filter_by(user_id=user.id).count()
+
+    return {
+        "user_id":                 user.id,
+        "total_assets_krw":        dashboard_summary["total_assets_krw"],
+        "total_return_pct":        dashboard_summary["total_return_pct"],
+        "realized_pnl_krw":        dashboard_summary["realized_pnl_krw"],
+        "tx_count":                len(txs),
+        "buy_count":               buy_count,
+        "sell_count":              sell_count,
+        "win_rate":                win_rate,
+        "max_single_realized_pct": max_single_pct,
+        "loss_cut_count":          loss_cut_count,
+        "holdings_count":          holdings_count,
+        "max_position_value_krw":  max_pos_value,
+        "has_kr":                  has_kr,
+        "has_us":                  has_us,
+        "kr_unique_buys":          len(kr_tickers),
+        "us_unique_buys":          len(us_tickers),
+        "snapshot_days":           snapshot_days,
+    }
+
+
+def _check_and_award_badges(user, ctx):
+    """ctx에 따라 새로 자격이 된 배지 부여. 새로 받은 키 리스트 반환."""
+    from badges import evaluate_badges
+    earned = {b.badge_key for b in UserBadge.query.filter_by(user_id=user.id).all()}
+    new_keys = evaluate_badges(ctx, earned)
+    if not new_keys:
+        return []
+    try:
+        for k in new_keys:
+            db.session.add(UserBadge(user_id=user.id, badge_key=k))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning(f"[badge] award failed for user {user.id}: {e}")
+        return []
+    return new_keys
+
+
 def _save_today_snapshot(user_id, total_assets_krw, cash_krw, positions_value_krw):
     """오늘 날짜로 자산 스냅샷 upsert (시장 타임존 KST 기준)."""
     try:
@@ -3680,6 +3786,17 @@ def trading_dashboard():
         positions_value_krw=positions_value_krw,
     )
 
+    # 배지 자동 부여
+    dashboard_summary = {
+        "total_assets_krw": total_assets_krw,
+        "total_return_pct": total_return_pct,
+        "realized_pnl_krw": realized_pnl_krw,
+    }
+    new_badges = _check_and_award_badges(
+        user,
+        _build_badge_context(user, dashboard_summary, positions, len(holdings)),
+    )
+
     return jsonify({
         "cash_krw":            round(user.cash_balance),
         "initial_capital_krw": round(user.initial_capital),
@@ -3696,6 +3813,8 @@ def trading_dashboard():
             "wins":         wins,
             "win_rate":     round(win_rate, 1),
         },
+        "newly_earned_badges": new_badges,   # 이번 호출에 새로 받은 배지 키 목록
+        "nickname":            user.nickname,
     })
 
 
@@ -3905,6 +4024,127 @@ def trading_history():
     })
 
 
+@app.route("/api/me/badges")
+@login_required
+def my_badges():
+    """획득한 배지 목록 + 전체 배지 정의."""
+    from badges import BADGES, badge_public_dict
+    earned = {b.badge_key: b.earned_at for b in UserBadge.query.filter_by(user_id=current_user.id).all()}
+    all_badges = []
+    for b in BADGES:
+        pub = badge_public_dict(b)
+        pub["earned"]    = b["key"] in earned
+        pub["earned_at"] = earned[b["key"]].isoformat() if pub["earned"] else None
+        all_badges.append(pub)
+    return jsonify({
+        "badges":      all_badges,
+        "earned_count": len(earned),
+        "total_count":  len(BADGES),
+    })
+
+
+@app.route("/api/me/nickname", methods=["GET", "POST"])
+@login_required
+def my_nickname():
+    """닉네임 조회/설정.
+    POST body: { "nickname": "..." } — 2~20자, 한글/영문/숫자/_ 만
+    """
+    if request.method == "GET":
+        return jsonify({"nickname": current_user.nickname})
+
+    import re
+    data = request.get_json() or {}
+    nick = (data.get("nickname") or "").strip()
+    if not nick:
+        return jsonify({"error": "닉네임을 입력해주세요"}), 400
+    if len(nick) < 2 or len(nick) > 20:
+        return jsonify({"error": "닉네임은 2~20자여야 합니다"}), 400
+    if not re.fullmatch(r"[가-힣a-zA-Z0-9_]+", nick):
+        return jsonify({"error": "한글, 영문, 숫자, 언더스코어만 사용 가능합니다"}), 400
+
+    # 중복 확인 (자기 자신 제외)
+    existing = User.query.filter(User.nickname == nick, User.id != current_user.id).first()
+    if existing:
+        return jsonify({"error": "이미 사용 중인 닉네임입니다"}), 400
+
+    current_user.nickname = nick
+    db.session.commit()
+    return jsonify({"ok": True, "nickname": nick})
+
+
+@app.route("/api/leaderboard")
+def leaderboard():
+    """전체 랭킹.
+    Query: metric=total|7d|30d (default total), limit=50
+    Returns: [{rank, nickname, profile_image, return_pct, total_assets_krw, is_me}]
+    """
+    from datetime import date, timedelta
+    metric = (request.args.get("metric") or "total").lower()
+    limit  = min(int(request.args.get("limit", 50)), 100)
+    if metric not in ("total", "7d", "30d"):
+        metric = "total"
+
+    # 닉네임 설정 + 공개 유저만
+    users = User.query.filter(
+        User.nickname.isnot(None),
+        User.is_public.is_(True),
+    ).all()
+
+    rows = []
+    for u in users:
+        if metric == "total":
+            initial = u.initial_capital or INITIAL_CAPITAL_KRW
+            # 최신 스냅샷 또는 현재 cash 기반
+            last = AssetSnapshot.query.filter_by(user_id=u.id)\
+                    .order_by(AssetSnapshot.date.desc()).first()
+            if not last:
+                continue
+            ret_pct = (last.total_assets_krw / initial - 1) * 100 if initial > 0 else 0
+            total_krw = last.total_assets_krw
+        else:
+            days = 7 if metric == "7d" else 30
+            cutoff = date.today() - timedelta(days=days)
+            recent_snaps = AssetSnapshot.query.filter(
+                AssetSnapshot.user_id == u.id,
+                AssetSnapshot.date >= cutoff,
+            ).order_by(AssetSnapshot.date.asc()).all()
+            if len(recent_snaps) < 2:
+                continue
+            start_v = recent_snaps[0].total_assets_krw
+            end_v   = recent_snaps[-1].total_assets_krw
+            if start_v <= 0:
+                continue
+            ret_pct = (end_v / start_v - 1) * 100
+            total_krw = end_v
+        rows.append({
+            "user_id":          u.id,
+            "nickname":         u.nickname,
+            "profile_image":    u.profile_image,
+            "return_pct":       round(ret_pct, 2),
+            "total_assets_krw": round(total_krw),
+        })
+
+    # 정렬 + 랭크 부여
+    rows.sort(key=lambda r: r["return_pct"], reverse=True)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+        r["is_me"] = (current_user.is_authenticated and r["user_id"] == current_user.id)
+        # 다른 사람의 user_id는 노출 안함 (is_me만 필요)
+        if not r["is_me"]:
+            r.pop("user_id", None)
+
+    return jsonify({
+        "metric": metric,
+        "ranks":  rows[:limit],
+        "total_participants": len(rows),
+    })
+
+
+@app.route("/leaderboard")
+def leaderboard_page():
+    return render_template("leaderboard.html")
+
+
 @app.route("/api/trading/reset", methods=["POST"])
 @login_required
 def trading_reset():
@@ -3913,6 +4153,7 @@ def trading_reset():
     Holding.query.filter_by(user_id=user.id).delete()
     Transaction.query.filter_by(user_id=user.id).delete()
     AssetSnapshot.query.filter_by(user_id=user.id).delete()
+    UserBadge.query.filter_by(user_id=user.id).delete()
     user.cash_balance    = INITIAL_CAPITAL_KRW
     user.initial_capital = INITIAL_CAPITAL_KRW
     db.session.commit()

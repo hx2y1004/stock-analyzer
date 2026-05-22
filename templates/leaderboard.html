@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>랭킹 — StockAnalyzer</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0d1117" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
+
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+          .catch(err => console.warn('SW register failed:', err));
+      });
+    }
+  </script>
+</head>
+<body>
+  <!-- 헤더 -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">📈 StockAnalyzer</div>
+      <nav class="nav">
+        <a href="/" class="nav-link">분석</a>
+        <a href="/trading" class="nav-link">모의투자</a>
+        <a href="/leaderboard" class="nav-link active">🏆 랭킹</a>
+      </nav>
+      <div id="authArea" class="auth-area">
+        <button class="login-btn" onclick="location.href='/auth/google'">로그인</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="leaderboard-main">
+
+    <section class="card lb-hero">
+      <h1 class="lb-title">🏆 모의투자 랭킹</h1>
+      <p class="lb-subtitle">
+        닉네임을 설정한 사용자만 랭킹에 표시됩니다.
+        <a href="/trading" class="lb-link">→ 모의투자 시작</a>
+      </p>
+
+      <div class="lb-tabs">
+        <button class="lb-tab active" data-metric="total" onclick="loadLeaderboard('total', this)">전체 수익률</button>
+        <button class="lb-tab" data-metric="30d" onclick="loadLeaderboard('30d', this)">30일</button>
+        <button class="lb-tab" data-metric="7d"  onclick="loadLeaderboard('7d',  this)">7일</button>
+      </div>
+    </section>
+
+    <section class="card lb-list-card">
+      <div class="lb-meta" id="lbMeta">로딩 중...</div>
+      <div id="lbList" class="lb-list">
+        <div class="empty-state">랭킹 데이터를 불러오는 중입니다...</div>
+      </div>
+    </section>
+
+    <section class="card lb-cta">
+      <h3 class="card-title">아직 랭킹에 없나요?</h3>
+      <p style="color:var(--text2); margin-bottom:14px">
+        모의투자를 시작하고 닉네임을 설정하면 자동으로 랭킹에 합류됩니다.
+        모든 사용자는 <strong>1억원의 초기 자본</strong>으로 동일하게 시작합니다.
+      </p>
+      <button class="add-submit-btn" onclick="location.href='/trading'" style="max-width:240px;">모의투자 페이지로 이동 →</button>
+    </section>
+
+  </main>
+
+  <script src="/static/js/leaderboard.js"></script>
+</body>
+</html>
