@@ -17,6 +17,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -90,6 +91,29 @@
           </div>
         </div>
         <div class="ps-stats" id="psStats"></div>
+      </section>
+
+      <!-- 자산 변화 차트 -->
+      <section class="card asset-history-card">
+        <div class="ah-header">
+          <h3 class="card-title" style="margin:0">📈 자산 변화 추이</h3>
+          <div class="ah-period-tabs">
+            <button class="ah-period-btn" data-days="7"  onclick="loadAssetHistory(7, this)">7D</button>
+            <button class="ah-period-btn active" data-days="30" onclick="loadAssetHistory(30, this)">30D</button>
+            <button class="ah-period-btn" data-days="90" onclick="loadAssetHistory(90, this)">90D</button>
+            <button class="ah-period-btn" data-days="all" onclick="loadAssetHistory('all', this)">전체</button>
+          </div>
+        </div>
+        <div class="ah-legend">
+          <span class="ah-leg ah-leg-me">● 내 자산</span>
+          <span class="ah-leg ah-leg-kospi">● KOSPI</span>
+          <span class="ah-leg ah-leg-sp">● S&P 500</span>
+          <span class="ah-period-summary" id="ahSummary"></span>
+        </div>
+        <div id="assetHistoryChart" class="ah-chart"></div>
+        <div id="ahEmpty" class="ah-empty hidden">
+          아직 데이터가 부족합니다. 며칠 사용하시면 차트가 그려집니다.
+        </div>
       </section>
 
       <!-- 빠른 매수 -->
