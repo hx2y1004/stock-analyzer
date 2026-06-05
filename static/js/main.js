@@ -1137,11 +1137,13 @@ function renderStockInfo(stock) {
   // ── 가격 신선도 표시: LIVE 뱃지 / 장 마감 / 데이터 시각 ──
   const freshEl = document.getElementById('priceFreshness');
   if (freshEl) {
-    const srcLabel = stock.realtime_source === 'naver'
-      ? '네이버 ~1분'
-      : stock.realtime_source === 'yfinance'
-        ? 'Yahoo 15~20분'
-        : '';
+    const srcLabel = stock.realtime_source === 'toss'
+      ? '토스 실시간'
+      : stock.realtime_source === 'naver'
+        ? '네이버 ~1분'
+        : stock.realtime_source === 'yfinance'
+          ? 'Yahoo 15~20분'
+          : '';
     if (stock.is_realtime) {
       freshEl.innerHTML =
         `<span class="live-dot"></span> <span class="live-label">LIVE</span>` +
