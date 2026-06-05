@@ -1,33 +1,36 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-05-22 KST (저녁 세션)
+> 마지막 업데이트: 2026-06-05 KST (토스 연동 세션)
 
 ---
 
 ## 🚀 현재 상태 (2026-06-05)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `5484e02` (토스 진단 엔드포인트)
-- Service Worker: **`sa-v32`**
-- 정적 자산 캐시 버스팅: HTML에 `?v=32` 쿼리 사용 중
-- **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 모두 토스)
+- 최신 커밋: `232b5d2` (toss_to_sql UTF-8 출력 + gitignore)
+- Service Worker: **`sa-v34`**
+- 정적 자산 캐시 버스팅: HTML에 `?v=34` 쿼리 사용 중
+- **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 + 계좌 import)
 
-### ✅ 토스 API IP 허용목록 — 해결됨
+### ✅ 토스 핵심 기능 모두 동작 확인됨
+- 시세/차트/환율: `chart_source:"toss"`, `realtime_source:"toss"` 확인
+- **토스 계좌 → 실제 포트폴리오 import 버튼 성공** (10종목)
+- 권한 게이팅: `TOSS_OWNER_USER_IDS=<OWNER_USER_IDS>` (카카오 id1 + 구글 id2 = 둘 다 <OWNER>)
+
+### ⚠️ 토스 IP 허용목록 — 핵심 운영 이슈
 - 토스 `live` API는 **콘솔 등록 IP에서만** 토큰 발급됨
-- 등록 완료:
-  - 로컬 개발 PC: `<DEV_PC_IP>`
-  - **Railway egress IP: `<RAILWAY_EGRESS_IP>`** (AWS us-west, 콘솔 등록 완료)
-- 검증: `/api/debug/toss` → `toss_token_ok:true`, `toss_fx_usdkrw:1556.75`
-- 분석 시 `chart_source:"toss"` 확인됨 (MSFT, 005930.KS)
-- ⚠️ **IPv6 우회 주의**: 듀얼스택 환경에서 IPv6로 나가면 등록 IP와 달라 401 →
-  `toss_api.py`에서 `urllib3 HAS_IPV6=False`로 IPv4 강제 (해결됨)
-- ⚠️ **Railway 재배포 시 egress IP 변동 가능성** — 바뀌면 `/api/debug/toss`로
-  새 IP 확인 후 콘솔 재등록. 자주 바뀌면 고정 IP 프록시 검토 (현재는 안정적)
+- **Railway egress IP는 배포당 고정이지만 재배포마다 바뀜** (관측: 52.9.x → 54.177.x
+  → 162.220.232.x ...). 한 배포 안에선 안정적(요청마다 안 바뀜).
+- **재배포할 때마다 `/api/debug/toss`로 새 egress IP 확인 → 토스 콘솔에 등록** 필요
+- 등록 안 하면 자동 yfinance/네이버 폴백 (앱은 정상, 한국 데이터만 지연)
+- ⚠️ **IPv6 우회**: `toss_api.py`에서 `urllib3 HAS_IPV6=False`로 IPv4 강제 (해결됨)
+- 🔧 **영구 해결책 = 고정 IP 프록시** (`TOSS_PROXY_URL`) — `TOSS_PROXY_SETUP.md` 참고
+  (Oracle Cloud 무료 VM + tinyproxy). 코드는 준비됨, VM 세팅만 남음 (사용자 Oracle
+  로그인 이슈로 보류 중). 프록시 IP는 1회 등록하면 재배포해도 안 바뀜.
 
 ### 다음 우선 작업 후보 (사용자 결정 대기)
-- [ ] **포트폴리오 ↔ 모의투자 분리** ⬅️ **진행 중** — 실제 보유(토스 계좌 import
-      또는 수기) vs 모의투자, 실제 보유는 랭킹 제외
+- [ ] **고정 IP 프록시(VM) 완성** — 재배포마다 IP 재등록 안 하려면 (`TOSS_PROXY_SETUP.md`)
 - [ ] **DART API 키 등록** — 한국 임원 주식 변동 보고 자동 fetch
 - [ ] **자동 손절** / **백테스트** / **AI 코치** / **랭킹 시즌제** / **포지션 노트**
 
@@ -62,7 +65,9 @@ stock-analyzer/
 ├─ auth.py                   # OAuth (Google/Kakao) 블루프린트
 ├─ models.py                 # SQLAlchemy 모델 (User, Holding, Transaction, AssetSnapshot, UserBadge)
 ├─ badges.py                 # 25개 배지 정의 + evaluate 엔진
-├─ toss_api.py               # NEW — 토스증권 Open API (시세/캔들/환율 + OAuth2)
+├─ toss_api.py               # 토스증권 Open API (시세/캔들/환율/계좌/보유종목 + OAuth2)
+├─ scripts/toss_to_sql.py    # 토스 보유종목 → holdings INSERT SQL 생성 (IP 우회용)
+├─ TOSS_PROXY_SETUP.md       # 토스 고정 IP 프록시 설정 가이드 (Oracle VM + tinyproxy)
 ├─ trends_scanner.py         # 트렌드 스캐너 v2 (RS/OBV/Base/Perfect Setup)
 ├─ build_stock_db.py         # 종목 DB 빌더 → stock_db.json
 ├─ stock_db.json             # 종목명/티커 매핑 + 메타 (자동완성용)
@@ -183,6 +188,12 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 - `GET  /leaderboard` — 랭킹 페이지
 - dashboard 응답에 `newly_earned_badges`, `nickname` 추가됨
 
+### 토스 계좌 / 진단 (NEW — 2026-06-05)
+- `POST /api/portfolio/import-toss` — 토스 계좌 보유종목을 실제 포트폴리오(Holding)로 동기화
+  - 소유자 게이팅: `TOSS_OWNER_EMAIL`(콤마) 또는 `TOSS_OWNER_USER_IDS`(콤마) 중 매칭
+  - 기존 실제 포트폴리오 교체(sync), 한국=.KS/.KQ 자동판별
+- `GET  /api/debug/toss` — egress IP + 토큰 발급 여부 + 프록시 IP 진단 (IP 등록용)
+
 ### 헬퍼 (app.py 내부)
 - `_get_usd_krw_rate()` — yfinance `KRW=X`, **10분 캐시**
 - `_to_krw(amount, currency)` — KRW 환산
@@ -197,16 +208,58 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 - `_groq_chat(...)` — 모든 Groq 호출 공용 (model fallback + retry + 한자 필터 자동 적용)
 - `US_SECTOR_HOLDINGS` — SPDR 11개 ETF별 대표 종목 ~20개 (하드코딩)
 - `_US_NAME_FALLBACK` — 미국 주요 종목 영문명 매핑 ~150개
-- **NEW (저녁 세션)**:
+- **자산차트/배지 (저녁 세션)**:
   - `_save_today_snapshot(user_id, total, cash, positions)` — KST 일별 자산 스냅샷 upsert
   - `_fetch_benchmark_history(symbol, lookback_days)` — KOSPI/S&P500 yfinance 1h 캐시
   - `_normalize_benchmark(history, start_date_str)` — 시작일 기준 % 변환
   - `_build_badge_context(user, summary, positions, holdings_count)` — 배지 평가용 ctx 빌더
   - `_check_and_award_badges(user, ctx)` — 자격 충족된 배지 자동 부여, 새 키 리스트 반환
+- **토스 (2026-06-05)**:
+  - `_get_price_df(ticker, interval, min_bars)` — 토스 캔들 우선 → yfinance 폴백
+  - `_toss_symbol_to_ticker(symbol, market)` — 토스 심볼 → 앱 티커 (.KS/.KQ)
+  - `toss_api.*` — `get_prices/get_price`, `get_candles_df`, `get_exchange_rate`,
+    `get_accounts`, `get_account_holdings`(다계좌 합산), `_proxies/_req`(프록시)
 
 ---
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
+
+### 📌 2026-06-05 — 토스 계좌 import + 포트폴리오 분리 + 프록시 지원 (다수 커밋)
+이번 세션 토스 관련 대규모 작업. 핵심 흐름:
+
+**1) 토스 시세/차트/환율 연동** (`1625299`, `b4ea46f`)
+- `_get_price_df` 토스 캔들 우선 + yfinance 폴백 (build_chart_data, analyze)
+- `_get_usd_krw_rate`/`_fetch_current_price`/실시간 시세 토스 우선
+- 실동작 수정 3건: IPv4 강제(HAS_IPV6=False), 캔들 중첩응답 파싱(result.candles +
+  nextBefore 페이지네이션), 한국 캔들 날짜 밀림(시장 오프셋 보존)
+
+**2) 포트폴리오 ↔ 모의투자 테이블 분리** (`1ed7bb2`)
+- 신규 `PaperHolding` 모델 — 모의투자 전용. `/api/trading/*` → PaperHolding
+- `/api/portfolio/*` + 분석 "내 포지션" → Holding (실제 보유)
+- 마이그레이션: create_all 전 `_paper_holdings_existed` 체크 → 최초 분리 시
+  기존 holdings를 paper_holdings로 1회 이전, 실제 포트폴리오는 빈 상태로 시작
+- 랭킹/스냅샷/배지는 모의투자 기반 → 실제 포트폴리오 자동 제외
+
+**3) 랭킹 방어** (`651080a`)
+- 비현실적 수익률(>100000%) / 손상자산(>100조) 제외 (테스트 쓰레기 데이터 대응)
+- 별도로 DB에서 비정상 계정 정리 SQL 제공함
+
+**4) 토스 계좌 import** (`35e5f1c`, `7864c55`, `b774480`)
+- `POST /api/portfolio/import-toss` — 토스 보유종목 → 실제 포트폴리오 동기화
+- `toss_api.get_accounts/get_account_holdings`(다계좌 합산)
+- 소유자 게이팅: `TOSS_OWNER_EMAIL`(콤마) + `TOSS_OWNER_USER_IDS`(콤마, 카카오는 이메일
+  미제공이라 user_id로). <OWNER> = id1(kakao)+id2(google) → `TOSS_OWNER_USER_IDS=<OWNER_USER_IDS>`
+- 프런트 "↻ 토스 계좌 불러오기" 버튼 → **import 성공 확인됨 (10종목)**
+
+**5) 고정 IP 프록시 지원** (`b4008b7`, `65ddef9`)
+- Railway egress IP가 재배포마다 바뀌는 문제 → `TOSS_PROXY_URL` 경유 지원
+- `toss_api._req`로 모든 토스 호출 프록시 라우팅. 미설정 시 직접 연결
+- `TOSS_PROXY_SETUP.md` 가이드 (Oracle 무료 VM + tinyproxy). VM은 사용자 보류 중
+
+**6) IP 우회 SQL 스크립트** (`ba8705c`, `232b5d2`)
+- `scripts/toss_to_sql.py` — 로컬(IP 등록됨)에서 토스 보유종목 → INSERT SQL(UTF-8 파일)
+  생성 → Railway DB 콘솔 붙여넣기. 서버 import가 IP로 막힐 때 우회용
+- 생성 파일 `holdings_import_*.sql`은 gitignore
 
 ### 📌 2026-05-22 심야 — 토스증권 Open API 연동 (`1625299`)
 **목적**: 시세/차트/환율을 토스증권 공식 데이터로 (특히 한국 종목 정확도 ↑).
@@ -695,10 +748,27 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 ### 7.16 토스증권 API
 - `toss_api.is_enabled()` 로 가드 → 키 없으면 모든 함수 무동작 (yfinance/네이버 폴백)
 - `toss_api.is_eligible(ticker)` 로 지수(^)/환율(=X) 제외 — 벤치마크는 항상 yfinance
-- 캔들은 일봉/분봉만 → 주/월봉은 일봉 리샘플 (`get_candles_df`)
+- 캔들은 일봉/분봉만 → 주/월봉은 일봉 리샘플. 응답이 `result.candles` 중첩 +
+  `nextBefore` 페이지네이션. 일봉 날짜는 시장 오프셋 보존(한국 날짜 밀림 방지)
 - 펀더멘털(PER/시총 등)은 토스 미제공 → `stock.info`는 yfinance 유지
-- **IP 허용목록 필수** (live 키) — 콘솔에서 운영/개발 IP 등록 안 하면 401
+- **IP 허용목록 필수** (live 키) — 콘솔에 IP 등록 안 하면 401(unidentified-client)
+- IPv6로 나가면 등록 IP와 달라 401 → `HAS_IPV6=False`로 IPv4 강제 (적용됨)
 - 새 가격/시세 소스 추가 시 `_get_price_df()` / 실시간 우선순위 체인에 통합
+
+### 7.17 토스 계좌 import (실제 포트폴리오)
+- 토스 Open API는 `client_credentials`만 지원 = **개발자 본인 계좌만** 접근 가능.
+  사용자별 OAuth(authorization_code) **미지원** → 다른 사람 계좌 연동 불가
+- `POST /api/portfolio/import-toss` = 소유자 본인 토스 계좌 → Holding 동기화(교체)
+- 소유자 게이팅: `TOSS_OWNER_EMAIL`(콤마) **또는** `TOSS_OWNER_USER_IDS`(콤마).
+  카카오 로그인은 이메일 미제공 → **반드시 user_id로 게이팅** (현재 `1,2`)
+- 서버 import는 Railway IP가 토스에 등록돼 있어야 동작. 막히면 `scripts/toss_to_sql.py`
+  로 로컬에서 SQL 생성 → DB 콘솔 붙여넣기 우회
+
+### 7.18 토스 고정 IP 프록시 (재배포 IP 변동 해결)
+- `TOSS_PROXY_URL` 설정 시 모든 토스 호출이 프록시 경유 (`toss_api._req`)
+- 프록시 IP를 토스에 1회 등록 → 재배포해도 안 바뀜
+- 설정 가이드: `TOSS_PROXY_SETUP.md` (Oracle 무료 VM + tinyproxy)
+- 미설정 시 직접 연결 (현재 상태) → 재배포마다 `/api/debug/toss`로 IP 확인 후 재등록
 
 ---
 
@@ -715,8 +785,12 @@ DATABASE_URL=...           # Railway가 자동 주입 (로컬은 SQLite로 폴�
 FLASK_SECRET_KEY=...
 TOSS_CLIENT_ID=...         # 토스증권 Open API (미설정 시 yfinance/네이버 폴백)
 TOSS_CLIENT_SECRET=...     # ⚠️ live 키는 IP 허용목록 등록 필요 (콘솔)
+TOSS_OWNER_USER_IDS=<OWNER_USER_IDS>    # 토스 계좌 import 권한 (<OWNER> kakao=1, google=2)
+TOSS_OWNER_EMAIL=          # (대안) 이메일 게이팅, 콤마구분. 카카오는 이메일 없어 id 사용
+TOSS_PROXY_URL=            # (선택) 고정 IP 프록시. 설정 시 토스에 프록시 IP 1회 등록
 ```
 > ⚠️ 실제 키는 `.env`(gitignore)에만. `.env.example`엔 플레이스홀더만 (커밋되는 파일)
+> Railway Variables에도 동일 키 등록되어 있음 (TOSS_CLIENT_*, TOSS_OWNER_USER_IDS)
 
 ### Python 패키지 (requirements.txt 주요)
 - Flask 3.x, Flask-Login, Flask-SQLAlchemy, psycopg2-binary
@@ -762,15 +836,32 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
   - 정확한 일별 종가 기록 위해 매일 16:00 KST + 17:00 EST cron 도입 검토
 - [ ] **랭킹 캐싱 없음** — 사용자 늘면 `/api/leaderboard` 가 매 호출마다 모든 사용자 스냅샷 조회
   - 사용자 100명 초과 시 5분 캐시 도입
+- [ ] **🔑 토스 IP 재등록 (재배포마다)** — Railway egress IP가 배포마다 바뀜.
+  재배포 후 토스가 yfinance로 폴백되면 `/api/debug/toss`로 IP 확인 → 콘솔 등록.
+  영구 해결은 `TOSS_PROXY_URL`(Oracle VM, `TOSS_PROXY_SETUP.md`) — VM 세팅 보류 중
+- [ ] **`/api/debug/toss` 진단 엔드포인트** — 운영 안정화 후 제거 고려 (현재는 IP 확인용 필요)
+- [ ] **토스 다른 계좌(연금/ISA) 미노출** — Open API가 개발자 키 연동 1계좌만 제공 (API 한계)
 
 ---
 
-## 11. Git 상태 스냅샷 (2026-05-22 심야)
+## 11. Git 상태 스냅샷 (2026-06-05)
 
 ```
 main 브랜치 (origin/main과 동기화됨, 모두 정상 배포)
 
-1625299 feat: 토스증권 Open API 연동 — 시세/차트/환율 (yfinance 폴백)        ← HEAD
+232b5d2 feat: toss_to_sql 스크립트 UTF-8 파일 출력 + .sql gitignore        ← HEAD
+ba8705c feat: 토스 보유종목 → holdings INSERT SQL 생성 스크립트 (IP 우회용)
+b774480 feat: 토스 import 다계좌 합산 + user_id 게이팅(카카오 이메일 미제공)
+7864c55 fix: 토스 import - 복수 owner 이메일 허용 + IP 미등록 시 명확한 에러
+65ddef9 docs: 토스 고정 IP 프록시 설정 가이드 (Oracle Cloud 무료 VM + tinyproxy)
+b4008b7 feat: 토스 API 고정 IP 프록시 지원 (TOSS_PROXY_URL)
+35e5f1c feat: 토스 계좌 보유종목 → 실제 포트폴리오 import
+651080a fix: 랭킹에서 비현실적/손상 데이터 제외
+1ed7bb2 feat: 포트폴리오(실제 보유) ↔ 모의투자 테이블 분리
+b4ea46f fix: 토스 API 실동작 수정 — IPv4 강제 + 중첩 응답 파싱 + 날짜 보존
+5484e02 feat: /api/debug/toss 진단 엔드포인트
+968b694 docs: 토스 IP 허용목록 해결 + 운영 동작 확인 기록
+1625299 feat: 토스증권 Open API 연동 — 시세/차트/환율 (yfinance 폴백)
 c07aab7 docs: HANDOFF.md 최신화 — 2026-05-22 저녁 세션 6건 반영
 d69cd95 ux: 모의투자 페이지의 포지션 카드도 수익/손실 색상 개선 적용
 994ac68 fix: 옛 Service Worker 캐시 우회 — JS/CSS에 ?v=29 쿼리 추가
@@ -798,10 +889,22 @@ b52dfcb feat: 섹터/테마 강도 랭킹 탭 추가 (모멘텀+거래량/breadt
 68d0575 feat: 분석↔모의투자 통합 - 분석 페이지에서 바로 모의 매수/매도
 ```
 
-**Service Worker**: `sa-v32`
-**HTML 캐시 버스팅 쿼리**: `?v=32`
+**Service Worker**: `sa-v34`
+**HTML 캐시 버스팅 쿼리**: `?v=34`
 
-**저녁 세션 신규/수정 파일**:
+**2026-06-05 토스 세션 신규/수정 파일**:
+- `toss_api.py` — 시세/캔들/환율/계좌/보유종목 + OAuth2 + 프록시(`_req`) + 다계좌 합산
+- `scripts/toss_to_sql.py` (NEW) — 토스 보유종목 → SQL 생성 (IP 우회)
+- `TOSS_PROXY_SETUP.md` (NEW) — 고정 IP 프록시 가이드
+- `models.py` — `PaperHolding` 모델 추가
+- `app.py` — `_get_price_df`, 토스 시세/환율 통합, paper_holdings 마이그레이션,
+  trading 라우트 PaperHolding 전환, `/api/portfolio/import-toss`, `/api/debug/toss`,
+  랭킹 방어 가드, `_toss_symbol_to_ticker`
+- `templates/index.html` — 포트폴리오 탭 "실제 보유" 안내 + 토스 불러오기 버튼
+- `static/js/main.js` — `importTossPortfolio()`, 토스 실시간 라벨
+- `.env.example` — TOSS_* 키들
+
+**2026-05-22 저녁 세션 신규/수정 파일**:
 - `models.py` — `AssetSnapshot`, `UserBadge` 모델 추가 + User.nickname/is_public
 - `badges.py` (NEW) — 25개 배지 정의 + evaluate 엔진
 - `app.py` — 마이그레이션 SQL, 스냅샷 헬퍼, 벤치마크 fetcher, 배지 ctx 빌더/부여 엔진,
