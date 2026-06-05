@@ -3598,17 +3598,33 @@ def import_toss_portfolio():
     if not toss_api.is_enabled():
         return jsonify({"error": "토스 API가 설정되지 않았습니다"}), 400
 
-    # 소유자 게이팅: TOSS_OWNER_EMAIL 설정 시 해당 이메일만 허용
-    owner = os.environ.get("TOSS_OWNER_EMAIL", "").strip().lower()
-    if owner and (current_user.email or "").strip().lower() != owner:
-        return jsonify({"error": "이 계정은 토스 계좌 연동 권한이 없습니다"}), 403
+    # 소유자 게이팅: TOSS_OWNER_EMAIL(콤마구분 복수 허용) 설정 시 해당 이메일만 허용.
+    # 토스 API는 client_credentials(소유자 본인 계좌)만 지원하므로, 같은 사람이
+    # 카카오/구글 등 여러 로그인을 쓰면 모든 이메일을 콤마로 등록.
+    owner_raw = os.environ.get("TOSS_OWNER_EMAIL", "").strip().lower()
+    if owner_raw:
+        allowed = {e.strip() for e in owner_raw.split(",") if e.strip()}
+        my_email = (current_user.email or "").strip().lower()
+        if my_email not in allowed:
+            return jsonify({
+                "error": f"이 계정({my_email or '이메일 없음'})은 토스 계좌 연동 권한이 없습니다. "
+                         f"본인 계정이면 TOSS_OWNER_EMAIL 에 이 이메일을 추가하세요."
+            }), 403
+
+    # 토큰 발급 가능 여부 먼저 확인 (IP 미등록/프록시 미설정 시 여기서 막힘)
+    if not toss_api._get_token():
+        return jsonify({
+            "error": "토스 인증 실패 — 서버 IP가 토스 콘솔에 등록되지 않았습니다. "
+                     "고정 IP 프록시(TOSS_PROXY_URL) 설정 또는 현재 서버 IP 등록이 필요합니다. "
+                     "(/api/debug/toss 로 현재 IP 확인)"
+        }), 502
 
     try:
         items = toss_api.get_account_holdings()
     except Exception as e:
         return jsonify({"error": f"토스 보유종목 조회 실패: {e}"}), 502
     if items is None:
-        return jsonify({"error": "토스 계좌를 찾을 수 없습니다"}), 404
+        return jsonify({"error": "토스 계좌를 찾을 수 없습니다 (계좌 미연동 또는 일시적 오류)"}), 404
 
     # 동기화: 기존 실제 포트폴리오 교체 (토스가 진실의 원천)
     Holding.query.filter_by(user_id=current_user.id).delete()
