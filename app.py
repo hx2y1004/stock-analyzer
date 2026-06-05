@@ -3598,17 +3598,21 @@ def import_toss_portfolio():
     if not toss_api.is_enabled():
         return jsonify({"error": "토스 API가 설정되지 않았습니다"}), 400
 
-    # 소유자 게이팅: TOSS_OWNER_EMAIL(콤마구분 복수 허용) 설정 시 해당 이메일만 허용.
-    # 토스 API는 client_credentials(소유자 본인 계좌)만 지원하므로, 같은 사람이
-    # 카카오/구글 등 여러 로그인을 쓰면 모든 이메일을 콤마로 등록.
-    owner_raw = os.environ.get("TOSS_OWNER_EMAIL", "").strip().lower()
-    if owner_raw:
-        allowed = {e.strip() for e in owner_raw.split(",") if e.strip()}
+    # 소유자 게이팅: 토스 API는 client_credentials(소유자 본인 계좌)만 지원.
+    # 같은 사람이 카카오/구글 등 여러 로그인을 쓰므로, 둘 중 하나로 허용:
+    #   - TOSS_OWNER_EMAIL: 콤마구분 이메일 목록 (구글 등)
+    #   - TOSS_OWNER_USER_IDS: 콤마구분 user id 목록 (카카오는 이메일 미제공 → id로)
+    owner_emails = {e.strip() for e in os.environ.get("TOSS_OWNER_EMAIL", "").lower().split(",") if e.strip()}
+    owner_ids    = {i.strip() for i in os.environ.get("TOSS_OWNER_USER_IDS", "").split(",") if i.strip()}
+    if owner_emails or owner_ids:
         my_email = (current_user.email or "").strip().lower()
-        if my_email not in allowed:
+        my_id    = str(current_user.id)
+        allowed = (my_email and my_email in owner_emails) or (my_id in owner_ids)
+        if not allowed:
             return jsonify({
-                "error": f"이 계정({my_email or '이메일 없음'})은 토스 계좌 연동 권한이 없습니다. "
-                         f"본인 계정이면 TOSS_OWNER_EMAIL 에 이 이메일을 추가하세요."
+                "error": f"이 계정은 토스 계좌 연동 권한이 없습니다. "
+                         f"본인 계정이면 환경변수에 추가하세요 → "
+                         f"user_id={my_id}, email={my_email or '(없음)'}, provider={current_user.provider}"
             }), 403
 
     # 토큰 발급 가능 여부 먼저 확인 (IP 미등록/프록시 미설정 시 여기서 막힘)
