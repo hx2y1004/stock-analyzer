@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+import toss_api
 try:
     from deep_translator import GoogleTranslator as _GTrans
     from concurrent.futures import ThreadPoolExecutor as _TPE
@@ -1210,6 +1211,29 @@ def trading():
     return render_template("trading.html")
 
 
+def _get_price_df(ticker, interval, min_bars, yf_period="max"):
+    """가격 DataFrame (OHLCV) 반환. 토스 우선, yfinance 폴백.
+    Returns: (df, source)  — source ∈ {"toss", "yfinance"}, 실패 시 (None, None)
+    """
+    # 1순위: 토스증권 캔들
+    if toss_api.is_enabled() and toss_api.is_eligible(ticker):
+        try:
+            tdf = toss_api.get_candles_df(ticker, interval=interval, min_bars=min_bars)
+            # 지표 계산에 충분한 최소량 확보됐을 때만 채택
+            if tdf is not None and len(tdf) >= max(20, int(min_bars * 0.4)):
+                return tdf, "toss"
+        except Exception as e:
+            app.logger.warning(f"[price_df] toss {ticker} {interval} failed: {e}")
+    # 2순위: yfinance
+    try:
+        df = yf.Ticker(ticker).history(period=yf_period, interval=interval)
+        if df is not None and not df.empty:
+            return df, "yfinance"
+    except Exception as e:
+        app.logger.warning(f"[price_df] yfinance {ticker} {interval} failed: {e}")
+    return None, None
+
+
 def build_chart_data(ticker, interval):
     """차트 데이터만 반환 (봉 전환 시 사용)"""
     if interval not in ("1d", "1wk", "1mo"):
@@ -1217,9 +1241,10 @@ def build_chart_data(ticker, interval):
 
     INTERVAL_LABELS = {"1d": "일봉", "1wk": "주봉", "1mo": "월봉"}
 
-    stock = yf.Ticker(ticker)
-    df = stock.history(period="max", interval=interval)
-    if df.empty:
+    # 봉별 목표 봉 수 (지표 + 충분한 히스토리)
+    CHART_MIN_BARS = {"1d": 600, "1wk": 250, "1mo": 130}
+    df, _src = _get_price_df(ticker, interval, CHART_MIN_BARS.get(interval, 600))
+    if df is None or df.empty:
         return None, f"'{ticker}' 데이터를 찾을 수 없습니다."
 
     df = df.dropna(subset=["Close", "Open", "High", "Low"])
@@ -2632,9 +2657,12 @@ def analyze():
 
     try:
         stock = yf.Ticker(ticker)
-        df = stock.history(period=period, interval=interval)
+        # 가격 df: 토스 우선, yfinance 폴백 (펀더멘털용 stock 객체는 yfinance 유지)
+        # 지표(MA120 등) 계산 위해 chart_bars + 버퍼만큼 확보
+        df_min_bars = max(chart_bars + 130, 260) if chart_bars < 99999 else 800
+        df, price_source = _get_price_df(ticker, interval, df_min_bars, yf_period=period)
 
-        if df.empty:
+        if df is None or df.empty:
             return jsonify({"error": f"'{ticker}' 데이터를 찾을 수 없습니다. 티커를 확인해주세요."}), 404
 
         info = stock.info
@@ -2669,10 +2697,11 @@ def analyze():
         # ── 주봉 데이터 (추세 보조 지표용) ──────────────────────────────
         df_weekly = None
         try:
-            df_w_raw = stock.history(period="2y", interval="1wk")
-            df_w_raw = df_w_raw.dropna(subset=["Close", "Open", "High", "Low"])
-            if not df_w_raw.empty:
-                df_weekly = add_all_indicators(df_w_raw)
+            df_w_raw, _wsrc = _get_price_df(ticker, "1wk", 104, yf_period="2y")
+            if df_w_raw is not None:
+                df_w_raw = df_w_raw.dropna(subset=["Close", "Open", "High", "Low"])
+                if not df_w_raw.empty:
+                    df_weekly = add_all_indicators(df_w_raw)
         except Exception:
             df_weekly = None
 
@@ -2765,16 +2794,26 @@ def analyze():
             pass
 
         realtime_price  = None
-        realtime_source = None  # "naver" | "yfinance"
+        realtime_source = None  # "toss" | "naver" | "yfinance"
 
-        # 1) 한국 종목 → 네이버 우선
-        if is_korean:
+        # 1) 토스증권 우선 (한국+미국 모두 실시간)
+        if toss_api.is_enabled() and toss_api.is_eligible(ticker):
+            try:
+                tp = toss_api.get_price(ticker)
+                if tp:
+                    realtime_price  = safe_float(tp)
+                    realtime_source = "toss"
+            except Exception:
+                pass
+
+        # 2) 한국 종목 → 네이버 폴백 (~1분 지연)
+        if not realtime_price and is_korean:
             nv = fetch_naver_realtime_price(ticker.split(".")[0])
             if nv and nv.get("current_price"):
                 realtime_price  = nv.get("current_price")
                 realtime_source = "naver"
 
-        # 2) 폴백: yfinance fast_info.last_price (previous_close는 신뢰 안함)
+        # 3) 폴백: yfinance fast_info.last_price (previous_close는 신뢰 안함)
         if not realtime_price:
             try:
                 fi = stock.fast_info
@@ -3103,7 +3142,8 @@ def analyze():
             "is_market_open": is_market_open_now,
             "data_timestamp": data_timestamp,
             "fetched_at": datetime.utcnow().isoformat() + "Z",
-            "realtime_source": realtime_source,  # "naver" | "yfinance" | null
+            "realtime_source": realtime_source,  # "toss" | "naver" | "yfinance" | null
+            "chart_source": price_source,        # "toss" | "yfinance" (디버그용)
             "market_cap": info.get("marketCap"),
             "volume": safe_float(df["Volume"].iloc[-1]),
             "avg_volume": safe_float(df["Volume"].tail(20).mean()),
@@ -3505,10 +3545,23 @@ _FX_TTL   = 10 * 60   # 10분
 
 
 def _get_usd_krw_rate():
-    """USD/KRW 환율 (10분 캐시). 실패 시 기본 1380."""
+    """USD/KRW 환율 (10분 캐시). 토스 우선, yfinance 폴백, 기본 1380."""
     now = time.time()
     if _FX_CACHE["rate"] and (now - _FX_CACHE["ts"]) < _FX_TTL:
         return _FX_CACHE["rate"]
+
+    # 1순위: 토스증권 환율 API
+    if toss_api.is_enabled():
+        try:
+            rate = toss_api.get_exchange_rate("USD", "KRW")
+            if rate and rate > 0:
+                _FX_CACHE["rate"] = rate
+                _FX_CACHE["ts"]   = now
+                return rate
+        except Exception as e:
+            app.logger.warning(f"[FX] toss rate failed: {e}")
+
+    # 2순위: yfinance KRW=X
     try:
         df = yf.Ticker("KRW=X").history(period="5d", interval="1d", auto_adjust=False)
         if df is not None and not df.empty:
@@ -3532,7 +3585,16 @@ def _to_krw(amount, currency, exchange_rate=None):
 
 
 def _fetch_current_price(ticker):
-    """종목 현재가 (native currency)."""
+    """종목 현재가 (native currency). 토스 우선, yfinance 폴백."""
+    # 1순위: 토스
+    if toss_api.is_enabled() and toss_api.is_eligible(ticker):
+        try:
+            p = toss_api.get_price(ticker)
+            if p:
+                return float(p)
+        except Exception:
+            pass
+    # 2순위: yfinance fast_info
     try:
         fi = yf.Ticker(ticker).fast_info
         p  = getattr(fi, "last_price", None) or getattr(fi, "regular_market_price", None)
