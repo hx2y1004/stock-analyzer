@@ -359,3 +359,54 @@ def get_exchange_rate(base="USD", quote="KRW"):
     except Exception as e:
         log.warning(f"[toss] exchange_rate failed: {e}")
         return None
+
+
+# ── 계좌 / 보유종목 ────────────────────────────────────────
+def get_accounts():
+    """연동된 계좌 목록. Returns list[{accountNo, accountSeq, accountType}]."""
+    h = _headers()
+    if not h:
+        return []
+    try:
+        r = requests.get(f"{_BASE}/api/v1/accounts", headers=h, timeout=_TIMEOUT)
+        r.raise_for_status()
+        return _extract_list(r.json())
+    except Exception as e:
+        log.warning(f"[toss] get_accounts failed: {e}")
+        return []
+
+
+def get_account_holdings(account_seq=None):
+    """계좌 보유종목. account_seq 미지정 시 자동 탐색(BROKERAGE 우선).
+    Returns: list[{symbol, name, market, currency, quantity, avg_price, last_price}]
+             또는 None (계좌 없음/실패)
+    """
+    if account_seq is None:
+        accts = get_accounts()
+        if not accts:
+            return None
+        acct = next((a for a in accts if a.get("accountType") == "BROKERAGE"), accts[0])
+        account_seq = acct.get("accountSeq")
+    h = _headers(account=account_seq)
+    if not h:
+        return None
+    try:
+        r = requests.get(f"{_BASE}/api/v1/holdings", headers=h, timeout=_TIMEOUT)
+        r.raise_for_status()
+        result = (r.json() or {}).get("result") or {}
+        items = result.get("items") or []
+        out = []
+        for it in items:
+            out.append({
+                "symbol":     (it.get("symbol") or "").upper(),
+                "name":       it.get("name"),
+                "market":     it.get("marketCountry"),   # KR / US
+                "currency":   it.get("currency"),
+                "quantity":   _f(it.get("quantity")),
+                "avg_price":  _f(it.get("averagePurchasePrice")),
+                "last_price": _f(it.get("lastPrice")),
+            })
+        return out
+    except Exception as e:
+        log.warning(f"[toss] get_account_holdings failed: {e}")
+        return None

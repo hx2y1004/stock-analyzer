@@ -3566,6 +3566,70 @@ def delete_holding(hid):
     return jsonify({"ok": True})
 
 
+# ── 토스 계좌 → 실제 포트폴리오 import ─────────────────────────────────────────
+_STOCK_DB_SYMBOLS = None
+
+def _stock_db_symbol_set():
+    """STOCK_DB의 심볼 집합 (한 번만 빌드)."""
+    global _STOCK_DB_SYMBOLS
+    if _STOCK_DB_SYMBOLS is None:
+        _STOCK_DB_SYMBOLS = {s.get("symbol") for s in STOCK_DB if s.get("symbol")}
+    return _STOCK_DB_SYMBOLS
+
+
+def _toss_symbol_to_ticker(symbol, market):
+    """토스 심볼 → 앱 티커. 미국=그대로, 한국=.KS/.KQ 판별(STOCK_DB), 기본 .KS."""
+    s = (symbol or "").upper()
+    if market == "KR" or s.isdigit():
+        syms = _stock_db_symbol_set()
+        for suf in (".KS", ".KQ"):
+            if (s + suf) in syms:
+                return s + suf
+        return s + ".KS"
+    return s
+
+
+@app.route("/api/portfolio/import-toss", methods=["POST"])
+@login_required
+def import_toss_portfolio():
+    """토스 계좌 보유종목을 실제 포트폴리오(Holding)로 동기화.
+    토스 계좌는 앱 소유자 키에 연동된 것이므로 TOSS_OWNER_EMAIL로 권한 제한.
+    """
+    if not toss_api.is_enabled():
+        return jsonify({"error": "토스 API가 설정되지 않았습니다"}), 400
+
+    # 소유자 게이팅: TOSS_OWNER_EMAIL 설정 시 해당 이메일만 허용
+    owner = os.environ.get("TOSS_OWNER_EMAIL", "").strip().lower()
+    if owner and (current_user.email or "").strip().lower() != owner:
+        return jsonify({"error": "이 계정은 토스 계좌 연동 권한이 없습니다"}), 403
+
+    try:
+        items = toss_api.get_account_holdings()
+    except Exception as e:
+        return jsonify({"error": f"토스 보유종목 조회 실패: {e}"}), 502
+    if items is None:
+        return jsonify({"error": "토스 계좌를 찾을 수 없습니다"}), 404
+
+    # 동기화: 기존 실제 포트폴리오 교체 (토스가 진실의 원천)
+    Holding.query.filter_by(user_id=current_user.id).delete()
+    imported = []
+    for it in items:
+        qty = it.get("quantity")
+        avg = it.get("avg_price")
+        if not qty or not avg or qty <= 0:
+            continue
+        ticker = _toss_symbol_to_ticker(it.get("symbol"), it.get("market"))
+        currency = "KRW" if ticker.endswith((".KS", ".KQ")) else "USD"
+        name = it.get("name") or ticker
+        db.session.add(Holding(
+            user_id=current_user.id, ticker=ticker, name=name,
+            quantity=round(qty, 6), purchase_price=round(avg, 6), currency=currency,
+        ))
+        imported.append(ticker)
+    db.session.commit()
+    return jsonify({"ok": True, "imported": len(imported), "tickers": imported})
+
+
 # ══════════════════════════════════════════════════════════════
 # 모의투자 API (Paper Trading)
 # ══════════════════════════════════════════════════════════════

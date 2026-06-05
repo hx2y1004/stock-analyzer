@@ -4014,3 +4014,28 @@ body {
   white-space: nowrap;
 }
 .pf-note-link:hover { text-decoration: underline; }
+
+/* 포트폴리오 상단 액션 (토스 불러오기 + 종목 추가) */
+.pf-top-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pf-toss-btn {
+  background: #1f2937;
+  border: 1px solid #2f4ff0;
+  color: #93b4ff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+  white-space: nowrap;
+}
+.pf-toss-btn:hover { background: #2f4ff0; color: #fff; }
+.pf-toss-btn:disabled { opacity: 0.6; cursor: default; }
+@media (max-width: 640px) {
+  .pf-toss-btn, .pf-add-btn { font-size: 12px; padding: 6px 10px; }
+}

@@ -4,7 +4,7 @@
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v33';
+const CACHE_VERSION = 'sa-v34';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
