@@ -31,3 +31,6 @@ instance/
 
 # Logs
 *.log
+
+# 토스 import 생성물 (개인 보유종목 — 커밋 금지)
+holdings_import_*.sql
