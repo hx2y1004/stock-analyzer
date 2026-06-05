@@ -4222,5 +4222,32 @@ def trading_reset():
     return jsonify({"ok": True, "cash_balance": INITIAL_CAPITAL_KRW})
 
 
+@app.route("/api/debug/toss")
+def debug_toss():
+    """토스 API 진단: 서버 egress IP + 토큰 발급 성공 여부.
+    배포 환경의 outbound IP를 토스 콘솔 허용목록에 등록할 때 사용.
+    """
+    out = {"toss_enabled": toss_api.is_enabled()}
+    # 1) 서버가 외부로 나갈 때의 공인 IP (토스 콘솔에 등록할 IP)
+    try:
+        out["egress_ip"] = requests.get("https://api.ipify.org", timeout=5).text
+    except Exception as e:
+        out["egress_ip"] = None
+        out["egress_ip_error"] = str(e)
+    # 2) 토스 토큰 발급 테스트 (성공 = IP 등록됨)
+    try:
+        tok = toss_api._get_token()
+        out["toss_token_ok"] = bool(tok)
+    except Exception as e:
+        out["toss_token_ok"] = False
+        out["toss_token_error"] = str(e)
+    # 3) 환율 한 번 호출해보기 (실데이터 확인)
+    try:
+        out["toss_fx_usdkrw"] = toss_api.get_exchange_rate("USD", "KRW")
+    except Exception:
+        out["toss_fx_usdkrw"] = None
+    return jsonify(out)
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
