@@ -4330,12 +4330,24 @@ def debug_toss():
     배포 환경의 outbound IP를 토스 콘솔 허용목록에 등록할 때 사용.
     """
     out = {"toss_enabled": toss_api.is_enabled()}
-    # 1) 서버가 외부로 나갈 때의 공인 IP (토스 콘솔에 등록할 IP)
+    # 1) 서버 직접 egress IP (프록시 미사용 시 토스가 보는 IP)
     try:
         out["egress_ip"] = requests.get("https://api.ipify.org", timeout=5).text
     except Exception as e:
         out["egress_ip"] = None
         out["egress_ip_error"] = str(e)
+    # 1-b) 프록시 설정 시: 프록시 경유 egress IP (이게 토스 콘솔에 등록할 고정 IP)
+    _px = os.environ.get("TOSS_PROXY_URL", "").strip()
+    out["toss_proxy_set"] = bool(_px)
+    if _px:
+        try:
+            out["proxy_egress_ip"] = requests.get(
+                "https://api.ipify.org", timeout=8,
+                proxies={"http": _px, "https": _px},
+            ).text
+        except Exception as e:
+            out["proxy_egress_ip"] = None
+            out["proxy_egress_ip_error"] = str(e)
     # 2) 토스 토큰 발급 테스트 (성공 = IP 등록됨)
     try:
         tok = toss_api._get_token()
