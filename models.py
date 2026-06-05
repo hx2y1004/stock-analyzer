@@ -60,6 +60,29 @@ class Holding(db.Model):
         }
 
 
+class PaperHolding(db.Model):
+    """모의투자 보유 종목 (1억 시뮬레이션). 실제 포트폴리오(Holding)와 분리."""
+    __tablename__   = "paper_holdings"
+    id              = db.Column(db.Integer, primary_key=True)
+    user_id         = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    ticker          = db.Column(db.String(30),  nullable=False)
+    name            = db.Column(db.String(200), nullable=False)
+    quantity        = db.Column(db.Float,  nullable=False)
+    purchase_price  = db.Column(db.Float,  nullable=False)
+    currency        = db.Column(db.String(10), default="USD")
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id":             self.id,
+            "ticker":         self.ticker,
+            "name":           self.name,
+            "quantity":       self.quantity,
+            "purchase_price": self.purchase_price,
+            "currency":       self.currency,
+        }
+
+
 class Transaction(db.Model):
     """모의투자 매매 내역."""
     __tablename__ = "transactions"

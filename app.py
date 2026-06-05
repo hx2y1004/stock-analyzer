@@ -52,7 +52,7 @@ from flask_login import LoginManager, login_required, current_user
 
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
-from models import db, User, Holding, Transaction, AssetSnapshot, UserBadge, INITIAL_CAPITAL_KRW
+from models import db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, INITIAL_CAPITAL_KRW
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -82,6 +82,18 @@ def unauthorized():
 app.register_blueprint(auth_bp)
 
 with app.app_context():
+    # ⚠️ create_all() 이 paper_holdings 를 만들기 전에, 테이블이 원래 있었는지 먼저 확인.
+    # (없었다 = 최초 분리 → 기존 holdings 를 모의투자로 1회 이전해야 함)
+    _paper_holdings_existed = True
+    try:
+        from sqlalchemy import text as _text0
+        with db.engine.begin() as _c0:
+            _paper_holdings_existed = bool(
+                _c0.execute(_text0("SELECT to_regclass('public.paper_holdings')")).scalar()
+            )
+    except Exception:
+        _paper_holdings_existed = True   # 알 수 없으면 이전 안 함 (안전)
+
     db.create_all()
     # ── 기존 User 마이그레이션: cash_balance / initial_capital 컬럼 추가 후
     # 기존 유저들에게도 1억원 초기 자본 부여 ──
@@ -140,6 +152,23 @@ with app.app_context():
                 "CREATE INDEX IF NOT EXISTS ix_user_badges_user "
                 "ON user_badges (user_id)"
             ))
+            # ── paper_holdings: 모의투자 보유종목 (실제 포트폴리오 holdings와 분리) ──
+            # 테이블(create_all 이 이미 생성)이 '원래 없었을 때만' 기존 holdings 를 1회 이전.
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_paper_holdings_user "
+                "ON paper_holdings (user_id)"
+            ))
+            if not _paper_holdings_existed:
+                # 최초 분리: 기존 holdings(모의+실제 혼재)를 모의투자로 이전,
+                # 실제 포트폴리오(holdings)는 빈 상태로 시작.
+                conn.execute(text("""
+                    INSERT INTO paper_holdings
+                        (user_id, ticker, name, quantity, purchase_price, currency, created_at)
+                    SELECT user_id, ticker, name, quantity, purchase_price, currency, created_at
+                    FROM holdings
+                """))
+                conn.execute(text("DELETE FROM holdings"))
+                print("[migration] holdings → paper_holdings 이전 완료 (실제 포트폴리오 초기화)")
     except Exception as e:
         # SQLite 등에서는 ALTER TABLE 문법이 다를 수 있어 무시
         # (db.create_all() 가 새 컬럼 만들었으면 OK)
@@ -3783,7 +3812,7 @@ def trading_dashboard():
     db.session.commit()
 
     fx = _get_usd_krw_rate()
-    holdings = Holding.query.filter_by(user_id=user.id).all()
+    holdings = PaperHolding.query.filter_by(user_id=user.id).all()
 
     positions = []
     positions_value_krw = 0.0
@@ -3922,8 +3951,8 @@ def trading_buy():
     # 현금 차감
     user.cash_balance -= total_krw
 
-    # Holding 추가 또는 평균단가 업데이트
-    existing = Holding.query.filter_by(user_id=user.id, ticker=ticker).first()
+    # 모의투자 보유 추가 또는 평균단가 업데이트
+    existing = PaperHolding.query.filter_by(user_id=user.id, ticker=ticker).first()
     if existing:
         new_qty = existing.quantity + qty
         avg     = (existing.purchase_price * existing.quantity + price * qty) / new_qty
@@ -3932,7 +3961,7 @@ def trading_buy():
         existing.name           = name
         existing.currency       = currency
     else:
-        h = Holding(
+        h = PaperHolding(
             user_id=user.id, ticker=ticker, name=name,
             quantity=qty, purchase_price=price, currency=currency,
         )
@@ -3974,7 +4003,7 @@ def trading_sell():
     if user.cash_balance is None:
         user.cash_balance = INITIAL_CAPITAL_KRW
 
-    holding = Holding.query.filter_by(user_id=user.id, ticker=ticker).first()
+    holding = PaperHolding.query.filter_by(user_id=user.id, ticker=ticker).first()
     if not holding:
         return jsonify({"error": "보유하지 않은 종목입니다"}), 400
     if qty > holding.quantity:
@@ -4210,9 +4239,11 @@ def leaderboard_page():
 @app.route("/api/trading/reset", methods=["POST"])
 @login_required
 def trading_reset():
-    """모의투자 초기화: 현금 1억으로, 보유종목·거래내역 삭제."""
+    """모의투자 초기화: 현금 1억으로, 모의 보유종목·거래내역 삭제.
+    (실제 포트폴리오 Holding은 건드리지 않음)
+    """
     user = current_user
-    Holding.query.filter_by(user_id=user.id).delete()
+    PaperHolding.query.filter_by(user_id=user.id).delete()
     Transaction.query.filter_by(user_id=user.id).delete()
     AssetSnapshot.query.filter_by(user_id=user.id).delete()
     UserBadge.query.filter_by(user_id=user.id).delete()
