@@ -4207,6 +4207,13 @@ def leaderboard():
                 continue
             ret_pct = (end_v / start_v - 1) * 100
             total_krw = end_v
+        # 방어: 비현실적/손상 데이터 제외 (모의투자는 1억 시작 → +100000%(1000배) 초과는 쓰레기)
+        import math
+        if ret_pct is None or math.isnan(ret_pct) or math.isinf(ret_pct):
+            continue
+        if ret_pct > 100000 or total_krw > 1e13:   # 100조원 초과 = 손상 데이터
+            app.logger.warning(f"[leaderboard] 비정상 데이터 제외: user={u.id} ret={ret_pct}")
+            continue
         rows.append({
             "user_id":          u.id,
             "nickname":         u.nickname,
