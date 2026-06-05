@@ -400,17 +400,8 @@ def get_accounts():
         return []
 
 
-def get_account_holdings(account_seq=None):
-    """계좌 보유종목. account_seq 미지정 시 자동 탐색(BROKERAGE 우선).
-    Returns: list[{symbol, name, market, currency, quantity, avg_price, last_price}]
-             또는 None (계좌 없음/실패)
-    """
-    if account_seq is None:
-        accts = get_accounts()
-        if not accts:
-            return None
-        acct = next((a for a in accts if a.get("accountType") == "BROKERAGE"), accts[0])
-        account_seq = acct.get("accountSeq")
+def _holdings_for_account(account_seq):
+    """단일 계좌 보유종목 조회. Returns list 또는 None(오류)."""
     h = _headers(account=account_seq)
     if not h:
         return None
@@ -429,8 +420,49 @@ def get_account_holdings(account_seq=None):
                 "quantity":   _f(it.get("quantity")),
                 "avg_price":  _f(it.get("averagePurchasePrice")),
                 "last_price": _f(it.get("lastPrice")),
+                "account_seq": account_seq,
             })
         return out
     except Exception as e:
-        log.warning(f"[toss] get_account_holdings failed: {e}")
+        log.warning(f"[toss] holdings(account={account_seq}) failed: {e}")
         return None
+
+
+def get_account_holdings(account_seq=None):
+    """보유종목 조회.
+    - account_seq 지정: 해당 계좌만
+    - 미지정: 연동된 '모든 계좌' 합산 (같은 종목은 수량 합산 + 가중평균 단가)
+    Returns: list[{symbol, name, market, currency, quantity, avg_price, last_price}]
+             또는 None (계좌 없음/실패)
+    """
+    if account_seq is not None:
+        return _holdings_for_account(account_seq)
+
+    accts = get_accounts()
+    if not accts:
+        return None
+
+    merged = {}
+    any_ok = False
+    for a in accts:
+        seq = a.get("accountSeq")
+        items = _holdings_for_account(seq)
+        if items is None:
+            continue
+        any_ok = True
+        for it in items:
+            key = (it["symbol"], it.get("market"))
+            if key in merged:
+                ex = merged[key]
+                q1, q2 = (ex["quantity"] or 0), (it["quantity"] or 0)
+                tot = q1 + q2
+                if tot > 0:
+                    ex["avg_price"] = (
+                        (ex["avg_price"] or 0) * q1 + (it["avg_price"] or 0) * q2
+                    ) / tot
+                ex["quantity"] = tot
+            else:
+                merged[key] = dict(it)
+    if not any_ok:
+        return None
+    return list(merged.values())
