@@ -57,6 +57,27 @@ async function loadPortfolio() {
   }
 }
 
+// 토스 계좌 보유종목 → 실제 포트폴리오 동기화
+async function importTossPortfolio(btn) {
+  if (!confirm('토스증권 계좌의 보유종목을 불러옵니다.\n현재 포트폴리오는 토스 계좌 기준으로 덮어쓰여집니다. 계속할까요?')) return;
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '불러오는 중...'; }
+  try {
+    const res = await fetch('/api/portfolio/import-toss', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || '불러오기 실패');
+      return;
+    }
+    alert(`토스 계좌에서 ${data.imported}개 종목을 불러왔습니다.`);
+    await loadPortfolio();
+  } catch (e) {
+    alert('네트워크 오류로 불러오지 못했습니다.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
+
 function _pfCardHTML(h, rank, compact = false) {
   const hasPrice = h.current_price != null;
   const retPct   = h.return_pct;

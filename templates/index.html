@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=33" />
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -119,7 +119,10 @@
           <div class="portfolio-title-area">
             <button class="pf-toggle-btn hidden" id="pfToggleBtn" onclick="togglePortfolio()">펼치기 ▼</button>
           </div>
-          <button class="pf-add-btn" onclick="openAddModal()">+ 종목 추가</button>
+          <div class="pf-top-actions">
+            <button class="pf-toss-btn" id="pfTossBtn" onclick="importTossPortfolio(this)" title="토스증권 계좌 보유종목 불러오기">↻ 토스 계좌 불러오기</button>
+            <button class="pf-add-btn" onclick="openAddModal()">+ 종목 추가</button>
+          </div>
         </div>
         <div id="portfolioCards" class="portfolio-cards">
           <div class="pf-loading">불러오는 중...</div>
@@ -500,6 +503,6 @@
   </div>
 
   <script src="/static/js/chart.js"></script>
-  <script src="/static/js/main.js?v=33"></script>
+  <script src="/static/js/main.js?v=34"></script>
 </body>
 </html>
