@@ -30,6 +30,27 @@ except Exception:
 _BASE = "https://openapi.tossinvest.com"
 _TIMEOUT = 8
 
+
+def _proxies():
+    """토스 전용 고정 IP 프록시 (TOSS_PROXY_URL 설정 시).
+    Railway egress IP가 재배포마다 바뀌는 문제 → 고정 IP 프록시 경유 시
+    토스에는 프록시 IP만 1회 등록하면 됨.
+    예: http://user:pass@proxyhost:3128
+    """
+    url = os.environ.get("TOSS_PROXY_URL", "").strip()
+    if not url:
+        return None
+    return {"http": url, "https": url}
+
+
+def _req(method, url, **kwargs):
+    """프록시 자동 적용 requests 래퍼."""
+    px = _proxies()
+    if px:
+        kwargs.setdefault("proxies", px)
+    return requests.request(method, url, **kwargs)
+
+
 # ── 토큰 캐시 ──────────────────────────────────────────────
 _token_lock = threading.Lock()
 _token = {"access_token": None, "expires_at": 0.0}
@@ -58,7 +79,8 @@ def _get_token():
         if not cid or not csec:
             return None
         try:
-            r = requests.post(
+            r = _req(
+                "POST",
                 f"{_BASE}/oauth2/token",
                 data={
                     "grant_type": "client_credentials",
@@ -187,7 +209,8 @@ def get_prices(tickers):
     for i in range(0, len(syms), 200):
         batch = syms[i:i + 200]
         try:
-            r = requests.get(
+            r = _req(
+                "GET",
                 f"{_BASE}/api/v1/prices",
                 params={"symbols": ",".join(batch)},
                 headers=h, timeout=_TIMEOUT,
@@ -233,7 +256,7 @@ def _get_candles_page(symbol, count=200, before=None, adjusted=True):
     if before:
         params["before"] = before
     try:
-        r = requests.get(f"{_BASE}/api/v1/candles", params=params, headers=h, timeout=_TIMEOUT)
+        r = _req("GET", f"{_BASE}/api/v1/candles", params=params, headers=h, timeout=_TIMEOUT)
         r.raise_for_status()
         j = r.json()
         return _extract_list(j), _extract_next_before(j)
@@ -342,7 +365,8 @@ def get_exchange_rate(base="USD", quote="KRW"):
     if not h:
         return None
     try:
-        r = requests.get(
+        r = _req(
+            "GET",
             f"{_BASE}/api/v1/exchange-rate",
             params={"baseCurrency": base, "quoteCurrency": quote},
             headers=h, timeout=_TIMEOUT,
@@ -368,7 +392,7 @@ def get_accounts():
     if not h:
         return []
     try:
-        r = requests.get(f"{_BASE}/api/v1/accounts", headers=h, timeout=_TIMEOUT)
+        r = _req("GET", f"{_BASE}/api/v1/accounts", headers=h, timeout=_TIMEOUT)
         r.raise_for_status()
         return _extract_list(r.json())
     except Exception as e:
@@ -391,7 +415,7 @@ def get_account_holdings(account_seq=None):
     if not h:
         return None
     try:
-        r = requests.get(f"{_BASE}/api/v1/holdings", headers=h, timeout=_TIMEOUT)
+        r = _req("GET", f"{_BASE}/api/v1/holdings", headers=h, timeout=_TIMEOUT)
         r.raise_for_status()
         result = (r.json() or {}).get("result") or {}
         items = result.get("items") or []
