@@ -3995,3 +3995,22 @@ body {
 .trend-chg.pf-up.pf-amount    { color: var(--green); }
 .trend-chg.pf-down.pf-amount  { color: var(--red); }
 .trend-chg.pf-neutral.pf-amount { color: #9aa4b2; }
+
+/* 포트폴리오 탭 — 실제 보유 안내 (모의투자 분리) */
+.pf-portfolio-note {
+  background: rgba(88,166,255,0.08);
+  border: 1px solid rgba(88,166,255,0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+.pf-portfolio-note strong { color: var(--text); }
+.pf-note-link {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pf-note-link:hover { text-decoration: underline; }

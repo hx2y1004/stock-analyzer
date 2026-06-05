@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=32" />
+  <link rel="stylesheet" href="/static/css/style.css?v=33" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -111,6 +111,10 @@
 
       <!-- 포트폴리오 탭 -->
       <div id="pfTabPortfolio" class="pf-tab-panel hidden">
+        <div class="pf-portfolio-note">
+          📌 <strong>실제 보유 종목</strong>입니다 (모의투자와 별개 · 랭킹 제외).
+          <a href="/trading" class="pf-note-link">모의투자 보러가기 →</a>
+        </div>
         <div class="portfolio-top">
           <div class="portfolio-title-area">
             <button class="pf-toggle-btn hidden" id="pfToggleBtn" onclick="togglePortfolio()">펼치기 ▼</button>
@@ -496,6 +500,6 @@
   </div>
 
   <script src="/static/js/chart.js"></script>
-  <script src="/static/js/main.js?v=32"></script>
+  <script src="/static/js/main.js?v=33"></script>
 </body>
 </html>
