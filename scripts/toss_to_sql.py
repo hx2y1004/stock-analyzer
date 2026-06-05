@@ -60,9 +60,10 @@ def main():
 
     symset = load_symbol_set()
 
-    print("-- ▼ 아래 전체를 Railway Postgres 콘솔에 붙여넣어 실행하세요 --")
-    print("BEGIN;")
-    print(f"DELETE FROM holdings WHERE user_id = {user_id};")
+    lines = []
+    lines.append("-- 아래 전체를 Railway Postgres 콘솔에 붙여넣어 실행하세요")
+    lines.append("BEGIN;")
+    lines.append(f"DELETE FROM holdings WHERE user_id = {user_id};")
     n = 0
     for it in items:
         qty = it.get("quantity"); avg = it.get("avg_price")
@@ -71,14 +72,21 @@ def main():
         ticker = to_ticker(it.get("symbol"), it.get("market"), symset)
         currency = "KRW" if ticker.endswith((".KS", ".KQ")) else "USD"
         name = it.get("name") or ticker
-        print(
+        lines.append(
             "INSERT INTO holdings (user_id, ticker, name, quantity, purchase_price, currency, created_at) "
             f"VALUES ({user_id}, {sql_str(ticker)}, {sql_str(name)}, {round(qty,6)}, "
             f"{round(avg,6)}, {sql_str(currency)}, NOW());"
         )
         n += 1
-    print("COMMIT;")
-    print(f"-- ▲ 총 {n}개 종목 --")
+    lines.append("COMMIT;")
+    lines.append(f"-- 총 {n}개 종목")
+
+    # UTF-8 파일로 저장 (콘솔 인코딩 깨짐 방지)
+    out_path = os.path.join(os.getcwd(), f"holdings_import_user{user_id}.sql")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[완료] {n}개 종목 → 파일 저장: {out_path}")
+    print("이 파일을 열어(UTF-8) 전체 복사 → Railway DB 콘솔에 붙여넣어 실행하세요.")
 
 
 if __name__ == "__main__":
