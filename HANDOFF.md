@@ -5,21 +5,30 @@
 
 ---
 
-## 🚀 현재 상태 (2026-05-22 저녁)
+## 🚀 현재 상태 (2026-05-22 심야)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `d69cd95` (모의투자 포지션 카드 수익/손실 색상 개선)
-- Service Worker: **`sa-v31`**
-- 정적 자산 캐시 버스팅: HTML에 `?v=30` 쿼리 사용 중
-- **이번 저녁 세션 6개 커밋 추가** — 자산 차트 + 벤치마크 + 챌린지/랭킹/닉네임 + UX 개선
+- 최신 커밋: `1625299` (토스증권 API 연동 — 시세/차트/환율)
+- Service Worker: **`sa-v32`**
+- 정적 자산 캐시 버스팅: HTML에 `?v=32` 쿼리 사용 중
+- **토스증권 Open API 연동 완료** (yfinance 폴백 유지)
+
+### ⚠️ 토스 API 미해결 — IP 허용목록 (중요)
+- 토스 `live` API는 **등록된 IP에서만** 토큰 발급됨
+- 현재 토큰 발급 시 `401 unidentified-client` ("IP를 확인해 주세요")
+- **해야 할 일**:
+  1. 토스 개발자 콘솔(https://developers.tossinvest.com)에서 **허용 IP 등록**
+  2. 로컬 테스트용: 개발 PC 공인 IP (확인일 기준 `115.138.27.7`)
+  3. **Railway 운영용 IP가 관건** — Railway는 egress IP가 동적/공유라
+     고정 outbound IP 확보 필요 (Pro 플랜 static egress 또는 프록시)
+- IP 등록 전까지는 자동으로 yfinance/네이버 폴백 → 앱은 정상 동작
 
 ### 다음 우선 작업 후보 (사용자 결정 대기)
-- [ ] **DART API 키 등록** — 한국 임원 주식 변동 보고 자동 fetch (API 키만 필요)
-- [ ] **자동 손절** — 매수 시 손절가 입력 → 도달 시 알림/자동 매도
-- [ ] **백테스트** — 과거 데이터로 전략 검증
-- [ ] **AI 코치** — 매매 패턴 학습 후 피드백
-- [ ] **랭킹 시즌제** — 월간/시즌별 리셋 + 시즌 보상 배지
-- [ ] **포지션 노트** — 종목별 매매 일지/메모
+- [ ] **토스 IP 허용목록 등록** (위 참조) → 등록 후 시세/차트/환율 토스로 전환됨
+- [ ] **포트폴리오 ↔ 모의투자 분리** — 실제 보유(토스 계좌 import 또는 수기) vs 모의투자,
+      실제 보유는 랭킹 제외 (사용자 다음 작업 예고)
+- [ ] **DART API 키 등록** — 한국 임원 주식 변동 보고 자동 fetch
+- [ ] **자동 손절** / **백테스트** / **AI 코치** / **랭킹 시즌제** / **포지션 노트**
 
 ---
 
@@ -51,7 +60,8 @@ stock-analyzer/
 ├─ app.py                    # Flask 메인 (모든 라우트/API)
 ├─ auth.py                   # OAuth (Google/Kakao) 블루프린트
 ├─ models.py                 # SQLAlchemy 모델 (User, Holding, Transaction, AssetSnapshot, UserBadge)
-├─ badges.py                 # NEW — 25개 배지 정의 + evaluate 엔진
+├─ badges.py                 # 25개 배지 정의 + evaluate 엔진
+├─ toss_api.py               # NEW — 토스증권 Open API (시세/캔들/환율 + OAuth2)
 ├─ trends_scanner.py         # 트렌드 스캐너 v2 (RS/OBV/Base/Perfect Setup)
 ├─ build_stock_db.py         # 종목 DB 빌더 → stock_db.json
 ├─ stock_db.json             # 종목명/티커 매핑 + 메타 (자동완성용)
@@ -196,6 +206,37 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 ---
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
+
+### 📌 2026-05-22 심야 — 토스증권 Open API 연동 (`1625299`)
+**목적**: 시세/차트/환율을 토스증권 공식 데이터로 (특히 한국 종목 정확도 ↑).
+yfinance/네이버는 폴백으로 유지 → 토스 실패/미커버 시 자동 대체.
+
+**`toss_api.py` (NEW)**:
+- OAuth2 Client Credentials → access_token 24h 캐싱 (thread-safe)
+- `get_prices/get_price`: 실시간 시세 (한국+미국)
+- `get_candles_df`: 일봉 페이지네이션(최대 ~2000봉)+60초 캐시, 주/월봉은 일봉 리샘플(W-FRI/ME)
+- `get_exchange_rate`: USD/KRW
+- `to_toss_symbol` (005930.KS→005930), `is_eligible` (지수^/환율=X 제외)
+- `_extract_list`: 응답 래퍼 방어적 파싱
+
+**`app.py` 통합**:
+- `_get_price_df(ticker, interval, min_bars)`: 토스 캔들 우선 → yfinance 폴백
+  → `build_chart_data()` + `analyze()` df/df_weekly에 적용
+- `_get_usd_krw_rate()`: 토스 환율 우선
+- `_fetch_current_price()`: 토스 우선 (대시보드)
+- analyze 실시간 시세: **토스 → 네이버(KR) → yfinance**
+- 응답에 `realtime_source="toss"`, `chart_source` 추가
+- 펀더멘털(stock.info)은 토스 미제공 → yfinance 유지
+
+**프런트**: main.js 실시간 출처 라벨 "토스 실시간" 추가
+
+**엔드포인트** (토스 base `https://openapi.tossinvest.com`):
+- `POST /oauth2/token` (form: grant_type=client_credentials, client_id, client_secret)
+- `GET /api/v1/prices?symbols=005930,AAPL` (최대 200개, 콤마구분)
+- `GET /api/v1/candles?symbol=X&interval=1m|1d&count=1~200&before=ISO&adjusted=true`
+- `GET /api/v1/exchange-rate?baseCurrency=USD&quoteCurrency=KRW`
+
+**⚠️ 미해결**: `live` 키가 IP 허용목록 필요 → 콘솔에서 IP 등록 전까지 401 (폴백 동작)
 
 ### 📌 2026-05-22 저녁 — 모의투자 포지션 카드 색상도 개선 (`d69cd95`)
 **문제**: ed3cf61 에서 분석 페이지 포트폴리오 카드(`main.js _pfCardHTML`)만 수정.
@@ -650,6 +691,14 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 - 다른 사용자의 `user_id`는 API 응답에서 제거 (프라이버시)
 - 본인 행에만 `is_me: true` + `user_id` 포함
 
+### 7.16 토스증권 API
+- `toss_api.is_enabled()` 로 가드 → 키 없으면 모든 함수 무동작 (yfinance/네이버 폴백)
+- `toss_api.is_eligible(ticker)` 로 지수(^)/환율(=X) 제외 — 벤치마크는 항상 yfinance
+- 캔들은 일봉/분봉만 → 주/월봉은 일봉 리샘플 (`get_candles_df`)
+- 펀더멘털(PER/시총 등)은 토스 미제공 → `stock.info`는 yfinance 유지
+- **IP 허용목록 필수** (live 키) — 콘솔에서 운영/개발 IP 등록 안 하면 401
+- 새 가격/시세 소스 추가 시 `_get_price_df()` / 실시간 우선순위 체인에 통합
+
 ---
 
 ## 8. 외부 의존성 / 환경변수
@@ -663,7 +712,10 @@ KAKAO_CLIENT_ID=...
 KAKAO_CLIENT_SECRET=...
 DATABASE_URL=...           # Railway가 자동 주입 (로컬은 SQLite로 폴백)
 FLASK_SECRET_KEY=...
+TOSS_CLIENT_ID=...         # 토스증권 Open API (미설정 시 yfinance/네이버 폴백)
+TOSS_CLIENT_SECRET=...     # ⚠️ live 키는 IP 허용목록 등록 필요 (콘솔)
 ```
+> ⚠️ 실제 키는 `.env`(gitignore)에만. `.env.example`엔 플레이스홀더만 (커밋되는 파일)
 
 ### Python 패키지 (requirements.txt 주요)
 - Flask 3.x, Flask-Login, Flask-SQLAlchemy, psycopg2-binary
@@ -677,6 +729,7 @@ FLASK_SECRET_KEY=...
 - **DART (오픈DART)**: 한국 분기 재무
 - **네이버 금융**: mobile API + integration + wisereport 스크래핑
 - **Google Translate** (deep_translator): 영문 → 한글, 타임아웃 보호
+- **토스증권 Open API**: 시세/캔들/환율 (`toss_api.py`, OAuth2, IP 허용목록 필요)
 
 ---
 
@@ -711,12 +764,14 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
 
 ---
 
-## 11. Git 상태 스냅샷 (2026-05-22 저녁)
+## 11. Git 상태 스냅샷 (2026-05-22 심야)
 
 ```
 main 브랜치 (origin/main과 동기화됨, 모두 정상 배포)
 
-d69cd95 ux: 모의투자 페이지의 포지션 카드도 수익/손실 색상 개선 적용         ← HEAD
+1625299 feat: 토스증권 Open API 연동 — 시세/차트/환율 (yfinance 폴백)        ← HEAD
+c07aab7 docs: HANDOFF.md 최신화 — 2026-05-22 저녁 세션 6건 반영
+d69cd95 ux: 모의투자 페이지의 포지션 카드도 수익/손실 색상 개선 적용
 994ac68 fix: 옛 Service Worker 캐시 우회 — JS/CSS에 ?v=29 쿼리 추가
 ed3cf61 ux: 포트폴리오 카드 수익/손실 한눈에 보이도록 개선
 7ae81d7 feat: 챌린지(배지 25종) + 랭킹 시스템 + 닉네임 프로필
@@ -742,8 +797,8 @@ b52dfcb feat: 섹터/테마 강도 랭킹 탭 추가 (모멘텀+거래량/breadt
 68d0575 feat: 분석↔모의투자 통합 - 분석 페이지에서 바로 모의 매수/매도
 ```
 
-**Service Worker**: `sa-v31`
-**HTML 캐시 버스팅 쿼리**: `?v=30`
+**Service Worker**: `sa-v32`
+**HTML 캐시 버스팅 쿼리**: `?v=32`
 
 **저녁 세션 신규/수정 파일**:
 - `models.py` — `AssetSnapshot`, `UserBadge` 모델 추가 + User.nickname/is_public
