@@ -18,6 +18,15 @@ import pandas as pd
 
 log = logging.getLogger("toss_api")
 
+# ⚠️ 토스 API는 콘솔에 등록된 IPv4 허용목록에서만 동작.
+# 듀얼스택 환경에서 IPv6로 나가면 등록 IP와 달라 401(unidentified-client)이 남.
+# urllib3가 IPv4만 쓰도록 강제 (프로세스 전역; 앱의 다른 호출도 IPv4 사용 — 모두 IPv4 지원).
+try:
+    import urllib3.util.connection as _urllib3_conn
+    _urllib3_conn.HAS_IPV6 = False
+except Exception:
+    pass
+
 _BASE = "https://openapi.tossinvest.com"
 _TIMEOUT = 8
 
@@ -84,23 +93,37 @@ def _headers(account=None):
     return h
 
 
-def _extract_list(payload):
-    """응답에서 객체 배열을 방어적으로 추출.
-    가능한 형태: [...] / {"prices":[...]} / {"candles":[...]} / {"data":[...]} /
-                 {"result":[...]} / {"items":[...]} / {"content":[...]}
+def _extract_list(payload, _depth=0):
+    """응답에서 객체 배열을 방어적으로 추출 (중첩 대응).
+    가능한 형태: [...] / {"prices":[...]} / {"result":{"candles":[...]}} 등
     """
     if isinstance(payload, list):
         return payload
-    if isinstance(payload, dict):
+    if isinstance(payload, dict) and _depth < 3:
         for k in ("prices", "candles", "data", "result", "items", "content", "list"):
             v = payload.get(k)
             if isinstance(v, list):
                 return v
-        # 한 단계 더: 첫 dict 값이 list면 사용
+        # 중첩 dict 재귀 (예: result.candles)
         for v in payload.values():
             if isinstance(v, list):
                 return v
+            if isinstance(v, dict):
+                got = _extract_list(v, _depth + 1)
+                if got:
+                    return got
     return []
+
+
+def _extract_next_before(payload):
+    """캔들 응답에서 다음 페이지 커서(nextBefore) 추출."""
+    if isinstance(payload, dict):
+        if payload.get("nextBefore"):
+            return payload["nextBefore"]
+        for v in payload.values():
+            if isinstance(v, dict) and v.get("nextBefore"):
+                return v["nextBefore"]
+    return None
 
 
 def _f(v):
@@ -196,11 +219,11 @@ def get_price(ticker):
 
 
 # ── 캔들 ───────────────────────────────────────────────────
-def _get_candles_raw(symbol, count=200, before=None, adjusted=True):
-    """토스 일봉 캔들 1페이지. Returns list[dict]."""
+def _get_candles_page(symbol, count=200, before=None, adjusted=True):
+    """토스 일봉 캔들 1페이지. Returns (list[dict], next_before)."""
     h = _headers()
     if not h:
-        return []
+        return [], None
     params = {
         "symbol": symbol,
         "interval": "1d",
@@ -212,10 +235,11 @@ def _get_candles_raw(symbol, count=200, before=None, adjusted=True):
     try:
         r = requests.get(f"{_BASE}/api/v1/candles", params=params, headers=h, timeout=_TIMEOUT)
         r.raise_for_status()
-        return _extract_list(r.json())
+        j = r.json()
+        return _extract_list(j), _extract_next_before(j)
     except Exception as e:
         log.warning(f"[toss] candles {symbol} failed: {e}")
-        return []
+        return [], None
 
 
 def _candles_to_df(rows):
@@ -234,7 +258,12 @@ def _candles_to_df(rows):
     if not recs:
         return None
     df = pd.DataFrame(recs, columns=["ts", "Open", "High", "Low", "Close", "Volume"])
-    df["ts"] = pd.to_datetime(df["ts"], utc=True, errors="coerce")
+    # 원래 시장 오프셋 보존 (KR +09:00 / US 등) → 로컬 거래일 날짜가 정확.
+    # 단일 종목은 오프셋이 균일해 tz-aware로 유지됨. 혼합 시 UTC 폴백.
+    ts = pd.to_datetime(df["ts"], utc=False, errors="coerce")
+    if getattr(ts.dt, "tz", None) is None:
+        ts = pd.to_datetime(df["ts"], utc=True, errors="coerce")
+    df["ts"] = ts
     df = df.dropna(subset=["ts"]).set_index("ts").sort_index()
     df = df[~df.index.duplicated(keep="last")]
     df.index.name = "Date"
@@ -253,21 +282,22 @@ def _get_daily_df(symbol, min_bars):
     seen_before = set()
     # 200개씩, min_bars 채울 때까지 (최대 10페이지 = 2000봉 ≈ 8년)
     for _ in range(10):
-        batch = _get_candles_raw(symbol, count=200, before=before)
+        batch, next_before = _get_candles_page(symbol, count=200, before=before)
         if not batch:
             break
         rows.extend(batch)
-        # 다음 페이지: 가장 오래된 timestamp 이전
-        try:
-            oldest = min(c.get("timestamp") for c in batch if c.get("timestamp"))
-        except (ValueError, TypeError):
+        if len(rows) >= min_bars or len(batch) < 200:
             break
-        if not oldest or oldest in seen_before:
+        # 다음 페이지: 응답의 nextBefore 우선, 없으면 가장 오래된 timestamp
+        if not next_before:
+            try:
+                next_before = min(c.get("timestamp") for c in batch if c.get("timestamp"))
+            except (ValueError, TypeError):
+                break
+        if not next_before or next_before in seen_before:
             break
-        seen_before.add(oldest)
-        before = oldest
-        if len(batch) < 200 or len(rows) >= min_bars:
-            break
+        seen_before.add(next_before)
+        before = next_before
 
     df = _candles_to_df(rows)
     if df is None or df.empty:
