@@ -41,9 +41,12 @@ ssh -i C:\path\to\ssh-key.key ubuntu@<VM_PUBLIC_IP>
 
 SSH 접속한 상태에서:
 ```bash
-sudo apt update && sudo apt install -y tinyproxy
+# ⚠️ Oracle Ubuntu는 기본 IPv6 우선이라 apt가 IPv6로 나가다 timeout 됨 → IPv4 강제
+sudo apt-get -o Acquire::ForceIPv4=true update
+sudo apt-get -o Acquire::ForceIPv4=true install -y tinyproxy
 
-# 강력한 비밀번호로 바꿔서 설정 파일 작성 (CHANGE_ME_STRONG 교체!)
+# ⚠️ 비밀번호는 영숫자만! tinyproxy 파서가 ! @ # 등 특수문자에서 syntax error 냄
+# (DefaultErrorFile/StatFile/ViaProxyName 등 따옴표 필요한 줄도 빼는 게 안전)
 sudo tee /etc/tinyproxy/tinyproxy.conf >/dev/null <<'EOF'
 User tinyproxy
 Group tinyproxy
@@ -51,15 +54,26 @@ Port 8888
 Timeout 600
 LogLevel Info
 MaxClients 50
-StartServers 2
-BasicAuth tossuser CHANGE_ME_STRONG
+Allow 0.0.0.0/0
+BasicAuth tossuser CHANGE_ME_ALNUM_ONLY
 EOF
 
-sudo systemctl restart tinyproxy
+# ⚠️ 기본 유닛은 Type=forking 인데 daemonize/pidfile 처리가 어긋나 "activating"에서 멈춤
+#    → Type=simple + foreground(-d) override 로 고정
+sudo mkdir -p /etc/systemd/system/tinyproxy.service.d
+sudo tee /etc/systemd/system/tinyproxy.service.d/override.conf >/dev/null <<'EOF'
+[Service]
+Type=simple
+ExecStart=
+ExecStart=/usr/bin/tinyproxy -d
+EOF
+
+sudo systemctl daemon-reload
 sudo systemctl enable tinyproxy
+sudo systemctl restart tinyproxy
+sudo systemctl is-active tinyproxy   # → active 확인
 ```
-> `Allow`/`Listen` 줄을 넣지 않으면 tinyproxy는 모든 IP에서 접속 허용 + 모든 인터페이스 listen.
-> 대신 **BasicAuth로 보호**(아무나 못 씀). 비번은 꼭 강력하게.
+> `Allow 0.0.0.0/0` + **BasicAuth로 보호**(아무나 못 씀). 비번은 강력하되 **영숫자만** 사용.
 
 ---
 
@@ -73,9 +87,16 @@ sudo systemctl enable tinyproxy
   - Destination Port Range: `8888`
 
 ### 4-b. VM 내부 방화벽 (Ubuntu on Oracle은 기본 차단)
+> ⚠️ Oracle Ubuntu의 INPUT 체인엔 끝부분에 **REJECT(catch-all)** 규칙이 있음.
+> 8888 ACCEPT를 그 **REJECT보다 앞**에 넣어야 함 (뒤에 넣으면 무용지물).
 ```bash
-sudo iptables -I INPUT 6 -p tcp --dport 8888 -j ACCEPT
+# 현재 규칙에서 REJECT 줄 번호 확인 (보통 5번)
+sudo iptables -L INPUT -n --line-numbers
+# REJECT 바로 앞 위치(예: 5)에 삽입
+sudo iptables -I INPUT 5 -p tcp --dport 8888 -j ACCEPT
 sudo netfilter-persistent save
+# 확인: 8888 ACCEPT 가 REJECT 보다 위에 있어야 함
+sudo iptables -L INPUT -n --line-numbers
 ```
 
 ---
