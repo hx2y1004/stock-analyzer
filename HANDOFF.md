@@ -1,36 +1,47 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-06-05 KST (토스 연동 세션)
+> 마지막 업데이트: 2026-06-08 KST (고정 IP 프록시 완성 + 랭킹 버그 수정 세션)
 
 ---
 
-## 🚀 현재 상태 (2026-06-05)
+## 🚀 현재 상태 (2026-06-08)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `232b5d2` (toss_to_sql UTF-8 출력 + gitignore)
-- Service Worker: **`sa-v34`**
-- 정적 자산 캐시 버스팅: HTML에 `?v=34` 쿼리 사용 중
+- 최신 커밋: `a9f5d08` (프록시 셋업 문서 갱신) / 직전 `bfab441` (랭킹 로그인 버그 수정)
+- Service Worker: **`sa-v35`**
+- 정적 자산 캐시 버스팅: HTML에 `?v=35` 쿼리 사용 중
 - **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 + 계좌 import)
+- **🎉 고정 IP 프록시(Oracle VM) 완성** — 재배포마다 IP 재등록 불필요해짐
+
+### ✅ 고정 IP 프록시 완성 (이번 세션 핵심)
+- **Oracle Cloud 무료 VM**: 리전 South Korea North(Chuncheon), Ubuntu 22.04,
+  Shape `VM.Standard.E2.1.Micro` (Always Free)
+- **VM 공인 IP: `158.180.93.167`** (Ephemeral — 재부팅 유지하려면 Reserved 전환 권장)
+- **tinyproxy 가동 중** (HTTP/HTTPS CONNECT 모두 검증 완료, egress IP = VM IP 확인)
+  - 인증: `BasicAuth tossuser Toss2024SecureKey` (⚠️ 영숫자만 — 특수문자 파싱 불가)
+  - 포트 8888 (Oracle Security List + VM iptables 둘 다 오픈)
+- **토스 콘솔에 `158.180.93.167` 등록 완료**
+- **Railway 환경변수**: `TOSS_PROXY_URL=http://tossuser:Toss2024SecureKey@158.180.93.167:8888`
+  → 설정 시 토스가 항상 VM IP로 봐서 **재배포해도 안 끊김** (사용자 설정 확인 필요)
+- SSH 키: `ssh-key-2026-06-05.key` (프로젝트 폴더, **.gitignore 처리됨 — 커밋 금지**)
+  - 접속: `ssh -i ssh-key-2026-06-05.key ubuntu@158.180.93.167`
+- 설치 시 겪은 함정 4가지 → `TOSS_PROXY_SETUP.md`에 모두 반영
 
 ### ✅ 토스 핵심 기능 모두 동작 확인됨
 - 시세/차트/환율: `chart_source:"toss"`, `realtime_source:"toss"` 확인
 - **토스 계좌 → 실제 포트폴리오 import 버튼 성공** (10종목)
 - 권한 게이팅: `TOSS_OWNER_USER_IDS=1,2` (카카오 id1 + 구글 id2 = 둘 다 윤현호)
 
-### ⚠️ 토스 IP 허용목록 — 핵심 운영 이슈
+### ⚠️ 토스 IP 허용목록 — (프록시로 해결됨)
 - 토스 `live` API는 **콘솔 등록 IP에서만** 토큰 발급됨
-- **Railway egress IP는 배포당 고정이지만 재배포마다 바뀜** (관측: 52.9.x → 54.177.x
-  → 162.220.232.x ...). 한 배포 안에선 안정적(요청마다 안 바뀜).
-- **재배포할 때마다 `/api/debug/toss`로 새 egress IP 확인 → 토스 콘솔에 등록** 필요
-- 등록 안 하면 자동 yfinance/네이버 폴백 (앱은 정상, 한국 데이터만 지연)
-- ⚠️ **IPv6 우회**: `toss_api.py`에서 `urllib3 HAS_IPV6=False`로 IPv4 강제 (해결됨)
-- 🔧 **영구 해결책 = 고정 IP 프록시** (`TOSS_PROXY_URL`) — `TOSS_PROXY_SETUP.md` 참고
-  (Oracle Cloud 무료 VM + tinyproxy). 코드는 준비됨, VM 세팅만 남음 (사용자 Oracle
-  로그인 이슈로 보류 중). 프록시 IP는 1회 등록하면 재배포해도 안 바뀜.
+- 과거: Railway egress IP가 재배포마다 바뀌어 매번 재등록 필요했음
+- **현재: 고정 IP 프록시(`TOSS_PROXY_URL`)로 영구 해결** ✅
+- IPv6 우회: `toss_api.py`에서 `urllib3 HAS_IPV6=False`로 IPv4 강제 (유지)
+- 진단: `/api/debug/toss` → `proxy_egress_ip: 158.180.93.167`, `toss_token_ok: true` 확인
 
 ### 다음 우선 작업 후보 (사용자 결정 대기)
-- [ ] **고정 IP 프록시(VM) 완성** — 재배포마다 IP 재등록 안 하려면 (`TOSS_PROXY_SETUP.md`)
+- [ ] VM 공인 IP를 **Reserved(예약)로 전환** — 재부팅 시 IP 유지 (현재 Ephemeral)
 - [ ] **DART API 키 등록** — 한국 임원 주식 변동 보고 자동 fetch
 - [ ] **자동 손절** / **백테스트** / **AI 코치** / **랭킹 시즌제** / **포지션 노트**
 
@@ -223,6 +234,31 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 ---
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
+
+### 📌 2026-06-08 — 고정 IP 프록시 완성 + 랭킹 로그인 버그 수정 (`bfab441`, `a9f5d08`)
+
+**1) Oracle Cloud VM + tinyproxy 고정 IP 프록시 구축 완료** (코드 변경 없음, 인프라)
+- VM `158.180.93.167` (Chuncheon, Ubuntu 22.04, E2.1.Micro Always Free)
+- tinyproxy 8888 + BasicAuth(`tossuser:Toss2024SecureKey`) 가동, HTTP/HTTPS 검증 OK
+- 토스 콘솔 IP 등록 + Railway `TOSS_PROXY_URL` 설정 → 재배포 IP 변동 영구 해결
+- **설치 중 막혔던 함정 4가지 (TOSS_PROXY_SETUP.md에 반영)**:
+  1. **apt가 IPv6로 나가 timeout** → `apt-get -o Acquire::ForceIPv4=true` 필요
+     (cloud-init이 이 때문에 실패 → 수동 설치함)
+  2. **비밀번호 특수문자 파싱 불가** → tinyproxy가 `Toss2024Secure!`의 `!`에서
+     "Syntax error" → 영숫자 `Toss2024SecureKey`로 변경. (DefaultErrorFile/StatFile/
+     ViaProxyName 등 따옴표 필요한 줄도 제거하는 게 안전)
+  3. **systemd Type=forking 멈춤** → "activating"에서 행. override.conf로
+     `Type=simple` + `ExecStart=/usr/bin/tinyproxy -d`(foreground) 고정
+  4. **iptables 순서** → Oracle Ubuntu INPUT 체인 끝에 REJECT catch-all 있음.
+     8888 ACCEPT를 REJECT **앞**(예: 5번)에 삽입해야 함 (`-I INPUT 5 ...`)
+- SSH 개인키 `ssh-key-2026-06-05.key`는 `.gitignore`에 `*.key`, `ssh-key-*` 추가로 보호
+
+**2) 랭킹 페이지 로그인 상태 미반영 버그 수정** (`bfab441`)
+- 증상: 로그인 상태로 `/leaderboard` 들어가도 "로그인" 버튼이 계속 떴음
+- 원인: `leaderboard.js` initAuth가 `/api/me` 응답을 `me.id`로 직접 읽음.
+  실제 응답은 `{ user: {...} }` 구조라 항상 undefined → authArea 갱신 안 됨
+- 해결: `data.user.id`로 수정 (trading.js와 동일 패턴), `profile-area` 마크업 통일
+- 캐시 버전 v34→v35 (SW `sa-v35` + 템플릿 `?v=35` 3개 파일)
 
 ### 📌 2026-06-05 — 토스 계좌 import + 포트폴리오 분리 + 프록시 지원 (다수 커밋)
 이번 세션 토스 관련 대규모 작업. 핵심 흐름:
@@ -672,8 +708,8 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 
 ### 7.1 Service Worker 캐싱
 - **JS/CSS 변경 시 `static/service-worker.js`의 `CACHE_VERSION` 올려야** 사용자에게 반영됨
-- 현재: `sa-v31`
-- HTML 의 정적 자산은 **`?v=NN` 쿼리 캐시 버스팅** 사용 (현재 v=30) —
+- 현재: `sa-v35`
+- HTML 의 정적 자산은 **`?v=NN` 쿼리 캐시 버스팅** 사용 (현재 v=35) —
   옛 SW 캐시 우회용. CSS/JS 큰 변경 시 SW 버전과 함께 v 도 올릴 것
 - `/static/js/*`, `style.css`, `manifest.json` → **network-first** (실시간 반영)
 - `/api/trends/status` → 캐싱 완전 제외
