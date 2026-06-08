@@ -34,3 +34,7 @@ instance/
 
 # 토스 import 생성물 (개인 보유종목 — 커밋 금지)
 holdings_import_*.sql
+
+# SSH 개인키 (Oracle Cloud 프록시 VM — 절대 커밋 금지)
+*.key
+ssh-key-*

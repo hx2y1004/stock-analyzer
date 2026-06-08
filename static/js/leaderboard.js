@@ -2,17 +2,21 @@
 (async function initAuth() {
   try {
     const r = await fetch('/api/me');
-    if (r.ok) {
-      const me = await r.json();
-      const area = document.getElementById('authArea');
-      if (me && me.id && area) {
-        area.innerHTML = `
-          <div class="user-info">
-            ${me.profile_image ? `<img src="${me.profile_image}" class="profile-img" style="width:28px;height:28px;border-radius:50%;vertical-align:middle"/>` : ''}
-            <span class="user-name">${me.nickname || me.name || ''}</span>
-            <a href="/auth/logout" class="logout-btn">로그아웃</a>
-          </div>`;
-      }
+    if (!r.ok) return;
+    const data = await r.json();
+    const u = data && data.user;        // /api/me 응답은 { user: {...} }
+    const area = document.getElementById('authArea');
+    if (u && u.id && area) {
+      const imgStyle = 'width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--border);flex-shrink:0;';
+      const img = u.profile_image
+        ? `<img class="profile-img" src="${u.profile_image}" style="${imgStyle}" onerror="this.style.display='none'"/>`
+        : `<div class="profile-img" style="${imgStyle};display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
+      area.innerHTML = `
+        <div class="profile-area">
+          ${img}
+          <span class="profile-name">${u.name || '사용자'}</span>
+        </div>
+        <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
     }
   } catch (e) {}
 })();
