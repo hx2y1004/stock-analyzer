@@ -1,20 +1,30 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-06-08 KST (고정 IP 프록시 완성 + 랭킹 버그 수정 세션)
+> 마지막 업데이트: 2026-06-12 KST (Gemini 전환 + 포지션노트/AI코치/포트폴리오점검 세션)
 
 ---
 
-## 🚀 현재 상태 (2026-06-08)
+## 🚀 현재 상태 (2026-06-12)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `a9f5d08` (프록시 셋업 문서 갱신) / 직전 `bfab441` (랭킹 로그인 버그 수정)
-- Service Worker: **`sa-v35`**
-- 정적 자산 캐시 버스팅: HTML에 `?v=35` 쿼리 사용 중
-- **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 + 계좌 import)
-- **🎉 고정 IP 프록시(Oracle VM) 완성** — 재배포마다 IP 재등록 불필요해짐
+- 최신 커밋: `819af22` (README 전면 업데이트) / 직전 `9e31d80` (기업분석·급등이유 Gemini 전환)
+- Service Worker: **`sa-v38`**
+- 정적 자산 캐시 버스팅: HTML에 `?v=38` 쿼리 사용 중
+- **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 + 계좌 import + 고정 IP 프록시)
+- **🎉 AI 전부 Gemini 우선 전환 완료** — 코치/점검/기업분석/급등이유 모두 `_ai_chat()` 경유
+- **신규 기능 (2026-06-09~11)**: 포지션 노트, AI 매매 코치, AI 포트폴리오 점검, 보유종목 📊 분석 바로가기
 
-### ✅ 고정 IP 프록시 완성 (이번 세션 핵심)
+### ✅ 이번 세션들 핵심 (2026-06-09~12)
+- **보안/안정성 4종**: `/api/debug/toss` 오너 게이팅(비오너 404), import-toss 빈 응답 가드,
+  `FLASK_SECRET_KEY` 운영 fail-fast, `requests==2.33.1` 고정
+- **포지션 노트**: Transaction.note(300자) + 매수/매도 모달 메모칸 + 보유카드/거래내역 표시
+- **AI 매매 코치**: FIFO 통계 선계산(`_coach_stats_block`) → 프롬프트 주입, 10분 쿨다운+캐시
+- **AI 포트폴리오 점검**: 모의/실제 토글, 비중·집중도·통화 분산 분석
+- **Gemini 전환**: `_gemini_chat()` + `_ai_chat()` (Gemini→Groq 폴백). 전 AI 기능 적용
+- **README.md 전면 갱신** (`819af22`) — Railway/Gemini/신규 기능 모두 반영됨
+
+### ✅ 고정 IP 프록시 완성 (2026-06-08 세션)
 - **Oracle Cloud 무료 VM**: 리전 South Korea North(Chuncheon), Ubuntu 22.04,
   Shape `VM.Standard.E2.1.Micro` (Always Free)
 - **VM 공인 IP: `158.180.93.167`** (Ephemeral — 재부팅 유지하려면 Reserved 전환 권장)
@@ -44,8 +54,10 @@
 
 ### 다음 우선 작업 후보 (사용자 결정 대기)
 - [ ] VM 공인 IP를 **Reserved(예약)로 전환** — 재부팅 시 IP 유지 (현재 Ephemeral)
-- [ ] **DART API 키 등록** — 한국 임원 주식 변동 보고 자동 fetch
-- [ ] **자동 손절** / **백테스트** / **AI 코치** / **랭킹 시즌제** / **포지션 노트**
+- [ ] Railway Variables의 `TOSS_PROXY_UR` (오타, L 빠진 변수) 삭제
+- [ ] **DART API 임원 매매 연동** — 스코어카드 "DART 공시 보러가기 ↗" 자리 대체
+- [ ] **랭킹 시즌제** (월간/분기 리셋 + 시즌 배지) / **백테스트** / **자동 손절**
+- [x] ~~AI 코치~~ / ~~포지션 노트~~ — 2026-06-09~11 완료
 
 ---
 
@@ -65,7 +77,7 @@
 - **DB**: PostgreSQL (Railway 호스팅, 로컬은 SQLite `instance/`)
 - **인증**: Google/Kakao OAuth (Flask-Login)
 - **프론트**: Vanilla JS + LightweightCharts v4, PWA (Service Worker + manifest)
-- **AI**: Groq `llama-3.3-70b-versatile` (+ fallback 모델들)
+- **AI**: Gemini `gemini-2.5-flash`(우선) → Groq `llama-3.3-70b-versatile`(폴백) — `_ai_chat()` 공용
 - **데이터 소스**: yfinance, DART(전자공시), 네이버 금융 스크래핑(mobile API + integration + wisereport)
 
 ---
@@ -237,7 +249,58 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
 
-### 📌 2026-06-08 — 고정 IP 프록시 완성 + 랭킹 로그인 버그 수정 (`bfab441`, `a9f5d08`)
+### 📌 2026-06-12 — 전 AI 기능 Gemini 우선 전환 + README 갱신 (`9e31d80`, `819af22`)
+
+**1) 기업분석·급등이유도 Gemini 우선으로** (`9e31d80`)
+- `analyze_move_reason` / `fetch_company_overview`의 `_groq_chat` 직접 호출을
+  `_ai_chat`(Gemini→Groq 폴백)으로 교체 → **이제 4개 AI 기능 전부 동일 경로**
+- Railway에 `GEMINI_API_KEY` 등록 완료 (사용자 확인)
+- 기업분석은 6h 캐시(`_OVERVIEW_CACHE`)라 기존 종목은 캐시 만료 후 Gemini 반영
+
+**2) README.md 전면 업데이트** (`819af22`)
+- Render→Railway, Groq전용→Gemini우선 등 구식 내용 전부 교체
+- 모의투자/토스연동/AI코치/포트폴리오점검/포지션노트/보안 섹션 추가
+- 향후 계획 표 (DART 임원매매 / 시즌제 / 백테스트 / 자동손절)
+
+### 📌 2026-06-09~11 — 포지션 노트 + AI 코치 + 포트폴리오 점검 + Gemini 도입 (다수 커밋, 최종 `7bb0eab`)
+
+**1) 보안/안정성 4종 세트**
+- `/api/debug/toss`: `_is_toss_owner()` 게이팅 — 비오너는 404 (정보 노출 차단)
+- `import-toss`: 토스 응답 빈 리스트면 404 에러 반환 (기존 보유 지우는 사고 방지)
+- `FLASK_SECRET_KEY`: `RAILWAY_ENVIRONMENT` 감지 시 미설정이면 RuntimeError로 기동 차단
+- `requirements.txt`: `requests==2.33.1` 버전 고정
+
+**2) 포지션 노트** (Transaction.note)
+- `models.py`: `Transaction.note` String(300) + `to_dict()` 반영
+- 마이그레이션: `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS note VARCHAR(300)`
+- buy/sell API가 `note` 받음 (300자 절단). dashboard가 티커별 최신 노트를 포지션에 포함
+- 프런트: 매수/매도 모달에 `<textarea>`(buyNote/sellNote), 보유카드 `.pf-note`,
+  거래내역 `tx-note-row`. XSS 방지용 `escapeHtml()` 추가
+
+**3) AI 매매 코치** (`GET/POST /api/trading/coach`)
+- 핵심 설계: AI에게 원시 거래 던지지 않고 **Python에서 FIFO 통계 선계산** 후 주입
+  - `_coach_stats_block(txs)`: 승률, 평균 보유일 버킷, 최고/최악 매매, 종목별 PnL Top3, 노트 작성률
+- 프롬프트 규칙: 통계 인용 의무, "모니터링 필요" 류 모호 표현 금지, 항목마다 실행 제안
+- `_COACH_FOREIGN_RE`: 한글+ASCII 외 문자 제거 (Groq Llama가 러시아어 토큰 뱉던 버그 해결)
+- 10분 쿨다운 + `_COACH_CACHE` 서버 캐시. 프런트 trading.html 코치 카드
+
+**4) AI 포트폴리오 점검** (`GET/POST /api/portfolio/review`)
+- `mode=paper|real` — 모의(PaperHolding)/실제(Holding) 토글
+- 종목별 비중, 집중도(최대 종목 비중), KRW/USD 통화 분산 계산 → AI 의견
+- 10분 쿨다운 + `_REVIEW_CACHE`. 프런트 토글 버튼 + 카드 (`_reviewMode`, `_reviewResults`)
+
+**5) 보유종목 📊 분석 바로가기**
+- 보유카드에 분석 버튼 → `/?ticker=XXX` 이동
+- `main.js`: DOMContentLoaded에서 `?ticker=` 쿼리 감지 시 자동 `analyze()` 실행
+
+**6) Gemini API 도입** (`7bb0eab`)
+- 저번 실패 원인: Gemini 키를 Groq 엔드포인트로 보내는 잘못된 코드였음
+- `_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]`
+- `_gemini_chat()`: v1beta `generateContent`, `thinkingBudget: 0` 필수(생각 토큰이 출력 예산 잠식),
+  모델 간 폴백 + 429 재시도. `gemini-2.0-flash`는 429 빈발이라 제외
+- `_ai_chat()`: GEMINI_API_KEY 있으면 Gemini 우선, 실패 시 Groq 폴백
+- 무료 한도: flash 분당 10/일 250 수준 — 쿨다운+캐시 덕에 충분
+- SW/캐시 버전 v35 → **v38** (이 기간 3회 bump)
 
 **1) Oracle Cloud VM + tinyproxy 고정 IP 프록시 구축 완료** (코드 변경 없음, 인프라)
 - VM `158.180.93.167` (Chuncheon, Ubuntu 22.04, E2.1.Micro Always Free)
@@ -669,7 +732,16 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 
 ## 6. 다음 할 일 (우선순위 순)
 
-### ✅ 최근 완료 (2026-05-22 저녁 세션)
+### ✅ 최근 완료 (2026-06-09~12 세션)
+- [x] 보안 4종 (debug/toss 게이팅, import 가드, SECRET_KEY fail-fast, requests 고정)
+- [x] **포지션 노트** (Transaction.note + 모달/카드/내역 UI)
+- [x] **AI 매매 코치** (FIFO 통계 기반, Gemini)
+- [x] **AI 포트폴리오 점검** (모의/실제, 비중·집중도·통화)
+- [x] 보유종목 📊 분석 바로가기 (`?ticker=` 자동 분석)
+- [x] **Gemini API 전환** — 전 AI 기능 `_ai_chat()` (Gemini→Groq)
+- [x] README.md 전면 갱신
+
+### ✅ 이전 완료 (2026-05-22 저녁 세션)
 - [x] **자산 변화 차트** + KOSPI/S&P500 벤치마크 (4e0bf61)
 - [x] 시가총액 None 포맷 오류 수정 (fdaa822)
 - [x] **챌린지 25배지** + **랭킹 시스템** + **닉네임 프로필** (7ae81d7)
@@ -691,12 +763,11 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 - [x] 전일 종가 계산 버그 수정
 
 ### 📋 Step 4 (고급 — 다음 후보)
-- [ ] DART API 키 등록 (한국 임원 매매 자동 fetch — 키만 발급받으면 됨)
+- [ ] **랭킹 시즌제** (월간/시즌별 리셋 + 시즌 배지) — 다음 추천 1순위
+- [ ] DART API 임원 매매 연동 (스코어카드 "DART 공시 보러가기 ↗" 대체) — DART 키 이미 있음
 - [ ] 자동 손절 (매수 시 손절가 입력 → 도달 시 알림/자동 매도)
 - [ ] 백테스트 (과거 데이터로 전략 검증)
-- [ ] AI 코치 (매매 패턴 학습 후 피드백)
-- [ ] 랭킹 시즌제 (월간/시즌별 리셋 + 시즌 배지)
-- [ ] 포지션 노트 (종목별 매매 일지/메모)
+- [x] ~~AI 코치~~ / ~~포지션 노트~~ — 완료 (2026-06-09~11)
 
 ### 📋 데이터 보강 (옵션)
 - [ ] **DART API 키 등록** — 한국 임원 주식 변동 자동 fetch
@@ -745,10 +816,14 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 ### 7.8 setInterval 네이밍
 - 페이지마다 다른 변수명 사용 (충돌 방지) — main.js와 trading.js 중복 주의
 
-### 7.9 Groq AI 호출
-- **`_groq_chat()` 공용 헬퍼 사용** — model fallback 체인 + 재시도 + 한자 자동 변환 자동 적용
+### 7.9 AI 호출 (Gemini 우선 / Groq 폴백)
+- **새 AI 기능은 반드시 `_ai_chat()` 사용** — Gemini 우선(`_gemini_chat`) → 실패 시 Groq 폴백
+- `_gemini_chat()`: `thinkingBudget: 0` 필수 (Gemini 2.5는 기본 thinking이 출력 토큰 잠식),
+  `_GEMINI_MODELS` 폴백 + 429 재시도 내장
+- `_groq_chat()`: model fallback 체인 + 재시도 + 한자 자동 변환(`_strip_hanja`)
 - 시스템 메시지에 "순수 한글로만, 한자(漢字) 절대 금지" 명시 필수
-- 새로운 AI 프롬프트 추가 시 같은 패턴 따를 것
+- 코치 출력은 `_COACH_FOREIGN_RE`로 비한글·비ASCII 추가 제거 (Llama 러시아어 토큰 대응)
+- Gemini 무료 한도(flash 일 250회) 보호: 고빈도 신규 기능은 쿨다운/캐시 먼저 설계할 것
 
 ### 7.10 전일 종가 계산
 - ⚠️ **`fast_info.previous_close` 신뢰 금지** — 가끔 이틀 전 종가 반환하는 버그
@@ -814,7 +889,8 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 
 ### .env 필수 키
 ```
-GROQ_API_KEY=...
+GEMINI_API_KEY=...         # AI 1순위 (코치/점검/기업분석/급등이유) — Railway에도 등록됨
+GROQ_API_KEY=...           # AI 폴백 (Gemini 실패/한도 시)
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 KAKAO_CLIENT_ID=...
@@ -874,20 +950,27 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
   - 정확한 일별 종가 기록 위해 매일 16:00 KST + 17:00 EST cron 도입 검토
 - [ ] **랭킹 캐싱 없음** — 사용자 늘면 `/api/leaderboard` 가 매 호출마다 모든 사용자 스냅샷 조회
   - 사용자 100명 초과 시 5분 캐시 도입
-- [ ] **🔑 토스 IP 재등록 (재배포마다)** — Railway egress IP가 배포마다 바뀜.
-  재배포 후 토스가 yfinance로 폴백되면 `/api/debug/toss`로 IP 확인 → 콘솔 등록.
-  영구 해결은 `TOSS_PROXY_URL`(Oracle VM, `TOSS_PROXY_SETUP.md`) — VM 세팅 보류 중
-- [ ] **`/api/debug/toss` 진단 엔드포인트** — 운영 안정화 후 제거 고려 (현재는 IP 확인용 필요)
+- [x] ~~토스 IP 재등록 (재배포마다)~~ — **해결됨** (Oracle VM 고정 IP 프록시, 2026-06-08)
+- [x] ~~`/api/debug/toss` 노출~~ — 오너 게이팅 완료 (비오너 404, 2026-06-09)
+- [ ] **Oracle VM IP가 Ephemeral** — 재부팅 시 IP 바뀌면 토스 콘솔 재등록 필요.
+  Oracle 콘솔에서 Reserved IP로 전환 권장
+- [ ] **Gemini 무료 한도 모니터링** — flash 일 250회. 사용자 늘면 코치/점검 쿨다운 상향 또는 유료 검토
 - [ ] **토스 다른 계좌(연금/ISA) 미노출** — Open API가 개발자 키 연동 1계좌만 제공 (API 한계)
 
 ---
 
-## 11. Git 상태 스냅샷 (2026-06-05)
+## 11. Git 상태 스냅샷 (2026-06-12)
 
 ```
 main 브랜치 (origin/main과 동기화됨, 모두 정상 배포)
 
-232b5d2 feat: toss_to_sql 스크립트 UTF-8 파일 출력 + .sql gitignore        ← HEAD
+819af22 docs: README 전면 업데이트                                          ← HEAD
+9e31d80 feat: 기업분석·급등이유 AI를 Gemini 우선으로 전환
+7bb0eab feat: AI 코치/포트폴리오 점검 Gemini 전환 (_gemini_chat + _ai_chat)
+...     (2026-06-09~11: 보안4종 / 포지션노트 / AI코치 / 포트폴리오점검 / 분석버튼)
+a9f5d08 docs: 프록시 셋업 문서 갱신
+bfab441 fix: 랭킹 페이지 로그인 상태 미반영
+232b5d2 feat: toss_to_sql 스크립트 UTF-8 파일 출력 + .sql gitignore
 ba8705c feat: 토스 보유종목 → holdings INSERT SQL 생성 스크립트 (IP 우회용)
 b774480 feat: 토스 import 다계좌 합산 + user_id 게이팅(카카오 이메일 미제공)
 7864c55 fix: 토스 import - 복수 owner 이메일 허용 + IP 미등록 시 명확한 에러
@@ -927,8 +1010,8 @@ b52dfcb feat: 섹터/테마 강도 랭킹 탭 추가 (모멘텀+거래량/breadt
 68d0575 feat: 분석↔모의투자 통합 - 분석 페이지에서 바로 모의 매수/매도
 ```
 
-**Service Worker**: `sa-v34`
-**HTML 캐시 버스팅 쿼리**: `?v=34`
+**Service Worker**: `sa-v38`
+**HTML 캐시 버스팅 쿼리**: `?v=38`
 
 **2026-06-05 토스 세션 신규/수정 파일**:
 - `toss_api.py` — 시세/캔들/환율/계좌/보유종목 + OAuth2 + 프록시(`_req`) + 다계좌 합산
