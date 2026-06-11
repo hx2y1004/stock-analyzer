@@ -4173,6 +4173,11 @@ def trading_transactions():
 
 
 # ── AI 매매 코치 ────────────────────────────────────────────
+# 허용 문자: ASCII(영문·숫자·문장부호), 한글(음절·자모), 일반 문장부호(·…—– 따옴표), ₩
+_COACH_FOREIGN_RE = re.compile(
+    "[^ -~가-힣ㄱ-ㆎ"
+    "·–—‘’“”…₩\n]+"
+)
 _COACH_CACHE = {}            # user_id -> {"text", "ts", "iso", "tx_count"}
 _COACH_TTL      = 6 * 3600   # 같은 거래 수면 6시간 캐시
 _COACH_COOLDOWN = 10 * 60    # 강제 재분석 최소 간격 10분
@@ -4235,7 +4240,9 @@ def trading_coach():
         "기록에서 실제로 관찰되는 근거(횟수·수치)를 들어 말하고, 근거 없는 일반론은 쓰지 않는다. "
         "메모가 있는 거래는 매매 계획과 실제 행동이 일치했는지도 평가한다. "
         "출력 형식: 피드백 2~4개를 각 줄 '- '로 시작하는 목록으로만 출력. "
-        "각 항목은 1~2문장, 존댓말. 마크다운 강조(**) 금지."
+        "각 항목은 1~2문장, 존댓말. 마크다운 강조(**) 금지. "
+        "한국어로만 작성하되 종목명·티커는 영문 허용. "
+        "러시아어·중국어·일본어 등 다른 언어 문자는 절대 사용 금지."
     )
     user_msg = (
         f"최근 거래 {len(txs)}건 (매도 {len(sells)}건, 승 {wins}건, "
@@ -4246,6 +4253,10 @@ def trading_coach():
                       max_tokens=600, temperature=0.5, label="coach")
     if not text:
         return jsonify({"error": "AI 분석 생성에 실패했습니다. 잠시 후 다시 시도해주세요."}), 502
+
+    # 다국어 모델이 흘리는 외국어 토큰(러시아어 등) 제거 — 한글/영문/숫자/문장부호만 허용
+    text = _COACH_FOREIGN_RE.sub("", text)
+    text = re.sub(r"  +", " ", text).strip()
 
     iso = datetime.utcnow().isoformat() + "Z"
     _COACH_CACHE[user.id] = {"text": text, "ts": now, "iso": iso, "tx_count": len(txs)}
