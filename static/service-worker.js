@@ -1,10 +1,10 @@
-/* StockAnalyzer Service Worker
+﻿/* StockAnalyzer Service Worker
  * - 정적 자산(쉘) 캐싱: cache-first
  * - API/HTML: network-first (오프라인 시 캐시 폴백)
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v35';
+const CACHE_VERSION = 'sa-v36';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

@@ -71,6 +71,8 @@ async function loadDashboard() {
     }
     // 배지 목록 새로고침
     loadBadges();
+    // AI 코치: 캐시된 분석 있으면 표시
+    loadCoachCached();
     // 닉네임 미설정 → 자동 안내 모달
     if (!data.nickname && !_nicknamePromptShown) {
       _nicknamePromptShown = true;
@@ -247,6 +249,12 @@ function renderSummary(d) {
   `;
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 function renderPositions(positions) {
   const el = document.getElementById('positionsList');
   document.getElementById('holdingCount').textContent = positions.length;
@@ -300,6 +308,7 @@ function renderPositions(positions) {
           <button class="trade-action-btn buy" onclick="openBuyModalForHolding('${p.ticker}','${p.name}','${p.currency}',${p.current_price || 0})">💰 추가매수</button>
           <button class="trade-action-btn sell" onclick="openSellModal('${p.ticker}','${p.name}','${p.currency}',${p.current_price || 0},${p.quantity})">💸 매도</button>
         </div>
+        ${p.note ? `<div class="pf-note">📝 ${escapeHtml(p.note)}</div>` : ''}
       </div>`;
   }).join('');
 }
@@ -345,7 +354,8 @@ function renderTransactions(txs) {
               <td>${t.quantity}주</td>
               <td>${fmtKRW(t.amount_krw)}</td>
               <td class="${pnlCls}">${isSell ? ((pnl >= 0 ? '+' : '') + fmtKRW(pnl)) : '—'}</td>
-            </tr>`;
+            </tr>
+            ${t.note ? `<tr class="tx-note-row"><td colspan="7" class="tx-note">📝 ${escapeHtml(t.note)}</td></tr>` : ''}`;
         }).join('')}
       </tbody>
     </table>
@@ -430,6 +440,7 @@ function openBuyModalForHolding(ticker, name, currency, price) {
   document.getElementById('buyModalDesc').textContent = `${name} (${ticker})`;
   document.getElementById('buyPrice').value = currency === 'KRW' ? Math.round(price) : (price ? price.toFixed(2) : '');
   document.getElementById('buyQty').value = '';
+  document.getElementById('buyNote').value = '';
   updateBuySummary();
   document.getElementById('tradeBuyModal').classList.remove('hidden');
   setTimeout(() => document.getElementById('buyQty').focus(), 50);
@@ -467,12 +478,13 @@ async function submitBuy() {
   const name   = document.getElementById('buyName').value;
   const price  = parseFloat(document.getElementById('buyPrice').value);
   const qty    = parseFloat(document.getElementById('buyQty').value);
+  const note = (document.getElementById('buyNote').value || '').trim();
   if (!price || !qty || price <= 0 || qty <= 0) { alert('가격/수량을 입력해주세요'); return; }
   try {
     const r = await fetch('/api/trading/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, name, price, quantity: qty }),
+      body: JSON.stringify({ ticker, name, price, quantity: qty, note }),
     });
     const d = await r.json();
     if (!r.ok) { alert(d.error || '매수 실패'); return; }
@@ -491,6 +503,7 @@ function openSellModal(ticker, name, currency, price, maxQty) {
   document.getElementById('sellModalDesc').textContent = `${name} (${ticker})`;
   document.getElementById('sellPrice').value = currency === 'KRW' ? Math.round(price) : (price ? price.toFixed(2) : '');
   document.getElementById('sellQty').value = '';
+  document.getElementById('sellNote').value = '';
   document.getElementById('sellMaxQty').textContent = maxQty;
   _sellMaxQty = maxQty;
   updateSellSummary();
@@ -546,11 +559,12 @@ async function submitSell() {
   const qty    = parseFloat(document.getElementById('sellQty').value);
   if (!price || !qty || price <= 0 || qty <= 0) { alert('가격/수량을 입력해주세요'); return; }
   if (qty > _sellMaxQty) { alert(`보유 수량(${_sellMaxQty})을 초과할 수 없습니다`); return; }
+  const note = (document.getElementById('sellNote').value || '').trim();
   try {
     const r = await fetch('/api/trading/sell', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, price, quantity: qty }),
+      body: JSON.stringify({ ticker, price, quantity: qty, note }),
     });
     const d = await r.json();
     if (!r.ok) { alert(d.error || '매도 실패'); return; }
@@ -559,6 +573,62 @@ async function submitSell() {
     const pnl = d.realized_pnl_krw || 0;
     alert(`✅ ${ticker} ${qty}주 매도 완료${pnl ? `\n실현 손익: ${pnl >= 0 ? '+' : ''}${fmtKRW(pnl)}` : ''}`);
   } catch (e) { alert('네트워크 오류: ' + (e.message || e)); }
+}
+
+// ── AI 매매 코치 ────────────────────────────────────────────
+let _coachLoaded = false;
+
+async function loadCoachCached() {
+  if (_coachLoaded) return;
+  try {
+    const r = await fetch('/api/trading/coach');
+    if (r.status !== 200) return;
+    const d = await r.json();
+    renderCoach(d);
+    _coachLoaded = true;
+  } catch (e) {}
+}
+
+async function requestCoach() {
+  const btn = document.getElementById('coachBtn');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '🧠 분석 중…';
+  try {
+    const r = await fetch('/api/trading/coach', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) {
+      document.getElementById('coachBody').innerHTML =
+        `<div class="empty-state">${escapeHtml(d.error || '분석에 실패했습니다')}</div>`;
+      document.getElementById('coachMeta').textContent = '';
+      return;
+    }
+    renderCoach(d);
+    _coachLoaded = true;
+  } catch (e) {
+    alert('네트워크 오류: ' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+function renderCoach(d) {
+  if (!d || !d.feedback) return;
+  const items = d.feedback.split('\n')
+    .map(s => s.trim())
+    .filter(s => s)
+    .map(s => s.replace(/^[-•*]\s*/, ''));
+  document.getElementById('coachBody').innerHTML =
+    items.map(s => `<div class="coach-item">${escapeHtml(s)}</div>`).join('');
+  let meta = '';
+  if (d.generated_at) {
+    const dt = new Date(d.generated_at);
+    meta = `마지막 분석: ${dt.getMonth() + 1}/${dt.getDate()} ` +
+           `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+    if (d.cached) meta += ' · 새 거래가 쌓이면 다시 분석할 수 있어요';
+  }
+  document.getElementById('coachMeta').textContent = meta;
 }
 
 // ── 초기화 ─────────────────────────────────────────────────

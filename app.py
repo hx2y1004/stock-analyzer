@@ -158,6 +158,10 @@ with app.app_context():
                 "CREATE INDEX IF NOT EXISTS ix_user_badges_user "
                 "ON user_badges (user_id)"
             ))
+            # 포지션 노트: 거래별 매매 이유 메모
+            conn.execute(text(
+                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS note VARCHAR(300)"
+            ))
             # ── paper_holdings: 모의투자 보유종목 (실제 포트폴리오 holdings와 분리) ──
             # 테이블(create_all 이 이미 생성)이 '원래 없었을 때만' 기존 holdings 를 1회 이전.
             conn.execute(text(
@@ -3917,6 +3921,16 @@ def trading_dashboard():
         with ThreadPoolExecutor(max_workers=8) as ex:
             prices = dict(ex.map(lambda t: (t, _fetch_current_price(t)), tickers))
 
+        # 종목별 최근 포지션 노트 (최신 거래 메모 1개)
+        latest_notes = {}
+        note_txs = Transaction.query.filter(
+            Transaction.user_id == user.id,
+            Transaction.ticker.in_(tickers),
+            Transaction.note.isnot(None),
+        ).order_by(Transaction.timestamp.desc()).all()
+        for t in note_txs:
+            latest_notes.setdefault(t.ticker, t.note)
+
         for h in holdings:
             cp  = prices.get(h.ticker)
             cur = h.currency or "USD"
@@ -3945,6 +3959,7 @@ def trading_dashboard():
                 "cost_krw":       round(cost_krw),
                 "pnl_krw":        round(pnl_krw),
                 "pnl_pct":        round(pnl_pct, 2),
+                "note":           latest_notes.get(h.ticker),
             })
 
     total_assets_krw = user.cash_balance + positions_value_krw
@@ -4006,13 +4021,14 @@ def trading_dashboard():
 @login_required
 def trading_buy():
     """모의 매수.
-    Body: { ticker, name?, price, quantity }
+    Body: { ticker, name?, price, quantity, note? }
     """
     data = request.get_json() or {}
     ticker = (data.get("ticker") or "").strip().upper()
     name   = (data.get("name") or "").strip() or ticker
     price  = float(data.get("price") or 0)
     qty    = float(data.get("quantity") or 0)
+    note   = (data.get("note") or "").strip()[:300] or None
 
     if not ticker or price <= 0 or qty <= 0:
         return jsonify({"error": "티커/가격/수량을 올바르게 입력해주세요"}), 400
@@ -4066,7 +4082,7 @@ def trading_buy():
         type="buy", price=price, quantity=qty,
         currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
         fee_krw=fee_krw, amount_krw=round(amount_krw),
-        realized_pnl_krw=0,
+        realized_pnl_krw=0, note=note,
     )
     db.session.add(tx)
     db.session.commit()
@@ -4082,12 +4098,13 @@ def trading_buy():
 @login_required
 def trading_sell():
     """모의 매도.
-    Body: { ticker, price, quantity }
+    Body: { ticker, price, quantity, note? }
     """
     data = request.get_json() or {}
     ticker = (data.get("ticker") or "").strip().upper()
     price  = float(data.get("price") or 0)
     qty    = float(data.get("quantity") or 0)
+    note   = (data.get("note") or "").strip()[:300] or None
 
     if not ticker or price <= 0 or qty <= 0:
         return jsonify({"error": "티커/가격/수량을 올바르게 입력해주세요"}), 400
@@ -4132,7 +4149,7 @@ def trading_sell():
         type="sell", price=price, quantity=qty,
         currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
         fee_krw=fee_krw, amount_krw=round(amount_krw),
-        realized_pnl_krw=round(pnl_krw),
+        realized_pnl_krw=round(pnl_krw), note=note,
     )
     db.session.add(tx)
     db.session.commit()
@@ -4153,6 +4170,86 @@ def trading_transactions():
     txs = Transaction.query.filter_by(user_id=current_user.id)\
             .order_by(Transaction.timestamp.desc()).limit(limit).all()
     return jsonify([t.to_dict() for t in txs])
+
+
+# ── AI 매매 코치 ────────────────────────────────────────────
+_COACH_CACHE = {}            # user_id -> {"text", "ts", "iso", "tx_count"}
+_COACH_TTL      = 6 * 3600   # 같은 거래 수면 6시간 캐시
+_COACH_COOLDOWN = 10 * 60    # 강제 재분석 최소 간격 10분
+_COACH_MIN_TX   = 5
+
+
+@app.route("/api/trading/coach", methods=["GET", "POST"])
+@login_required
+def trading_coach():
+    """매매 기록(+포지션 노트)을 AI에 보내 패턴 피드백 생성.
+    GET: 캐시된 분석만 반환 (없으면 204) — 페이지 로드 시 표시용.
+    POST: 새 분석 생성 (캐시/쿨다운 적용).
+    """
+    user = current_user
+    cached = _COACH_CACHE.get(user.id)
+    now = time.time()
+
+    if request.method == "GET":
+        if cached and (now - cached["ts"] < _COACH_TTL):
+            return jsonify({"ok": True, "feedback": cached["text"],
+                            "generated_at": cached["iso"], "cached": True})
+        return ("", 204)
+
+    txs = Transaction.query.filter_by(user_id=user.id)\
+            .order_by(Transaction.timestamp.desc()).limit(60).all()
+    if len(txs) < _COACH_MIN_TX:
+        return jsonify({
+            "error": f"거래가 {_COACH_MIN_TX}건 이상 쌓이면 분석할 수 있어요 (현재 {len(txs)}건)"
+        }), 400
+
+    # 거래 수 그대로면 캐시 반환, 쿨다운 내 재요청도 캐시 반환
+    if cached:
+        same_data = cached.get("tx_count") == len(txs) and (now - cached["ts"] < _COACH_TTL)
+        in_cooldown = (now - cached["ts"]) < _COACH_COOLDOWN
+        if same_data or in_cooldown:
+            return jsonify({"ok": True, "feedback": cached["text"],
+                            "generated_at": cached["iso"], "cached": True})
+
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return jsonify({"error": "AI 분석을 사용할 수 없습니다 (API 키 미설정)"}), 503
+
+    # 거래 요약 (시간순)
+    sells = [t for t in txs if t.type == "sell"]
+    wins  = sum(1 for s in sells if (s.realized_pnl_krw or 0) > 0)
+    total_pnl = sum((s.realized_pnl_krw or 0) for s in sells)
+    lines = []
+    for t in reversed(txs):
+        d = t.timestamp.strftime("%m/%d") if t.timestamp else "?"
+        pnl  = f" 실현손익 {round(t.realized_pnl_krw or 0):+,}원" if t.type == "sell" else ""
+        note = f' 메모:"{t.note}"' if t.note else ""
+        lines.append(
+            f"{d} {'매도' if t.type == 'sell' else '매수'} {t.name}({t.ticker}) "
+            f"{t.quantity}주 @{t.price:,g} {t.currency}{pnl}{note}"
+        )
+
+    system_msg = (
+        "너는 모의투자 사용자의 매매 기록을 분석하는 친근한 한국어 투자 코치다. "
+        "투자 권유나 종목 추천은 절대 하지 않는다. 매매 '습관과 패턴'에 대해서만 피드백한다. "
+        "기록에서 실제로 관찰되는 근거(횟수·수치)를 들어 말하고, 근거 없는 일반론은 쓰지 않는다. "
+        "메모가 있는 거래는 매매 계획과 실제 행동이 일치했는지도 평가한다. "
+        "출력 형식: 피드백 2~4개를 각 줄 '- '로 시작하는 목록으로만 출력. "
+        "각 항목은 1~2문장, 존댓말. 마크다운 강조(**) 금지."
+    )
+    user_msg = (
+        f"최근 거래 {len(txs)}건 (매도 {len(sells)}건, 승 {wins}건, "
+        f"실현손익 합계 {round(total_pnl):+,}원):\n" + "\n".join(lines)
+    )
+
+    text = _groq_chat(api_key, system_msg, user_msg,
+                      max_tokens=600, temperature=0.5, label="coach")
+    if not text:
+        return jsonify({"error": "AI 분석 생성에 실패했습니다. 잠시 후 다시 시도해주세요."}), 502
+
+    iso = datetime.utcnow().isoformat() + "Z"
+    _COACH_CACHE[user.id] = {"text": text, "ts": now, "iso": iso, "tx_count": len(txs)}
+    return jsonify({"ok": True, "feedback": text, "generated_at": iso, "cached": False})
 
 
 @app.route("/api/trading/history")
