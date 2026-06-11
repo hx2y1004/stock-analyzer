@@ -2498,6 +2498,81 @@ def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
     return None
 
 
+_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+
+
+def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
+                 label="generic", timeout=40):
+    """Gemini generateContent 공용 호출 (모델 fallback + 429 재시도).
+
+    Returns: 텍스트 또는 None
+    """
+    for model_name in _GEMINI_MODELS:
+        for attempt in range(2):
+            try:
+                resp = requests.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent",
+                    params={"key": api_key},
+                    json={
+                        "system_instruction": {"parts": [{"text": system_msg}]},
+                        "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
+                        "generationConfig": {
+                            "temperature": temperature,
+                            "maxOutputTokens": max(max_tokens, 1024),
+                            # thinking 토큰이 출력 한도를 잡아먹지 않도록 비활성화
+                            "thinkingConfig": {"thinkingBudget": 0},
+                        },
+                    },
+                    timeout=timeout,
+                )
+                if resp.status_code == 429:
+                    app.logger.warning(f"[gemini:{label}] {model_name} 429 (무료 한도), "
+                                       f"attempt {attempt+1}")
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                if resp.status_code >= 400:
+                    app.logger.error(f"[gemini:{label}] {model_name} HTTP "
+                                     f"{resp.status_code}: {resp.text[:200]}")
+                    break
+                data = resp.json()
+                cands = data.get("candidates") or []
+                if not cands:
+                    app.logger.error(f"[gemini:{label}] {model_name} no candidates: "
+                                     f"{str(data)[:200]}")
+                    break
+                parts = (cands[0].get("content") or {}).get("parts") or []
+                text = "".join(p.get("text", "") for p in parts).strip()
+                if text:
+                    app.logger.info(f"[gemini:{label}] OK model={model_name}")
+                    return text
+                break
+            except requests.exceptions.Timeout:
+                app.logger.warning(f"[gemini:{label}] {model_name} timeout")
+                continue
+            except Exception as e:
+                app.logger.error(f"[gemini:{label}] {model_name} {type(e).__name__}: {e}")
+                break
+    app.logger.warning(f"[gemini:{label}] 모든 모델 실패")
+    return None
+
+
+def _ai_chat(system_msg, user_msg, max_tokens=800, temperature=0.4, label="generic"):
+    """품질 우선 AI 호출: Gemini 우선(한국어 품질↑), 실패/한도 시 Groq 폴백.
+    코치·포트폴리오 점검처럼 호출 빈도가 낮고 품질이 중요한 곳에 사용.
+    """
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        text = _gemini_chat(gemini_key, system_msg, user_msg,
+                            max_tokens=max_tokens, temperature=temperature, label=label)
+        if text:
+            return text
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if groq_key:
+        return _groq_chat(groq_key, system_msg, user_msg,
+                          max_tokens=max_tokens, temperature=temperature, label=label)
+    return None
+
+
 def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
     """Groq으로 기업 소개·주요 사업·분석 인사이트를 한국어로 생성 (6h 캐시 + 재시도)."""
     # ── 캐시 hit ──
@@ -4304,8 +4379,8 @@ def trading_coach():
             return jsonify({"ok": True, "feedback": cached["text"],
                             "generated_at": cached["iso"], "cached": True})
 
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key:
+    if not (os.environ.get("GEMINI_API_KEY", "").strip()
+            or os.environ.get("GROQ_API_KEY", "").strip()):
         return jsonify({"error": "AI 분석을 사용할 수 없습니다 (API 키 미설정)"}), 503
 
     stats_block = _coach_stats_block(txs)
@@ -4338,8 +4413,8 @@ def trading_coach():
     )
     user_msg = stats_block + "\n\n[최근 거래 20건]\n" + "\n".join(lines)
 
-    text = _groq_chat(api_key, system_msg, user_msg,
-                      max_tokens=600, temperature=0.5, label="coach")
+    text = _ai_chat(system_msg, user_msg,
+                    max_tokens=600, temperature=0.5, label="coach")
     if not text:
         return jsonify({"error": "AI 분석 생성에 실패했습니다. 잠시 후 다시 시도해주세요."}), 502
 
@@ -4392,8 +4467,8 @@ def portfolio_review():
         return jsonify({"error": "보유 종목이 2개 이상일 때 점검할 수 있어요 "
                                  f"(현재 {len(holdings)}개)"}), 400
 
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key:
+    if not (os.environ.get("GEMINI_API_KEY", "").strip()
+            or os.environ.get("GROQ_API_KEY", "").strip()):
         return jsonify({"error": "AI 분석을 사용할 수 없습니다 (API 키 미설정)"}), 503
 
     # 현재가 + 평가액 계산
@@ -4447,8 +4522,8 @@ def portfolio_review():
         "러시아어·중국어·일본어 등 다른 언어 문자 절대 금지."
     )
 
-    text = _groq_chat(api_key, system_msg, "\n".join(lines),
-                      max_tokens=600, temperature=0.4, label="review")
+    text = _ai_chat(system_msg, "\n".join(lines),
+                    max_tokens=600, temperature=0.4, label="review")
     if not text:
         return jsonify({"error": "AI 점검 생성에 실패했습니다. 잠시 후 다시 시도해주세요."}), 502
 
