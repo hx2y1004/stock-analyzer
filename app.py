@@ -2253,18 +2253,16 @@ def fetch_news(stock):
 
 
 def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=None, ai_result=None):
-    """Groq으로 주가 변동 이유 종합 분석."""
+    """Gemini(우선) / Groq(폴백)으로 주가 변동 이유 종합 분석."""
     if price_change_pct is None or abs(price_change_pct) < 0.5:
         return None
 
     direction = "상승" if price_change_pct > 0 else "하락"
     kind      = "급등" if price_change_pct >= 5 else ("급락" if price_change_pct <= -5 else direction)
 
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    _has_ai = os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip()
 
-    if api_key:
+    if _has_ai:
         # ── 기술적 지표 컨텍스트 ──────────────────────────
         tech_ctx = ""
         if ai_result:
@@ -2346,8 +2344,7 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=N
 4) 단순 나열식이 아닌 **인과관계가 보이는 문장**으로 — "A 때문에 B가 되었고, 이는 C 가능성을 시사한다" 식.
 5) 불필요한 서론 없이 바로 분석 시작."""
 
-        text = _groq_chat(
-            api_key,
+        text = _ai_chat(
             system_msg=(
                 "당신은 한국 투자자를 위해 주가 움직임의 원인을 분석하는 시니어 트레이더입니다. "
                 "반드시 순수 한글로만 답변하며, 한자(漢字)는 절대 사용하지 않습니다. "
@@ -2358,7 +2355,6 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=N
             max_tokens=550,
             temperature=0.4,
             label=f"move_reason:{ticker}",
-            timeout=20,
         )
         if text:
             return text
@@ -2557,9 +2553,7 @@ def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
 
 
 def _ai_chat(system_msg, user_msg, max_tokens=800, temperature=0.4, label="generic"):
-    """품질 우선 AI 호출: Gemini 우선(한국어 품질↑), 실패/한도 시 Groq 폴백.
-    코치·포트폴리오 점검처럼 호출 빈도가 낮고 품질이 중요한 곳에 사용.
-    """
+    """Gemini 우선(한국어 품질↑), 실패/한도 시 Groq 폴백. 모든 AI 기능 공통 진입점."""
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if gemini_key:
         text = _gemini_chat(gemini_key, system_msg, user_msg,
@@ -2574,7 +2568,7 @@ def _ai_chat(system_msg, user_msg, max_tokens=800, temperature=0.4, label="gener
 
 
 def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
-    """Groq으로 기업 소개·주요 사업·분석 인사이트를 한국어로 생성 (6h 캐시 + 재시도)."""
+    """Gemini(우선) / Groq(폴백)으로 기업 소개·주요 사업·분석 인사이트를 한국어로 생성 (6h 캐시)."""
     # ── 캐시 hit ──
     now = time.time()
     cached = _OVERVIEW_CACHE.get(ticker)
@@ -2582,13 +2576,8 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
         app.logger.info(f"[company_overview] {ticker}: cache hit")
         return cached[1]
 
-    api_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        app.logger.warning(
-            f"[company_overview] {ticker}: GROQ_API_KEY 미설정 — Render 환경변수 확인 필요"
-        )
+    if not (os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip()):
+        app.logger.warning(f"[company_overview] {ticker}: GEMINI_API_KEY / GROQ_API_KEY 미설정")
         return None
 
     is_krw = (currency == "KRW")
@@ -2688,8 +2677,7 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
 5) 각 섹션은 정확한 레이블 [기업소개] / [주요사업] / [기업분석] 로 시작.
 6) 불필요한 서론·결론·인사말 없이 바로 본문."""
 
-    text = _groq_chat(
-        api_key,
+    text = _ai_chat(
         system_msg=(
             "당신은 한국 투자자를 위한 시니어 주식 애널리스트입니다. "
             "반드시 순수 한글로만 답변하며, 한자(漢字)는 절대 사용하지 않습니다. "
@@ -2700,7 +2688,6 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
         max_tokens=1200,
         temperature=0.35,
         label=f"overview:{ticker}",
-        timeout=30,
     )
     if not text:
         return None
