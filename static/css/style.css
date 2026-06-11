@@ -3594,6 +3594,13 @@ body {
 .trade-action-btn.buy:hover { background: rgba(63,185,80,0.12); border-color: var(--green); }
 .trade-action-btn.sell { color: var(--red); }
 .trade-action-btn.sell:hover { background: rgba(248,81,73,0.12); border-color: var(--red); }
+.trade-action-btn.analyze {
+  color: var(--accent);
+  text-decoration: none;
+  display: inline-block;
+  line-height: 1.2;
+}
+.trade-action-btn.analyze:hover { background: rgba(88,166,255,0.12); border-color: var(--accent); }
 
 /* 거래 내역 테이블 */
 .tx-table { width: 100%; border-collapse: collapse; font-size: 12px; }

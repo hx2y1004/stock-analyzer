@@ -14,6 +14,12 @@ let pfAllHoldings = [];       // 마지막으로 불러온 전체 보유 종목
 // ── 앱 초기화 ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   checkAuth();
+  // /?ticker=XXX 로 진입 시 자동 분석 (모의투자 보유 종목 → 분석 연결)
+  const _t = new URLSearchParams(location.search).get('ticker');
+  if (_t) {
+    const inp = document.getElementById('tickerInput');
+    if (inp) { inp.value = _t.trim().toUpperCase(); analyze(); }
+  }
 });
 
 async function checkAuth() {

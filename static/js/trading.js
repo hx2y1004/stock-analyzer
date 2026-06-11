@@ -307,6 +307,7 @@ function renderPositions(positions) {
           <span class="pf-meta-item">📦 ${p.quantity}주</span>
           <button class="trade-action-btn buy" onclick="openBuyModalForHolding('${p.ticker}','${p.name}','${p.currency}',${p.current_price || 0})">💰 추가매수</button>
           <button class="trade-action-btn sell" onclick="openSellModal('${p.ticker}','${p.name}','${p.currency}',${p.current_price || 0},${p.quantity})">💸 매도</button>
+          <a class="trade-action-btn analyze" href="/?ticker=${encodeURIComponent(p.ticker)}">📊 분석</a>
         </div>
         ${p.note ? `<div class="pf-note">📝 ${escapeHtml(p.note)}</div>` : ''}
       </div>`;
