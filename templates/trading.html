@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=35" />
+  <link rel="stylesheet" href="/static/css/style.css?v=36" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -150,6 +150,18 @@
         </div>
       </section>
 
+      <!-- AI 매매 코치 -->
+      <section class="card coach-card">
+        <div class="badges-header">
+          <h3 class="card-title" style="margin:0">🧠 AI 매매 코치</h3>
+          <button class="ps-reset-btn" id="coachBtn" onclick="requestCoach()">✨ 분석 받기</button>
+        </div>
+        <div id="coachBody">
+          <div class="empty-state">「분석 받기」를 누르면 AI가 최근 매매 패턴을 분석해 피드백을 드려요.<br>(거래 5건 이상 필요 · 종목 추천이 아닌 매매 습관 피드백입니다)</div>
+        </div>
+        <div id="coachMeta" class="coach-meta"></div>
+      </section>
+
       <!-- 거래 내역 -->
       <section class="card">
         <h3 class="card-title">📜 거래 내역</h3>
@@ -217,6 +229,12 @@
             <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyQty', 1)">+</button>
           </div>
         </div>
+        <div class="add-field">
+          <label>📝 매수 이유 메모 <span style="color:var(--text2)">(선택)</span></label>
+          <textarea id="buyNote" class="add-input" maxlength="300" rows="2"
+            placeholder="예: 실적 기대로 매수. 78,000원 도달 시 절반 익절 예정"
+            style="resize:vertical; min-height:48px; font-family:inherit;"></textarea>
+        </div>
         <div class="trade-summary" id="buySummary"></div>
         <button class="add-submit-btn buy-action-btn" onclick="submitBuy()">💰 매수 실행</button>
       </div>
@@ -249,12 +267,18 @@
           </div>
           <button type="button" class="sell-max-btn" onclick="setSellMax()">전량 매도</button>
         </div>
+        <div class="add-field">
+          <label>📝 매도 이유 메모 <span style="color:var(--text2)">(선택)</span></label>
+          <textarea id="sellNote" class="add-input" maxlength="300" rows="2"
+            placeholder="예: 목표가 도달 익절 / 손절 라인 이탈"
+            style="resize:vertical; min-height:48px; font-family:inherit;"></textarea>
+        </div>
         <div class="trade-summary" id="sellSummary"></div>
         <button class="add-submit-btn sell-action-btn" onclick="submitSell()">💸 매도 실행</button>
       </div>
     </div>
   </div>
 
-  <script src="/static/js/trading.js?v=35"></script>
+  <script src="/static/js/trading.js?v=36"></script>
 </body>
 </html>

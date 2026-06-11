@@ -98,6 +98,7 @@ class Transaction(db.Model):
     fee_krw      = db.Column(db.Float, default=0)               # 수수료 (KRW 환산)
     amount_krw   = db.Column(db.Float, nullable=False)          # 거래 총액 KRW (수수료 제외)
     realized_pnl_krw = db.Column(db.Float, default=0)           # 매도 시 실현 손익 (KRW)
+    note         = db.Column(db.String(300))                    # 포지션 노트 (매매 이유 메모, 선택)
     timestamp    = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -113,6 +114,7 @@ class Transaction(db.Model):
             "fee_krw":       self.fee_krw,
             "amount_krw":    self.amount_krw,
             "realized_pnl_krw": self.realized_pnl_krw,
+            "note":          self.note,
             "timestamp":     self.timestamp.isoformat() if self.timestamp else None,
         }
 
