@@ -19,11 +19,13 @@
   Shape `VM.Standard.E2.1.Micro` (Always Free)
 - **VM 공인 IP: `158.180.93.167`** (Ephemeral — 재부팅 유지하려면 Reserved 전환 권장)
 - **tinyproxy 가동 중** (HTTP/HTTPS CONNECT 모두 검증 완료, egress IP = VM IP 확인)
-  - 인증: `BasicAuth tossuser Toss2024SecureKey` (⚠️ 영숫자만 — 특수문자 파싱 불가)
+  - 인증: BasicAuth — **실제 자격증명은 로컬 `.env`의 `TOSS_PROXY_URL` 참조** (공개 저장소라 여기 기록 금지. ⚠️ 비밀번호는 영숫자만 — tinyproxy가 특수문자 파싱 불가)
   - 포트 8888 (Oracle Security List + VM iptables 둘 다 오픈)
 - **토스 콘솔에 `158.180.93.167` 등록 완료**
-- **Railway 환경변수**: `TOSS_PROXY_URL=http://tossuser:Toss2024SecureKey@158.180.93.167:8888`
-  → 설정 시 토스가 항상 VM IP로 봐서 **재배포해도 안 끊김** (사용자 설정 확인 필요)
+- **Railway 환경변수**: `TOSS_PROXY_URL` — 값은 로컬 `.env`와 동일하게 설정
+  → 설정 시 토스가 항상 VM IP로 봐서 **재배포해도 안 끊김**
+- 🔒 2026-06-08: 초기 비밀번호가 본 문서에 평문 커밋되어 공개 노출됨 → **즉시 교체(rotation) 완료**.
+  구 비밀번호는 무효. git 히스토리의 옛 값은 더 이상 유효하지 않음
 - SSH 키: `ssh-key-2026-06-05.key` (프로젝트 폴더, **.gitignore 처리됨 — 커밋 금지**)
   - 접속: `ssh -i ssh-key-2026-06-05.key ubuntu@158.180.93.167`
 - 설치 시 겪은 함정 4가지 → `TOSS_PROXY_SETUP.md`에 모두 반영
@@ -239,13 +241,13 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 
 **1) Oracle Cloud VM + tinyproxy 고정 IP 프록시 구축 완료** (코드 변경 없음, 인프라)
 - VM `158.180.93.167` (Chuncheon, Ubuntu 22.04, E2.1.Micro Always Free)
-- tinyproxy 8888 + BasicAuth(`tossuser:Toss2024SecureKey`) 가동, HTTP/HTTPS 검증 OK
+- tinyproxy 8888 + BasicAuth 가동 (자격증명은 `.env`의 `TOSS_PROXY_URL`), HTTP/HTTPS 검증 OK
 - 토스 콘솔 IP 등록 + Railway `TOSS_PROXY_URL` 설정 → 재배포 IP 변동 영구 해결
 - **설치 중 막혔던 함정 4가지 (TOSS_PROXY_SETUP.md에 반영)**:
   1. **apt가 IPv6로 나가 timeout** → `apt-get -o Acquire::ForceIPv4=true` 필요
      (cloud-init이 이 때문에 실패 → 수동 설치함)
-  2. **비밀번호 특수문자 파싱 불가** → tinyproxy가 `Toss2024Secure!`의 `!`에서
-     "Syntax error" → 영숫자 `Toss2024SecureKey`로 변경. (DefaultErrorFile/StatFile/
+  2. **비밀번호 특수문자 파싱 불가** → tinyproxy가 `!` 등 특수문자에서
+     "Syntax error" → 영숫자 전용 비밀번호로 변경. (DefaultErrorFile/StatFile/
      ViaProxyName 등 따옴표 필요한 줄도 제거하는 게 안전)
   3. **systemd Type=forking 멈춤** → "activating"에서 행. override.conf로
      `Type=simple` + `ExecStart=/usr/bin/tinyproxy -d`(foreground) 고정
