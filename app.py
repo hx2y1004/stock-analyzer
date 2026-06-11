@@ -61,7 +61,13 @@ if _db_url.startswith("postgres://"):          # Railway 구버전 호환
     _db_url = _db_url.replace("postgres://", "postgresql://", 1)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-in-production")
+_secret = os.environ.get("FLASK_SECRET_KEY", "").strip()
+if not _secret:
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        # 운영에서 시크릿 키 없이 뜨면 세션 위조 가능 → 기동 자체를 막음
+        raise RuntimeError("FLASK_SECRET_KEY 환경변수가 설정되지 않았습니다 (운영 환경 필수)")
+    _secret = "dev-only-change-in-production"
+app.secret_key = _secret
 app.config["SQLALCHEMY_DATABASE_URI"]        = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 CORS(app)
@@ -3629,6 +3635,9 @@ def import_toss_portfolio():
         return jsonify({"error": f"토스 보유종목 조회 실패: {e}"}), 502
     if items is None:
         return jsonify({"error": "토스 계좌를 찾을 수 없습니다 (계좌 미연동 또는 일시적 오류)"}), 404
+    if not items:
+        # 빈 응답일 때 그대로 진행하면 기존 포트폴리오만 전부 삭제됨 → 중단
+        return jsonify({"error": "토스 보유종목이 비어 있습니다 — 기존 포트폴리오를 유지합니다"}), 404
 
     # 동기화: 기존 실제 포트폴리오 교체 (토스가 진실의 원천)
     Holding.query.filter_by(user_id=current_user.id).delete()
@@ -4344,11 +4353,27 @@ def trading_reset():
     return jsonify({"ok": True, "cash_balance": INITIAL_CAPITAL_KRW})
 
 
+def _is_toss_owner() -> bool:
+    """TOSS_OWNER_EMAIL / TOSS_OWNER_USER_IDS 기준 소유자 여부.
+    소유자 목록이 비어 있으면 로컬 개발 환경에서만 허용 (운영에선 차단)."""
+    owner_emails = {e.strip() for e in os.environ.get("TOSS_OWNER_EMAIL", "").lower().split(",") if e.strip()}
+    owner_ids    = {i.strip() for i in os.environ.get("TOSS_OWNER_USER_IDS", "").split(",") if i.strip()}
+    if not (owner_emails or owner_ids):
+        return not os.environ.get("RAILWAY_ENVIRONMENT")
+    if not current_user.is_authenticated:
+        return False
+    my_email = (current_user.email or "").strip().lower()
+    return bool(my_email and my_email in owner_emails) or (str(current_user.id) in owner_ids)
+
+
 @app.route("/api/debug/toss")
 def debug_toss():
     """토스 API 진단: 서버 egress IP + 토큰 발급 성공 여부.
     배포 환경의 outbound IP를 토스 콘솔 허용목록에 등록할 때 사용.
+    소유자 전용 — 외부인에게는 존재하지 않는 경로처럼 404.
     """
+    if not _is_toss_owner():
+        return jsonify({"error": "Not Found"}), 404
     out = {"toss_enabled": toss_api.is_enabled()}
     # 1) 서버 직접 egress IP (프록시 미사용 시 토스가 보는 IP)
     try:
