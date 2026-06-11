@@ -71,8 +71,9 @@ async function loadDashboard() {
     }
     // 배지 목록 새로고침
     loadBadges();
-    // AI 코치: 캐시된 분석 있으면 표시
+    // AI 코치/점검: 캐시된 분석 있으면 표시
     loadCoachCached();
+    loadReviewCached(_reviewMode);
     // 닉네임 미설정 → 자동 안내 모달
     if (!data.nickname && !_nicknamePromptShown) {
       _nicknamePromptShown = true;
@@ -630,6 +631,81 @@ function renderCoach(d) {
     if (d.cached) meta += ' · 새 거래가 쌓이면 다시 분석할 수 있어요';
   }
   document.getElementById('coachMeta').textContent = meta;
+}
+
+// ── AI 포트폴리오 점검 ──────────────────────────────────────
+let _reviewMode = 'paper';
+const _reviewResults = {};   // mode -> 응답 (탭 전환 시 재표시용)
+
+function setReviewMode(mode, btn) {
+  _reviewMode = mode;
+  document.querySelectorAll('.review-card .ah-period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (_reviewResults[mode]) {
+    renderReview(_reviewResults[mode]);
+  } else {
+    document.getElementById('reviewBody').innerHTML =
+      '<div class="empty-state">「점검 받기」를 누르면 ' +
+      (mode === 'paper' ? '모의투자' : '실제') + ' 포트폴리오를 점검해드려요.</div>';
+    document.getElementById('reviewMeta').textContent = '';
+    loadReviewCached(mode);
+  }
+}
+
+async function loadReviewCached(mode) {
+  try {
+    const r = await fetch(`/api/portfolio/review?mode=${mode || _reviewMode}`);
+    if (r.status !== 200) return;
+    const d = await r.json();
+    _reviewResults[mode || _reviewMode] = d;
+    if ((mode || _reviewMode) === _reviewMode) renderReview(d);
+  } catch (e) {}
+}
+
+async function requestReview() {
+  const btn = document.getElementById('reviewBtn');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '🩺 점검 중…';
+  const mode = _reviewMode;
+  try {
+    const r = await fetch('/api/portfolio/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      document.getElementById('reviewBody').innerHTML =
+        `<div class="empty-state">${escapeHtml(d.error || '점검에 실패했습니다')}</div>`;
+      document.getElementById('reviewMeta').textContent = '';
+      return;
+    }
+    _reviewResults[mode] = d;
+    if (mode === _reviewMode) renderReview(d);
+  } catch (e) {
+    alert('네트워크 오류: ' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+function renderReview(d) {
+  if (!d || !d.feedback) return;
+  const items = d.feedback.split('\n')
+    .map(s => s.trim())
+    .filter(s => s)
+    .map(s => s.replace(/^[-•*]\s*/, ''));
+  document.getElementById('reviewBody').innerHTML =
+    items.map(s => `<div class="coach-item">${escapeHtml(s)}</div>`).join('');
+  let meta = '';
+  if (d.generated_at) {
+    const dt = new Date(d.generated_at);
+    meta = `마지막 점검: ${dt.getMonth() + 1}/${dt.getDate()} ` +
+           `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+  }
+  document.getElementById('reviewMeta').textContent = meta;
 }
 
 // ── 초기화 ─────────────────────────────────────────────────
