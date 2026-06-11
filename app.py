@@ -4178,6 +4178,94 @@ _COACH_FOREIGN_RE = re.compile(
     "[^ -~가-힣ㄱ-ㆎ"
     "·–—‘’“”…₩\n]+"
 )
+def _coach_stats_block(txs):
+    """거래 목록에서 결정적 통계를 계산해 프롬프트용 텍스트 블록 생성.
+    FIFO로 매수-매도를 짝지어 라운드트립별 보유기간·손익을 구한다.
+    (해석을 AI에 맡기지 않고 수치를 직접 계산해야 피드백이 구체적이 됨)
+    """
+    chrono = sorted(txs, key=lambda t: t.timestamp or datetime.min)
+    buys  = [t for t in chrono if t.type == "buy"]
+    sells = [t for t in chrono if t.type == "sell"]
+    total_fees = sum((t.fee_krw or 0) for t in chrono)
+
+    # FIFO 라운드트립 매칭
+    lots, trips = {}, []
+    for t in chrono:
+        if t.type == "buy":
+            lots.setdefault(t.ticker, []).append([t.quantity, t.price, t.timestamp])
+            continue
+        fxk = (t.exchange_rate or 1.0) if t.currency == "USD" else 1.0
+        remain = t.quantity
+        q = lots.get(t.ticker) or []
+        while remain > 1e-9 and q:
+            lot = q[0]
+            take = min(lot[0], remain)
+            days = None
+            if t.timestamp and lot[2]:
+                days = max(0, (t.timestamp - lot[2]).days)
+            trips.append({
+                "ticker": t.ticker, "name": t.name, "days": days,
+                "pnl": (t.price - lot[1]) * take * fxk,
+            })
+            lot[0] -= take
+            remain -= take
+            if lot[0] <= 1e-9:
+                q.pop(0)
+
+    out = [f"[통계] (단위: KRW)"]
+    out.append(f"- 총 거래 {len(chrono)}건 (매수 {len(buys)}, 매도 {len(sells)}), "
+               f"수수료 합계 {round(total_fees):,}원")
+
+    if trips:
+        wins = [r for r in trips if r["pnl"] > 0]
+        win_rate = len(wins) / len(trips) * 100
+        total_pnl = sum(r["pnl"] for r in trips)
+        out.append(f"- 완결 매매(매수→매도 짝) {len(trips)}건: 승 {len(wins)} / "
+                   f"패 {len(trips)-len(wins)} (승률 {win_rate:.0f}%), "
+                   f"실현손익 합 {round(total_pnl):+,}원")
+
+        dated = [r for r in trips if r["days"] is not None]
+        if dated:
+            avg_days = sum(r["days"] for r in dated) / len(dated)
+            short  = [r for r in dated if r["days"] < 3]
+            longer = [r for r in dated if r["days"] >= 3]
+            def _seg(rs):
+                if not rs:
+                    return "0건"
+                w = sum(1 for r in rs if r["pnl"] > 0)
+                return (f"{len(rs)}건 승률 {w/len(rs)*100:.0f}% "
+                        f"손익 {round(sum(r['pnl'] for r in rs)):+,}원")
+            out.append(f"- 평균 보유 {avg_days:.1f}일 / "
+                       f"3일 미만 단타: {_seg(short)} / 3일 이상: {_seg(longer)}")
+
+        best = max(trips, key=lambda r: r["pnl"])
+        worst = min(trips, key=lambda r: r["pnl"])
+        out.append(f"- 최고 수익 매매: {best['name']}({best['ticker']}) "
+                   f"{round(best['pnl']):+,}원 (보유 {best['days']}일) / "
+                   f"최대 손실 매매: {worst['name']}({worst['ticker']}) "
+                   f"{round(worst['pnl']):+,}원 (보유 {worst['days']}일)")
+
+        # 종목별 회전 (거래 많은 순 TOP3)
+        per = {}
+        for r in trips:
+            d = per.setdefault(r["ticker"], {"name": r["name"], "n": 0, "pnl": 0.0})
+            d["n"] += 1
+            d["pnl"] += r["pnl"]
+        top = sorted(per.values(), key=lambda d: -d["n"])[:3]
+        out.append("- 같은 종목 반복 매매 TOP3: " + ", ".join(
+            f"{d['name']} {d['n']}회(손익 {round(d['pnl']):+,}원)" for d in top))
+
+    noted = [t for t in chrono if t.note]
+    out.append(f"- 메모 있는 거래 {len(noted)}건 / 전체 {len(chrono)}건")
+    if noted and trips:
+        noted_tickers = {t.ticker for t in noted if t.type == "buy"}
+        nt = [r for r in trips if r["ticker"] in noted_tickers]
+        if nt:
+            out.append(f"- 메모를 남긴 종목의 완결 매매 {len(nt)}건 "
+                       f"손익 합 {round(sum(r['pnl'] for r in nt)):+,}원")
+    return "\n".join(out)
+
+
 _COACH_CACHE = {}            # user_id -> {"text", "ts", "iso", "tx_count"}
 _COACH_TTL      = 6 * 3600   # 같은 거래 수면 6시간 캐시
 _COACH_COOLDOWN = 10 * 60    # 강제 재분석 최소 간격 10분
@@ -4202,7 +4290,7 @@ def trading_coach():
         return ("", 204)
 
     txs = Transaction.query.filter_by(user_id=user.id)\
-            .order_by(Transaction.timestamp.desc()).limit(60).all()
+            .order_by(Transaction.timestamp.desc()).limit(200).all()
     if len(txs) < _COACH_MIN_TX:
         return jsonify({
             "error": f"거래가 {_COACH_MIN_TX}건 이상 쌓이면 분석할 수 있어요 (현재 {len(txs)}건)"
@@ -4220,12 +4308,11 @@ def trading_coach():
     if not api_key:
         return jsonify({"error": "AI 분석을 사용할 수 없습니다 (API 키 미설정)"}), 503
 
-    # 거래 요약 (시간순)
-    sells = [t for t in txs if t.type == "sell"]
-    wins  = sum(1 for s in sells if (s.realized_pnl_krw or 0) > 0)
-    total_pnl = sum((s.realized_pnl_krw or 0) for s in sells)
+    stats_block = _coach_stats_block(txs)
+
+    # 최근 거래 20건만 원본 첨부 (통계가 본체, 원본은 참고)
     lines = []
-    for t in reversed(txs):
+    for t in list(reversed(txs))[-20:]:
         d = t.timestamp.strftime("%m/%d") if t.timestamp else "?"
         pnl  = f" 실현손익 {round(t.realized_pnl_krw or 0):+,}원" if t.type == "sell" else ""
         note = f' 메모:"{t.note}"' if t.note else ""
@@ -4235,19 +4322,21 @@ def trading_coach():
         )
 
     system_msg = (
-        "너는 모의투자 사용자의 매매 기록을 분석하는 친근한 한국어 투자 코치다. "
-        "투자 권유나 종목 추천은 절대 하지 않는다. 매매 '습관과 패턴'에 대해서만 피드백한다. "
-        "기록에서 실제로 관찰되는 근거(횟수·수치)를 들어 말하고, 근거 없는 일반론은 쓰지 않는다. "
-        "메모가 있는 거래는 매매 계획과 실제 행동이 일치했는지도 평가한다. "
-        "출력 형식: 피드백 2~4개를 각 줄 '- '로 시작하는 목록으로만 출력. "
-        "각 항목은 1~2문장, 존댓말. 마크다운 강조(**) 금지. "
-        "한국어로만 작성하되 종목명·티커는 영문 허용. "
-        "러시아어·중국어·일본어 등 다른 언어 문자는 절대 사용 금지."
+        "너는 모의투자 사용자의 매매 기록을 분석하는 한국어 투자 코치다. "
+        "투자 권유나 종목 추천은 절대 하지 않는다. 매매 '습관과 패턴'에 대해서만 피드백한다.\n"
+        "규칙:\n"
+        "1. 모든 피드백은 [통계] 블록의 구체적 수치를 반드시 인용한다.\n"
+        "2. '모니터링이 필요합니다', '주의가 필요합니다', '도움이 될 수 있습니다', "
+        "'영향을 미치는 요인을 분석할 필요가 있습니다' 같은 모호한 마무리는 금지. "
+        "각 항목은 사용자가 다음 매매에서 시도할 수 있는 구체적 행동 하나로 끝낸다.\n"
+        "3. 통계에서 손익에 가장 크게 기여한/깎은 패턴부터 우선 다룬다. "
+        "단순 사실 나열(거래가 많았다 등)만으로 한 항목을 쓰지 않는다.\n"
+        "4. 출력: 피드백 2~4개, 각 줄 '- '로 시작하는 목록만. 항목당 1~2문장, 존댓말. "
+        "마크다운 강조(**) 금지.\n"
+        "5. 한국어로만 작성 (종목명·티커는 영문 허용). "
+        "러시아어·중국어·일본어 등 다른 언어 문자 절대 금지."
     )
-    user_msg = (
-        f"최근 거래 {len(txs)}건 (매도 {len(sells)}건, 승 {wins}건, "
-        f"실현손익 합계 {round(total_pnl):+,}원):\n" + "\n".join(lines)
-    )
+    user_msg = stats_block + "\n\n[최근 거래 20건]\n" + "\n".join(lines)
 
     text = _groq_chat(api_key, system_msg, user_msg,
                       max_tokens=600, temperature=0.5, label="coach")
@@ -4260,6 +4349,114 @@ def trading_coach():
 
     iso = datetime.utcnow().isoformat() + "Z"
     _COACH_CACHE[user.id] = {"text": text, "ts": now, "iso": iso, "tx_count": len(txs)}
+    return jsonify({"ok": True, "feedback": text, "generated_at": iso, "cached": False})
+
+
+# ── AI 포트폴리오 점검 ──────────────────────────────────────
+_REVIEW_CACHE = {}             # (user_id, mode) -> {"text", "ts", "iso"}
+_REVIEW_COOLDOWN = 10 * 60     # 10분
+
+
+@app.route("/api/portfolio/review", methods=["GET", "POST"])
+@login_required
+def portfolio_review():
+    """포트폴리오 점검: 비중·집중도·통화 편중·손익 분포를 계산해 AI 의견 생성.
+    mode=paper(모의투자) | real(실제 포트폴리오)
+    GET: 캐시만 반환 (없으면 204). POST: 새 점검 생성 (10분 쿨다운).
+    """
+    if request.method == "GET":
+        mode = (request.args.get("mode") or "paper").strip()
+    else:
+        mode = ((request.get_json(silent=True) or {}).get("mode") or "paper").strip()
+    if mode not in ("paper", "real"):
+        return jsonify({"error": "mode는 paper 또는 real이어야 합니다"}), 400
+
+    user = current_user
+    key = (user.id, mode)
+    cached = _REVIEW_CACHE.get(key)
+    now = time.time()
+
+    if request.method == "GET":
+        if cached and (now - cached["ts"] < _REVIEW_COOLDOWN * 6):   # 1시간 표시 유지
+            return jsonify({"ok": True, "feedback": cached["text"],
+                            "generated_at": cached["iso"], "cached": True})
+        return ("", 204)
+
+    if cached and (now - cached["ts"] < _REVIEW_COOLDOWN):
+        return jsonify({"ok": True, "feedback": cached["text"],
+                        "generated_at": cached["iso"], "cached": True})
+
+    Model = PaperHolding if mode == "paper" else Holding
+    holdings = Model.query.filter_by(user_id=user.id).all()
+    if len(holdings) < 2:
+        return jsonify({"error": "보유 종목이 2개 이상일 때 점검할 수 있어요 "
+                                 f"(현재 {len(holdings)}개)"}), 400
+
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return jsonify({"error": "AI 분석을 사용할 수 없습니다 (API 키 미설정)"}), 503
+
+    # 현재가 + 평가액 계산
+    fx = _get_usd_krw_rate()
+    tickers = list({h.ticker for h in holdings})
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        prices = dict(ex.map(lambda t: (t, _fetch_current_price(t)), tickers))
+
+    rows = []
+    for h in holdings:
+        cp = prices.get(h.ticker) or h.purchase_price
+        cur = h.currency or "USD"
+        value_krw = cp * h.quantity * (fx if cur == "USD" else 1)
+        pnl_pct = ((cp - h.purchase_price) / h.purchase_price * 100) if h.purchase_price else 0
+        rows.append({"name": h.name, "ticker": h.ticker, "currency": cur,
+                     "value": value_krw, "pnl_pct": pnl_pct})
+
+    pos_total = sum(r["value"] for r in rows) or 1
+    cash = (user.cash_balance or 0) if mode == "paper" else None
+    grand = pos_total + (cash or 0)
+    rows.sort(key=lambda r: -r["value"])
+
+    krw_w = sum(r["value"] for r in rows if r["currency"] == "KRW") / pos_total * 100
+    top1_w = rows[0]["value"] / pos_total * 100
+    top3_w = sum(r["value"] for r in rows[:3]) / pos_total * 100
+
+    lines = [f"[포트폴리오] ({'모의투자' if mode == 'paper' else '실제 보유'}, "
+             f"종목 {len(rows)}개, 주식 평가액 {round(pos_total):,}원)"]
+    if cash is not None:
+        lines.append(f"- 현금 {round(cash):,}원 (총자산의 {cash/grand*100:.1f}%)")
+    lines.append(f"- 집중도: 1위 종목 {top1_w:.1f}%, 상위 3종목 {top3_w:.1f}% (주식 내 비중)")
+    lines.append(f"- 통화: 한국주식 {krw_w:.1f}% / 미국주식 {100-krw_w:.1f}%")
+    lines.append("- 종목별 (비중은 주식 내, 수익률은 평가손익):")
+    for r in rows:
+        lines.append(f"  · {r['name']}({r['ticker']}) {r['value']/pos_total*100:.1f}% "
+                     f"수익률 {r['pnl_pct']:+.1f}%")
+
+    system_msg = (
+        "너는 개인 포트폴리오 점검 코치다. 새 종목 매수 추천은 절대 하지 않는다. "
+        "대신 '현재 보유 중인 종목'에 한해 비중 확대/축소/유지 의견은 수치 근거와 함께 제시할 수 있다.\n"
+        "점검 관점: 1) 특정 종목 집중도 2) 한/미 통화 편중 3) 현금 비중(있는 경우) "
+        "4) 손익 분포 (큰 손실 종목 방치, 수익 종목 비중 등).\n"
+        "규칙:\n"
+        "1. 모든 의견은 [포트폴리오] 블록의 구체적 수치를 인용한다.\n"
+        "2. '모니터링 필요', '주의가 필요' 같은 모호한 마무리 금지. "
+        "각 항목은 구체적이고 실행 가능한 의견으로 끝낸다.\n"
+        "3. 출력: 2~4개 항목, 각 줄 '- '로 시작하는 목록만. 항목당 1~2문장, 존댓말. "
+        "마크다운 강조(**) 금지.\n"
+        "4. 한국어로만 작성 (종목명·티커는 영문 허용). "
+        "러시아어·중국어·일본어 등 다른 언어 문자 절대 금지."
+    )
+
+    text = _groq_chat(api_key, system_msg, "\n".join(lines),
+                      max_tokens=600, temperature=0.4, label="review")
+    if not text:
+        return jsonify({"error": "AI 점검 생성에 실패했습니다. 잠시 후 다시 시도해주세요."}), 502
+
+    text = _COACH_FOREIGN_RE.sub("", text)
+    text = re.sub(r"  +", " ", text).strip()
+
+    iso = datetime.utcnow().isoformat() + "Z"
+    _REVIEW_CACHE[key] = {"text": text, "ts": now, "iso": iso}
     return jsonify({"ok": True, "feedback": text, "generated_at": iso, "cached": False})
 
 
