@@ -433,6 +433,28 @@ async function fetchCurrentPrice(ticker) {
   return null;
 }
 
+// ── 실시간 단가 폴링 (매수/매도 체결가는 서버가 강제하므로 화면은 참고용) ──
+let _pricePollTimer = null;
+function startPricePolling(ticker, priceInputId, onUpdate) {
+  stopPricePolling();
+  const apply = async () => {
+    try {
+      const r = await fetch(`/api/realtime-price?ticker=${encodeURIComponent(ticker)}`);
+      const d = await r.json();
+      if (d && d.price) {
+        const el = document.getElementById(priceInputId);
+        if (el) el.value = d.currency === 'KRW' ? Math.round(d.price) : Number(d.price).toFixed(2);
+        if (onUpdate) onUpdate();
+      }
+    } catch (e) { /* 무시 */ }
+  };
+  apply();
+  _pricePollTimer = setInterval(apply, 1000);
+}
+function stopPricePolling() {
+  if (_pricePollTimer) { clearInterval(_pricePollTimer); _pricePollTimer = null; }
+}
+
 // ── 매수 모달 ───────────────────────────────────────────────
 function openBuyModalForHolding(ticker, name, currency, price) {
   document.getElementById('buyTicker').value   = ticker;
@@ -445,12 +467,14 @@ function openBuyModalForHolding(ticker, name, currency, price) {
   document.getElementById('buyNote').value = '';
   updateBuySummary();
   document.getElementById('tradeBuyModal').classList.remove('hidden');
+  startPricePolling(ticker, 'buyPrice', updateBuySummary);
   setTimeout(() => document.getElementById('buyQty').focus(), 50);
 }
 
 function closeBuyModal(event) {
   if (!event || event.target === document.getElementById('tradeBuyModal')) {
     document.getElementById('tradeBuyModal').classList.add('hidden');
+    stopPricePolling();
   }
 }
 
@@ -481,12 +505,14 @@ async function submitBuy() {
   const price  = parseFloat(document.getElementById('buyPrice').value);
   const qty    = parseFloat(document.getElementById('buyQty').value);
   const note = (document.getElementById('buyNote').value || '').trim();
-  if (!price || !qty || price <= 0 || qty <= 0) { alert('가격/수량을 입력해주세요'); return; }
+  if (!qty || qty <= 0) { alert('수량을 입력해주세요'); return; }
+  if (!price || price <= 0) { alert('현재가를 불러오는 중입니다. 잠시 후 다시 시도해주세요'); return; }
+  // 체결가는 서버 실시간가로 강제됨 (price 미전송 → 조작 차단)
   try {
     const r = await fetch('/api/trading/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, name, price, quantity: qty, note }),
+      body: JSON.stringify({ ticker, name, quantity: qty, note }),
     });
     const d = await r.json();
     if (!r.ok) { alert(d.error || '매수 실패'); return; }
@@ -510,12 +536,14 @@ function openSellModal(ticker, name, currency, price, maxQty) {
   _sellMaxQty = maxQty;
   updateSellSummary();
   document.getElementById('tradeSellModal').classList.remove('hidden');
+  startPricePolling(ticker, 'sellPrice', updateSellSummary);
   setTimeout(() => document.getElementById('sellQty').focus(), 50);
 }
 
 function closeSellModal(event) {
   if (!event || event.target === document.getElementById('tradeSellModal')) {
     document.getElementById('tradeSellModal').classList.add('hidden');
+    stopPricePolling();
   }
 }
 
@@ -559,14 +587,16 @@ async function submitSell() {
   const ticker = document.getElementById('sellTicker').value;
   const price  = parseFloat(document.getElementById('sellPrice').value);
   const qty    = parseFloat(document.getElementById('sellQty').value);
-  if (!price || !qty || price <= 0 || qty <= 0) { alert('가격/수량을 입력해주세요'); return; }
+  if (!qty || qty <= 0) { alert('수량을 입력해주세요'); return; }
+  if (!price || price <= 0) { alert('현재가를 불러오는 중입니다. 잠시 후 다시 시도해주세요'); return; }
   if (qty > _sellMaxQty) { alert(`보유 수량(${_sellMaxQty})을 초과할 수 없습니다`); return; }
   const note = (document.getElementById('sellNote').value || '').trim();
+  // 체결가는 서버 실시간가로 강제됨 (price 미전송 → 조작 차단)
   try {
     const r = await fetch('/api/trading/sell', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, price, quantity: qty, note }),
+      body: JSON.stringify({ ticker, quantity: qty, note }),
     });
     const d = await r.json();
     if (!r.ok) { alert(d.error || '매도 실패'); return; }
@@ -740,22 +770,14 @@ function _stepTradeNum(modalType, inputId, direction) {
 }
 
 function setupTradeInputs() {
-  ['buyPrice', 'buyQty'].forEach(id => {
+  // 가격(buyPrice/sellPrice)은 서버 실시간가로 자동 갱신되는 readonly 필드 — 수량만 조작 가능
+  [['buyQty', 'buy', updateBuySummary], ['sellQty', 'sell', updateSellSummary]].forEach(([id, type, upd]) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('input', updateBuySummary);
+    el.addEventListener('input', upd);
     el.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepTradeNum('buy', id, 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); _stepTradeNum('buy', id, -1); }
-    });
-  });
-  ['sellPrice', 'sellQty'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('input', updateSellSummary);
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepTradeNum('sell', id, 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); _stepTradeNum('sell', id, -1); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepTradeNum(type, id, 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _stepTradeNum(type, id, -1); }
     });
   });
 }

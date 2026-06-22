@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=38" />
+  <link rel="stylesheet" href="/static/css/style.css?v=39" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -449,12 +449,9 @@
         <input type="hidden" id="paperBuyName" />
         <input type="hidden" id="paperBuyCurrency" />
         <div class="add-field">
-          <label>매수가 <span id="paperBuyCurLabel">(USD)</span></label>
-          <div class="num-input-wrap">
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyPrice', -1)">−</button>
-            <input id="paperBuyPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyPrice', 1)">+</button>
-          </div>
+          <label>매수가 <span id="paperBuyCurLabel">(USD)</span> <span class="live-price-tag">🔴 실시간</span></label>
+          <input id="paperBuyPrice" class="add-input price-readonly" type="text" readonly tabindex="-1" />
+          <p class="price-hint">체결가는 매수 시점의 실시간 시세로 자동 적용됩니다</p>
         </div>
         <div class="add-field">
           <label>수량</label>
@@ -463,6 +460,12 @@
             <input id="paperBuyQty" class="add-input" type="number" min="0" step="1" inputmode="numeric" />
             <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('buy','paperBuyQty', 1)">+</button>
           </div>
+        </div>
+        <div class="add-field">
+          <label>📝 매수 이유 메모 <span style="color:var(--text2)">(선택)</span></label>
+          <textarea id="paperBuyNote" class="add-input" maxlength="300" rows="2"
+            placeholder="예: 실적 기대로 매수. 78,000원 도달 시 절반 익절 예정"
+            style="resize:vertical; min-height:48px; font-family:inherit;"></textarea>
         </div>
         <div class="trade-summary" id="paperBuySummary"></div>
         <button class="add-submit-btn buy-action-btn" onclick="submitPaperBuy()">💰 매수 실행</button>
@@ -480,12 +483,9 @@
         <input type="hidden" id="paperSellTicker" />
         <input type="hidden" id="paperSellCurrency" />
         <div class="add-field">
-          <label>매도가 <span id="paperSellCurLabel">(USD)</span></label>
-          <div class="num-input-wrap">
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellPrice', -1)">−</button>
-            <input id="paperSellPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepPaper('sell','paperSellPrice', 1)">+</button>
-          </div>
+          <label>매도가 <span id="paperSellCurLabel">(USD)</span> <span class="live-price-tag">🔴 실시간</span></label>
+          <input id="paperSellPrice" class="add-input price-readonly" type="text" readonly tabindex="-1" />
+          <p class="price-hint">체결가는 매도 시점의 실시간 시세로 자동 적용됩니다</p>
         </div>
         <div class="add-field">
           <label>수량 (최대 <span id="paperSellMaxQty">0</span>주)</label>
@@ -496,6 +496,12 @@
           </div>
           <button type="button" class="sell-max-btn" onclick="setPaperSellMax()">전량 매도</button>
         </div>
+        <div class="add-field">
+          <label>📝 매도 이유 메모 <span style="color:var(--text2)">(선택)</span></label>
+          <textarea id="paperSellNote" class="add-input" maxlength="300" rows="2"
+            placeholder="예: 목표가 도달 익절 / 손절 라인 이탈"
+            style="resize:vertical; min-height:48px; font-family:inherit;"></textarea>
+        </div>
         <div class="trade-summary" id="paperSellSummary"></div>
         <button class="add-submit-btn sell-action-btn" onclick="submitPaperSell()">💸 매도 실행</button>
       </div>
@@ -503,6 +509,6 @@
   </div>
 
   <script src="/static/js/chart.js"></script>
-  <script src="/static/js/main.js?v=38"></script>
+  <script src="/static/js/main.js?v=39"></script>
 </body>
 </html>

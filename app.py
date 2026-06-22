@@ -3772,8 +3772,23 @@ def _to_krw(amount, currency, exchange_rate=None):
     return amount * exchange_rate
 
 
+_CURRENT_PRICE_CACHE = {}   # ticker -> (epoch, price)
+_CURRENT_PRICE_TTL = 3       # 3초 — 1초 폴링 부하 완화 (모의투자 체결 정확도엔 영향 미미)
+
 def _fetch_current_price(ticker):
-    """종목 현재가 (native currency). 토스 우선, yfinance 폴백."""
+    """종목 실시간 현재가 (native currency). 토스 → 네이버(한국) → yfinance 순. 3초 캐시."""
+    now = time.time()
+    cached = _CURRENT_PRICE_CACHE.get(ticker)
+    if cached and (now - cached[0]) < _CURRENT_PRICE_TTL:
+        return cached[1]
+    price = _fetch_current_price_uncached(ticker)
+    if price:
+        _CURRENT_PRICE_CACHE[ticker] = (now, price)
+    return price
+
+
+def _fetch_current_price_uncached(ticker):
+    """종목 실시간 현재가 (캐시 없음). 토스 → 네이버(한국) → yfinance 순."""
     # 1순위: 토스
     if toss_api.is_enabled() and toss_api.is_eligible(ticker):
         try:
@@ -3782,7 +3797,15 @@ def _fetch_current_price(ticker):
                 return float(p)
         except Exception:
             pass
-    # 2순위: yfinance fast_info
+    # 2순위: 한국 종목은 네이버 실시간 폴링 (~1분 지연, yfinance보다 빠름)
+    if ticker.upper().endswith(".KS") or ticker.upper().endswith(".KQ"):
+        try:
+            nv = fetch_naver_realtime_price(ticker.split(".")[0])
+            if nv and nv.get("current_price"):
+                return float(nv["current_price"])
+        except Exception:
+            pass
+    # 3순위: yfinance fast_info
     try:
         fi = yf.Ticker(ticker).fast_info
         p  = getattr(fi, "last_price", None) or getattr(fi, "regular_market_price", None)
@@ -4079,21 +4102,45 @@ def trading_dashboard():
     })
 
 
+@app.route("/api/realtime-price")
+@login_required
+def realtime_price():
+    """종목 실시간 단가 (모의 매수/매도 모달 1초 폴링용).
+    Returns: { ticker, price, currency } / 실패 시 price=null
+    """
+    ticker = (request.args.get("ticker") or "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "ticker 필요"}), 400
+    price = _fetch_current_price(ticker)
+    currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else "USD"
+    return jsonify({
+        "ticker": ticker,
+        "price": round(float(price), 6) if price else None,
+        "currency": currency,
+    })
+
+
 @app.route("/api/trading/buy", methods=["POST"])
 @login_required
 def trading_buy():
     """모의 매수.
-    Body: { ticker, name?, price, quantity, note? }
+    Body: { ticker, name?, quantity, note? }
+    ⚠️ 체결가는 클라이언트 입력이 아닌 서버 실시간가로 강제 (수익률 조작 방지).
     """
     data = request.get_json() or {}
     ticker = (data.get("ticker") or "").strip().upper()
     name   = (data.get("name") or "").strip() or ticker
-    price  = float(data.get("price") or 0)
     qty    = float(data.get("quantity") or 0)
     note   = (data.get("note") or "").strip()[:300] or None
 
-    if not ticker or price <= 0 or qty <= 0:
-        return jsonify({"error": "티커/가격/수량을 올바르게 입력해주세요"}), 400
+    if not ticker or qty <= 0:
+        return jsonify({"error": "티커/수량을 올바르게 입력해주세요"}), 400
+
+    # 체결가 = 서버 실시간가 (클라이언트가 보낸 price 무시 → 조작 차단)
+    price = _fetch_current_price(ticker)
+    if not price or price <= 0:
+        return jsonify({"error": "현재가를 가져올 수 없어 매수할 수 없습니다. 잠시 후 다시 시도해주세요"}), 503
+    price = float(price)
 
     user = current_user
     if user.cash_balance is None:
@@ -4160,16 +4207,16 @@ def trading_buy():
 @login_required
 def trading_sell():
     """모의 매도.
-    Body: { ticker, price, quantity, note? }
+    Body: { ticker, quantity, note? }
+    ⚠️ 체결가는 클라이언트 입력이 아닌 서버 실시간가로 강제 (수익률 조작 방지).
     """
     data = request.get_json() or {}
     ticker = (data.get("ticker") or "").strip().upper()
-    price  = float(data.get("price") or 0)
     qty    = float(data.get("quantity") or 0)
     note   = (data.get("note") or "").strip()[:300] or None
 
-    if not ticker or price <= 0 or qty <= 0:
-        return jsonify({"error": "티커/가격/수량을 올바르게 입력해주세요"}), 400
+    if not ticker or qty <= 0:
+        return jsonify({"error": "티커/수량을 올바르게 입력해주세요"}), 400
 
     user = current_user
     if user.cash_balance is None:
@@ -4182,6 +4229,12 @@ def trading_sell():
         return jsonify({
             "error": f"보유 수량 초과 (보유 {holding.quantity}, 매도 시도 {qty})"
         }), 400
+
+    # 체결가 = 서버 실시간가 (클라이언트가 보낸 price 무시 → 조작 차단)
+    price = _fetch_current_price(ticker)
+    if not price or price <= 0:
+        return jsonify({"error": "현재가를 가져올 수 없어 매도할 수 없습니다. 잠시 후 다시 시도해주세요"}), 503
+    price = float(price)
 
     currency = holding.currency or "USD"
     fx = _get_usd_krw_rate()
