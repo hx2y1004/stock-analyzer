@@ -4122,3 +4122,19 @@ body {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* 랭킹 초기화 횟수 배지 */
+.lb-reset-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f0a04b;
+  background: rgba(240, 160, 75, 0.13);
+  border: 1px solid rgba(240, 160, 75, 0.35);
+  border-radius: 10px;
+  padding: 1px 7px;
+  margin-left: 2px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
