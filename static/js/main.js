@@ -1084,6 +1084,7 @@ async function analyze() {
   const period = 'max';
   if (!ticker) return;
 
+  stopStockPricePolling();   // 이전 종목 현재가 폴링 중지
   document.getElementById('loading').classList.remove('hidden');
   document.getElementById('result').classList.add('hidden');
   document.getElementById('errorBox').classList.add('hidden');
@@ -1185,6 +1186,46 @@ function renderStockInfo(stock) {
       freshEl.className = 'price-freshness closed';
     }
   }
+
+  // 장중이면 현재가·등락을 1초마다 실시간 갱신
+  startStockPricePolling(stock);
+}
+
+// ── 분석 페이지 헤더 현재가 실시간 폴링 ──
+let _stockPriceTimer = null;
+let _stockPrevClose = null;
+function stopStockPricePolling() {
+  if (_stockPriceTimer) { clearInterval(_stockPriceTimer); _stockPriceTimer = null; }
+}
+function startStockPricePolling(stock) {
+  stopStockPricePolling();
+  if (!stock || !stock.ticker || !stock.is_market_open) return;  // 장 마감 종목은 갱신 불필요
+  const cur = stock.currency;
+  // 전일 종가 baseline (등락 재계산용) = 분석 시점 현재가 − 등락
+  _stockPrevClose = (stock.current_price != null && stock.price_change != null)
+    ? stock.current_price - stock.price_change : null;
+  const apply = async () => {
+    try {
+      const r = await fetch(`/api/realtime-price?ticker=${encodeURIComponent(stock.ticker)}`);
+      const d = await r.json();
+      if (!d || !d.price) return;
+      const priceEl = document.getElementById('currentPrice');
+      if (priceEl) priceEl.textContent = fmt(d.price, cur);
+      if (_stockPrevClose != null && _stockPrevClose > 0) {
+        const change = d.price - _stockPrevClose;
+        const pct = change / _stockPrevClose * 100;
+        const changeEl = document.getElementById('priceChange');
+        if (changeEl) {
+          const sign = change >= 0 ? '+' : '';
+          changeEl.textContent = `${sign}${fmt(change, cur)} (${sign}${pct.toFixed(2)}%)`;
+          changeEl.className = 'price-change ' + (change >= 0 ? 'up' : 'down');
+        }
+      }
+      if (window._lastStock) window._lastStock.current_price = d.price;  // 모의매수 모달 초기값에 반영
+    } catch (e) { /* 무시 */ }
+  };
+  apply();
+  _stockPriceTimer = setInterval(apply, 1000);
 }
 
 // 봉 timestamp(ISO)를 "5/21 (수)" 또는 "2026-05-21" 형식으로
