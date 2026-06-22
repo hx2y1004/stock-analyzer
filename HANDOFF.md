@@ -1,21 +1,35 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-06-12 KST (Gemini 전환 + 포지션노트/AI코치/포트폴리오점검 세션)
+> 마지막 업데이트: 2026-06-12 KST (모의매매 조작차단 + 랭킹 실시간평가 + 토글/배지/drawdown UI 세션)
 
 ---
 
 ## 🚀 현재 상태 (2026-06-12)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `819af22` (README 전면 업데이트) / 직전 `9e31d80` (기업분석·급등이유 Gemini 전환)
-- Service Worker: **`sa-v38`**
-- 정적 자산 캐시 버스팅: HTML에 `?v=38` 쿼리 사용 중
+- 최신 커밋: `b916a5a` (배지 카테고리 분배) / SW **`sa-v46`** / HTML `?v=46`
 - **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 + 계좌 import + 고정 IP 프록시)
-- **🎉 AI 전부 Gemini 우선 전환 완료** — 코치/점검/기업분석/급등이유 모두 `_ai_chat()` 경유
-- **신규 기능 (2026-06-09~11)**: 포지션 노트, AI 매매 코치, AI 포트폴리오 점검, 보유종목 📊 분석 바로가기
+- **AI 전부 Gemini 우선** — 코치/점검/기업분석/급등이유 모두 `_ai_chat()` 경유
+- **모의투자 신뢰성**: 매수/매도 체결가는 **서버 실시간가로 강제**(클라 price 무시 → 수익률 조작 차단)
+- **랭킹 실시간 평가**: 본인 접속과 무관하게 전 참가자 수익률 갱신 (90초 캐시)
 
-### ✅ 이번 세션들 핵심 (2026-06-09~12)
+### ✅ 최신 세션 핵심 (2026-06-12, Opus)
+- **모의매매 체결가 서버 강제** (`616739a`): `trading_buy/sell`이 클라 price 무시,
+  `_fetch_current_price`로 서버 실시간가 체결. `/api/realtime-price` 신설, 프론트 가격칸 readonly+1초 폴링
+- **분석 페이지 모의매수 메모칸** 추가 (`616739a`)
+- **랭킹 실시간 평가** (`94be6ed`): `_realtime_total_map`으로 전원 보유종목 현재가 재평가, 90초 캐시
+- **분석 헤더 현재가 1초 갱신** (`882c207`): 장중 현재가·등락 폴링
+- **보유종목 토스 스타일 토글** (`c9a24f1`): 평가금/현재가 · 원/$ (exchange_rate 환산)
+- **토글 active 버그 수정** (`75f25c0`): `loadAssetHistory`가 전역 `.ah-period-btn` active를
+  지워 보유종목/리뷰 토글 초기선택이 안 보이던 문제 → `.asset-history-card`로 범위 한정
+- **랭킹: 초기화 횟수 배지 🔄 + 빈 포트폴리오(1억 그대로) 제외** (`dcb475a`):
+  `User.reset_count` 컬럼 + 안기명 2회 보정(마이그레이션 멱등)
+- **재미 배지 10종** (`da8e7c0`) → **기존 카테고리로 분배** (`b916a5a`):
+  활동/트레이딩/포트폴리오/성과로 분산, 스타일 카테고리 제거
+- **분석: 고점 대비 현재가(drawdown) 위젯** (`8aeb12c`): 주요지표 상단 1주/1개월/전체 3칼럼
+
+### ✅ 직전 세션 핵심 (2026-06-09~12)
 - **보안/안정성 4종**: `/api/debug/toss` 오너 게이팅(비오너 404), import-toss 빈 응답 가드,
   `FLASK_SECRET_KEY` 운영 fail-fast, `requests==2.33.1` 고정
 - **포지션 노트**: Transaction.note(300자) + 매수/매도 모달 메모칸 + 보유카드/거래내역 표시
@@ -135,6 +149,7 @@ stock-analyzer/
 - **랭킹/프로필 필드** (2026-05-22 추가):
   - `nickname` String(30), unique, nullable (설정 안 하면 랭킹 미노출)
   - `is_public` Boolean, default True (랭킹 공개 여부)
+  - `reset_count` Integer, default 0 (모의투자 1억 초기화 횟수, 2026-06-12 추가)
 - 관계: `holdings`, `transactions`, `asset_snapshots`, `badges` (cascade delete)
 - 유니크: `(provider, provider_id)`
 
@@ -190,11 +205,12 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 - 매입가/수량 편집 모달 지원
 
 ### 모의투자 (Paper Trading)
-- `GET /api/trading/dashboard` — 총자산, 현금, 포지션(시가평가), 미실현/실현 손익, 통계
-- `POST /api/trading/buy` — body: `{ticker, name, price, quantity, currency}`
-- `POST /api/trading/sell` — body: `{ticker, price, quantity}`
+- `GET /api/trading/dashboard` — 총자산, 현금, 포지션(시가평가), 미실현/실현 손익, 통계, `exchange_rate`
+- `POST /api/trading/buy` — body: `{ticker, name, quantity, note?}` — ⚠️ price는 서버 실시간가 강제(미전송)
+- `POST /api/trading/sell` — body: `{ticker, quantity, note?}` — ⚠️ price 서버 강제, reset_count 미반환
+- `GET /api/realtime-price?ticker=` — 단일 종목 실시간 단가(모달/헤더 1초 폴링용, 서버 3초 캐시)
 - `GET /api/trading/transactions` — 거래 내역
-- `POST /api/trading/reset` — 전체 초기화 + 1억원 재지급
+- `POST /api/trading/reset` — 전체 초기화 + 1억원 재지급 (`reset_count` +1)
 
 ### 시장 데이터 / 섹터 (2026-05-21)
 - `GET /api/sectors/strength?market=US|KR&force=1` — 섹터/테마 강도 랭킹
@@ -249,7 +265,64 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
 
-### 📌 2026-06-12 — 전 AI 기능 Gemini 우선 전환 + README 갱신 (`9e31d80`, `819af22`)
+### 📌 2026-06-12 (저녁) — 모의매매 조작차단 + 랭킹 실시간평가 + UI 다수 (Opus 세션)
+
+**1) 모의매매 체결가 서버 강제 (수익률 조작 차단)** (`616739a`)
+- 문제: `trading_buy/sell`이 클라이언트가 보낸 `price`를 그대로 신뢰 → API 직접 호출로
+  임의 가격 체결 가능(수익률 조작). 프론트 가격칸도 자유 편집됨.
+- 해결: 백엔드가 클라 price 무시, `_fetch_current_price(ticker)`로 **서버 실시간가 체결**.
+  실패 시 503. body에서 price 미전송.
+- `_fetch_current_price` 강화: 토스 → 네이버(한국) → yfinance 순 + **3초 캐시**
+  (`_fetch_current_price_uncached` 분리). 토스가 한·미 모두 1순위(폴백은 보조).
+- `GET /api/realtime-price?ticker=` 신설 (모달/헤더 1초 폴링용).
+- 프론트(trading.js/main.js): 가격칸 `readonly`+`🔴실시간` 라벨, 모달 열림 동안 1초 폴링,
+  닫으면 중지. 분석 페이지 모의매수/매도 모달에 **메모칸** 추가(note 전송).
+
+**2) 랭킹 실시간 평가** (`94be6ed`)
+- 문제: `total` 랭킹이 각 유저 최신 `AssetSnapshot` 의존 → 본인이 대시보드 열어야만 갱신.
+- 해결: `_realtime_total_map(users)` — 랭킹 후보 전원 보유종목을 모아 고유 티커만 일괄
+  시세 조회 → 유저별 (현금+평가금) 총자산 실시간 계산, **90초 캐시**(`_RT_TOTAL_CACHE`).
+- `total`은 100% 실시간. `7d/30d`는 시작점=과거 스냅샷, 끝점=실시간 총자산.
+- 반환 dict에 `has_holdings` 포함(미참여자 제외용, 아래 4번).
+
+**3) 분석 헤더 현재가 1초 갱신** (`882c207`)
+- 장중(`is_market_open`)이면 `/api/realtime-price` 1초 폴링으로 현재가+등락 갱신.
+  전일종가 baseline = 분석시점(현재가−등락)으로 등락 재계산. 새 분석 시작/장마감 시 중지.
+- `startStockPricePolling`/`stopStockPricePolling` (main.js). `window._lastStock.current_price`도 갱신.
+
+**4) 보유종목 토스 스타일 토글 + 버그수정** (`c9a24f1`, `75f25c0`)
+- trading.html 보유종목 헤더에 **평가금/현재가** · **원/$** 토글 2종.
+  `_convCur`(exchange_rate로 native↔표시통화 환산) + `_fmtCur`. 손익·매입가도 환산, %는 통화무관.
+- ⚠️ 버그(`75f25c0`): `loadAssetHistory`가 `document.querySelectorAll('.ah-period-btn')`로
+  **페이지 전체** active 제거 → 같은 클래스 쓰는 보유종목/리뷰 토글 초기 active까지 삭제됐음.
+  → `.asset-history-card` 범위로 한정. (교훈: 공유 클래스 토글은 컨테이너 범위 필수)
+
+**5) 랭킹: 초기화 횟수 배지 + 미참여자 제외** (`dcb475a`)
+- `User.reset_count` 컬럼(마이그레이션 `ADD COLUMN ... DEFAULT 0`), `trading_reset`에서 +1.
+- 안기명 2회 보정: `UPDATE users SET reset_count=2 WHERE nickname='안기명' AND COALESCE(reset_count,0)=0` (멱등).
+- leaderboard 응답에 `reset_count`, leaderboard.js 닉네임 옆 `🔄N` 배지(.lb-reset-tag).
+- 보유종목 0 + 총자산 == 초기금(1억)이면 랭킹 제외(사실상 미참여).
+
+**6) 재미 배지 10종 추가 후 카테고리 분배** (`da8e7c0` → `b916a5a`)
+- 신규: 올빼미🦉 큰손🐳 단주의낭만🪙 물타기장인💧 종목수집가🗂️ 광속매매⚡
+  다이아몬드핸드💎 연승행진🔥 칼같은손절✂️ 풀베팅🎲 (25→35개).
+- `_build_badge_context`에 통계 9종 추가: night_owl_count, max_single_trade_krw,
+  has_single_share, max_same_ticker_buys, unique_tickers_traded, worst_holding_pct,
+  max_win_streak, cash_ratio, same_day_flip.
+- 처음엔 전부 "스타일" 카테고리 → 사용자 요청으로 활동/트레이딩/포트폴리오/성과에 분산,
+  스타일 제거. 분포: 활동6 수익6 트레이딩6 포트폴리오6 글로벌3 성과5 꾸준함3.
+
+**7) 분석: 고점 대비 현재가(drawdown) 위젯** (`8aeb12c`)
+- analyze에 `calc_drawdown(days)` — 기간 내 최고가(High) 대비 현재가 %, 신고가 갱신 여부.
+  `stock_data["drawdowns"] = {1w, 1m, all}`.
+- 주요지표 카드 상단 미니위젯(3칼럼): `renderDrawdowns`. 하락폭 색상(노랑→주황→빨강),
+  신고가는 초록 🔺. 모바일 3칼럼 유지 반응형.
+- 위치 선정: 52주 고점/저점과 같은 가격위치/리스크 맥락 → 기술적 "주요 지표"(투자판단 아님).
+
+**Railway 장애 메모**: 이 세션 중 Railway 인시던트로 webhook 누락 → 일부 커밋 자동배포 안 됨.
+빈 커밋(`e66a6be`) push로 재트리거 해결. 수동 Redeploy가 막히면 빈 커밋이 우회책.
+
+### 📌 2026-06-12 (낮) — 전 AI 기능 Gemini 우선 전환 + README 갱신 (`9e31d80`, `819af22`)
 
 **1) 기업분석·급등이유도 Gemini 우선으로** (`9e31d80`)
 - `analyze_move_reason` / `fetch_company_overview`의 `_groq_chat` 직접 호출을
@@ -964,7 +1037,17 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
 ```
 main 브랜치 (origin/main과 동기화됨, 모두 정상 배포)
 
-819af22 docs: README 전면 업데이트                                          ← HEAD
+b916a5a refactor: 신규 배지 10종 기존 카테고리로 분배 (스타일 제거)          ← HEAD
+8aeb12c feat: 분석 페이지 고점 대비 현재가(drawdown) 위젯
+da8e7c0 feat: 재미 배지 10종 추가 (스타일 카테고리, 25→35개)
+dcb475a feat: 랭킹 초기화 횟수 배지 + 빈 포트폴리오(1억) 제외
+75f25c0 fix: 자산차트 토글이 보유종목/리뷰 토글 active까지 지우던 버그
+e66a6be chore: 재배포 트리거 (Railway 장애 우회)
+c9a24f1 feat: 모의투자 보유종목 토스 스타일 토글 (평가금/현재가 · 원/$)
+882c207 feat: 분석 페이지 헤더 현재가 1초 실시간 갱신
+94be6ed feat: 랭킹 수익률 실시간 평가 (본인 접속 무관 갱신)
+616739a fix: 모의매매 체결가 서버 실시간가 강제 (조작 차단) + 분석 매수 메모칸
+819af22 docs: README 전면 업데이트
 9e31d80 feat: 기업분석·급등이유 AI를 Gemini 우선으로 전환
 7bb0eab feat: AI 코치/포트폴리오 점검 Gemini 전환 (_gemini_chat + _ai_chat)
 ...     (2026-06-09~11: 보안4종 / 포지션노트 / AI코치 / 포트폴리오점검 / 분석버튼)
@@ -1010,8 +1093,8 @@ b52dfcb feat: 섹터/테마 강도 랭킹 탭 추가 (모멘텀+거래량/breadt
 68d0575 feat: 분석↔모의투자 통합 - 분석 페이지에서 바로 모의 매수/매도
 ```
 
-**Service Worker**: `sa-v38`
-**HTML 캐시 버스팅 쿼리**: `?v=38`
+**Service Worker**: `sa-v46`
+**HTML 캐시 버스팅 쿼리**: `?v=46`
 
 **2026-06-05 토스 세션 신규/수정 파일**:
 - `toss_api.py` — 시세/캔들/환율/계좌/보유종목 + OAuth2 + 프록시(`_req`) + 다계좌 합산
