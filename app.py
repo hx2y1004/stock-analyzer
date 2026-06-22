@@ -4676,11 +4676,54 @@ def my_nickname():
     return jsonify({"ok": True, "nickname": nick})
 
 
+# ── 랭킹 실시간 평가 (본인 접속과 무관하게 전 참가자 수익률 갱신) ──
+_RT_TOTAL_CACHE = {"ts": 0.0, "data": {}}   # {user_id: total_assets_krw}
+_RT_TOTAL_TTL = 90                          # 90초 — 시세 일괄 조회 부하 완화
+
+def _realtime_total_map(users):
+    """랭킹 후보 유저들의 현재 총자산(KRW) 맵을 실시간 계산.
+    모든 보유종목을 모아 고유 티커만 일괄 시세 조회 → 유저별 (현금 + 평가금액).
+    90초 캐시 (누가 랭킹을 열든 그 시점 최신가로 전원 재평가)."""
+    now = time.time()
+    if _RT_TOTAL_CACHE["data"] and (now - _RT_TOTAL_CACHE["ts"]) < _RT_TOTAL_TTL:
+        return _RT_TOTAL_CACHE["data"]
+
+    fx = _get_usd_krw_rate()
+    user_ids = [u.id for u in users]
+    holdings = PaperHolding.query.filter(PaperHolding.user_id.in_(user_ids)).all() if user_ids else []
+
+    # 고유 티커만 병렬 시세 조회 (dashboard와 동일 패턴, _fetch_current_price는 3초 캐시)
+    tickers = list({h.ticker for h in holdings})
+    prices = {}
+    if tickers:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            prices = dict(ex.map(lambda t: (t, _fetch_current_price(t)), tickers))
+
+    pos_value = {}
+    for h in holdings:
+        cp = prices.get(h.ticker) or 0
+        val_native = cp * h.quantity
+        val_krw = val_native if (h.currency or "USD") == "KRW" else val_native * fx
+        pos_value[h.user_id] = pos_value.get(h.user_id, 0.0) + val_krw
+
+    out = {}
+    for u in users:
+        cash = u.cash_balance if u.cash_balance is not None else INITIAL_CAPITAL_KRW
+        out[u.id] = cash + pos_value.get(u.id, 0.0)
+
+    _RT_TOTAL_CACHE["ts"] = now
+    _RT_TOTAL_CACHE["data"] = out
+    return out
+
+
 @app.route("/api/leaderboard")
 def leaderboard():
     """전체 랭킹.
     Query: metric=total|7d|30d (default total), limit=50
     Returns: [{rank, nickname, profile_image, return_pct, total_assets_krw, is_me}]
+    수익률은 실시간 평가 — 각 참가자의 보유종목을 현재가로 재계산하므로
+    본인 로그인 여부와 무관하게 항상 최신.
     """
     from datetime import date, timedelta
     metric = (request.args.get("metric") or "total").lower()
@@ -4694,28 +4737,30 @@ def leaderboard():
         User.is_public.is_(True),
     ).all()
 
+    # 전 참가자 현재 총자산 실시간 평가 (본인 접속과 무관하게 갱신)
+    totals = _realtime_total_map(users)
+
     rows = []
     for u in users:
+        cur_total = totals.get(u.id)
+        if cur_total is None:
+            continue
         if metric == "total":
             initial = u.initial_capital or INITIAL_CAPITAL_KRW
-            # 최신 스냅샷 또는 현재 cash 기반
-            last = AssetSnapshot.query.filter_by(user_id=u.id)\
-                    .order_by(AssetSnapshot.date.desc()).first()
-            if not last:
-                continue
-            ret_pct = (last.total_assets_krw / initial - 1) * 100 if initial > 0 else 0
-            total_krw = last.total_assets_krw
+            ret_pct = (cur_total / initial - 1) * 100 if initial > 0 else 0
+            total_krw = cur_total
         else:
+            # 시작점은 과거 스냅샷, 끝점은 실시간 총자산 (끝점은 본인 접속 무관 갱신)
             days = 7 if metric == "7d" else 30
             cutoff = date.today() - timedelta(days=days)
-            recent_snaps = AssetSnapshot.query.filter(
+            start_snap = AssetSnapshot.query.filter(
                 AssetSnapshot.user_id == u.id,
                 AssetSnapshot.date >= cutoff,
-            ).order_by(AssetSnapshot.date.asc()).all()
-            if len(recent_snaps) < 2:
+            ).order_by(AssetSnapshot.date.asc()).first()
+            if not start_snap:
                 continue
-            start_v = recent_snaps[0].total_assets_krw
-            end_v   = recent_snaps[-1].total_assets_krw
+            start_v = start_snap.total_assets_krw
+            end_v   = cur_total
             if start_v <= 0:
                 continue
             ret_pct = (end_v / start_v - 1) * 100
