@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=38" />
+  <link rel="stylesheet" href="/static/css/style.css?v=39" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -233,12 +233,9 @@
         <input type="hidden" id="buyName" />
         <input type="hidden" id="buyCurrency" />
         <div class="add-field">
-          <label>매수가 <span id="buyCurrencyLabel">(USD)</span></label>
-          <div class="num-input-wrap">
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', -1)">−</button>
-            <input id="buyPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('buy','buyPrice', 1)">+</button>
-          </div>
+          <label>매수가 <span id="buyCurrencyLabel">(USD)</span> <span class="live-price-tag">🔴 실시간</span></label>
+          <input id="buyPrice" class="add-input price-readonly" type="text" readonly tabindex="-1" />
+          <p class="price-hint">체결가는 매수 시점의 실시간 시세로 자동 적용됩니다</p>
         </div>
         <div class="add-field">
           <label>수량</label>
@@ -270,12 +267,9 @@
         <input type="hidden" id="sellTicker" />
         <input type="hidden" id="sellCurrency" />
         <div class="add-field">
-          <label>매도가 <span id="sellCurrencyLabel">(USD)</span></label>
-          <div class="num-input-wrap">
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', -1)">−</button>
-            <input id="sellPrice" class="add-input" type="number" min="0" step="any" inputmode="decimal" />
-            <button type="button" class="num-step-btn" tabindex="-1" onclick="_stepTradeNum('sell','sellPrice', 1)">+</button>
-          </div>
+          <label>매도가 <span id="sellCurrencyLabel">(USD)</span> <span class="live-price-tag">🔴 실시간</span></label>
+          <input id="sellPrice" class="add-input price-readonly" type="text" readonly tabindex="-1" />
+          <p class="price-hint">체결가는 매도 시점의 실시간 시세로 자동 적용됩니다</p>
         </div>
         <div class="add-field">
           <label>수량 (최대 <span id="sellMaxQty">0</span>주)</label>
@@ -298,6 +292,6 @@
     </div>
   </div>
 
-  <script src="/static/js/trading.js?v=38"></script>
+  <script src="/static/js/trading.js?v=39"></script>
 </body>
 </html>

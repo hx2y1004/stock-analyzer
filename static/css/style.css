@@ -4083,3 +4083,27 @@ body {
 @media (max-width: 640px) {
   .pf-toss-btn, .pf-add-btn { font-size: 12px; padding: 6px 10px; }
 }
+
+/* 모의매매 실시간 단가 (readonly) */
+.live-price-tag {
+  font-size: 11px;
+  color: var(--red);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.add-input.price-readonly {
+  background: rgba(88, 166, 255, 0.06);
+  border-color: var(--border);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 16px;
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+.add-input.price-readonly:focus { outline: none; border-color: var(--border); }
+.price-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text2);
+  line-height: 1.4;
+}

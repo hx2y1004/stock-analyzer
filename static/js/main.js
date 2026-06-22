@@ -2809,6 +2809,28 @@ async function renderPaperTradeActions(stock) {
   } catch (e) { /* 무시 */ }
 }
 
+// ── 실시간 단가 폴링 (체결가는 서버가 강제하므로 화면은 참고용) ──
+let _paperPriceTimer = null;
+function startPaperPricePolling(ticker, priceInputId, onUpdate) {
+  stopPaperPricePolling();
+  const apply = async () => {
+    try {
+      const r = await fetch(`/api/realtime-price?ticker=${encodeURIComponent(ticker)}`);
+      const d = await r.json();
+      if (d && d.price) {
+        const el = document.getElementById(priceInputId);
+        if (el) el.value = d.currency === 'KRW' ? Math.round(d.price) : Number(d.price).toFixed(2);
+        if (onUpdate) onUpdate();
+      }
+    } catch (e) { /* 무시 */ }
+  };
+  apply();
+  _paperPriceTimer = setInterval(apply, 1000);
+}
+function stopPaperPricePolling() {
+  if (_paperPriceTimer) { clearInterval(_paperPriceTimer); _paperPriceTimer = null; }
+}
+
 // ── 매수 모달 ──
 function openPaperBuyFromAnalysis() {
   if (!currentUser) { openLoginModal(); return; }
@@ -2824,14 +2846,17 @@ function openPaperBuyFromAnalysis() {
   document.getElementById('paperBuyDesc').textContent = `${stock.name || stock.ticker} (${stock.ticker})`;
   document.getElementById('paperBuyPrice').value = cur === 'KRW' ? Math.round(price) : (price ? Number(price).toFixed(2) : '');
   document.getElementById('paperBuyQty').value = '';
+  document.getElementById('paperBuyNote').value = '';
   updatePaperBuySummary();
   document.getElementById('paperBuyModal').classList.remove('hidden');
+  startPaperPricePolling(stock.ticker, 'paperBuyPrice', updatePaperBuySummary);
   setTimeout(() => document.getElementById('paperBuyQty').focus(), 50);
 }
 
 function closePaperBuyModal(event) {
   if (!event || event.target === document.getElementById('paperBuyModal')) {
     document.getElementById('paperBuyModal').classList.add('hidden');
+    stopPaperPricePolling();
   }
 }
 
@@ -2861,12 +2886,15 @@ async function submitPaperBuy() {
   const name   = document.getElementById('paperBuyName').value;
   const price  = parseFloat(document.getElementById('paperBuyPrice').value);
   const qty    = parseFloat(document.getElementById('paperBuyQty').value);
-  if (!price || !qty || price <= 0 || qty <= 0) { alert('가격/수량을 입력해주세요'); return; }
+  const note   = (document.getElementById('paperBuyNote').value || '').trim();
+  if (!qty || qty <= 0) { alert('수량을 입력해주세요'); return; }
+  if (!price || price <= 0) { alert('현재가를 불러오는 중입니다. 잠시 후 다시 시도해주세요'); return; }
+  // 체결가는 서버 실시간가로 강제됨 (price 미전송 → 조작 차단)
   try {
     const r = await fetch('/api/trading/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, name, price, quantity: qty }),
+      body: JSON.stringify({ ticker, name, quantity: qty, note }),
     });
     const d = await r.json();
     if (!r.ok) { alert(d.error || '매수 실패'); return; }
@@ -2900,16 +2928,19 @@ function openPaperSellFromAnalysis() {
     `${stock.name || stock.ticker} (${stock.ticker}) · 보유 ${maxQty}주 · 평균 ${_fmtNative(avg, cur)}`;
   document.getElementById('paperSellPrice').value = cur === 'KRW' ? Math.round(price) : (price ? Number(price).toFixed(2) : '');
   document.getElementById('paperSellQty').value = '';
+  document.getElementById('paperSellNote').value = '';
   document.getElementById('paperSellMaxQty').textContent = maxQty;
   _paperSellMaxQty = maxQty;
   updatePaperSellSummary();
   document.getElementById('paperSellModal').classList.remove('hidden');
+  startPaperPricePolling(stock.ticker, 'paperSellPrice', updatePaperSellSummary);
   setTimeout(() => document.getElementById('paperSellQty').focus(), 50);
 }
 
 function closePaperSellModal(event) {
   if (!event || event.target === document.getElementById('paperSellModal')) {
     document.getElementById('paperSellModal').classList.add('hidden');
+    stopPaperPricePolling();
   }
 }
 
@@ -2953,13 +2984,16 @@ async function submitPaperSell() {
   const ticker = document.getElementById('paperSellTicker').value;
   const price  = parseFloat(document.getElementById('paperSellPrice').value);
   const qty    = parseFloat(document.getElementById('paperSellQty').value);
-  if (!price || !qty || price <= 0 || qty <= 0) { alert('가격/수량을 입력해주세요'); return; }
+  const note   = (document.getElementById('paperSellNote').value || '').trim();
+  if (!qty || qty <= 0) { alert('수량을 입력해주세요'); return; }
+  if (!price || price <= 0) { alert('현재가를 불러오는 중입니다. 잠시 후 다시 시도해주세요'); return; }
   if (qty > _paperSellMaxQty) { alert(`보유 수량(${_paperSellMaxQty})을 초과할 수 없습니다`); return; }
+  // 체결가는 서버 실시간가로 강제됨 (price 미전송 → 조작 차단)
   try {
     const r = await fetch('/api/trading/sell', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, price, quantity: qty }),
+      body: JSON.stringify({ ticker, quantity: qty, note }),
     });
     const d = await r.json();
     if (!r.ok) { alert(d.error || '매도 실패'); return; }
@@ -2995,23 +3029,15 @@ function _stepPaper(modalType, inputId, direction) {
 }
 
 // 모달 입력 이벤트 바인딩 (DOMContentLoaded에서)
+// 가격(paperBuyPrice/paperSellPrice)은 서버 실시간가로 자동 갱신되는 readonly 필드 — 수량만 조작 가능
 document.addEventListener('DOMContentLoaded', () => {
-  ['paperBuyPrice', 'paperBuyQty'].forEach(id => {
+  [['paperBuyQty', 'buy', updatePaperBuySummary], ['paperSellQty', 'sell', updatePaperSellSummary]].forEach(([id, type, upd]) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('input', updatePaperBuySummary);
+    el.addEventListener('input', upd);
     el.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepPaper('buy', id, 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); _stepPaper('buy', id, -1); }
-    });
-  });
-  ['paperSellPrice', 'paperSellQty'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('input', updatePaperSellSummary);
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepPaper('sell', id, 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); _stepPaper('sell', id, -1); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepPaper(type, id, 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _stepPaper(type, id, -1); }
     });
   });
 });
