@@ -4107,3 +4107,18 @@ body {
   color: var(--text2);
   line-height: 1.4;
 }
+
+/* 보유종목 표시 토글 (평가금/현재가 · 원/$) */
+.pos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.pos-toggles {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
