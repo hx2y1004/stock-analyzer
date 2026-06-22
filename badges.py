@@ -145,56 +145,62 @@ BADGES = [
         "check": lambda c: c["snapshot_days"] >= 30,
     },
 
-    # ─── 재미/스타일 (히든) ──────────────────────────
+    # ─── 추가: 거래 습관 (활동) ──────────────────────
     {
         "key": "night_owl", "name": "올빼미", "icon": "🦉", "tier": "bronze",
-        "category": "스타일", "desc": "한밤중(한국시간 0~6시) 거래 10회 — 미국장 시간대 매매",
+        "category": "활동", "desc": "한밤중(한국시간 0~6시) 거래 10회 — 미국장 시간대 매매",
         "check": lambda c: c["night_owl_count"] >= 10,
     },
     {
+        "key": "single_share", "name": "단주의 낭만", "icon": "🪙", "tier": "bronze",
+        "category": "활동", "desc": "딱 1주만 매매해보기",
+        "check": lambda c: c["has_single_share"],
+    },
+
+    # ─── 추가: 매매 기법 (트레이딩) ──────────────────
+    {
         "key": "whale", "name": "큰손", "icon": "🐳", "tier": "silver",
-        "category": "스타일", "desc": "단일 거래 5천만원 이상 체결",
+        "category": "트레이딩", "desc": "단일 거래 5천만원 이상 체결",
         "check": lambda c: c["max_single_trade_krw"] >= 50_000_000,
     },
     {
-        "key": "single_share", "name": "단주의 낭만", "icon": "🪙", "tier": "bronze",
-        "category": "스타일", "desc": "딱 1주만 매매해보기",
-        "check": lambda c: c["has_single_share"],
-    },
-    {
         "key": "averaging_down", "name": "물타기 장인", "icon": "💧", "tier": "silver",
-        "category": "스타일", "desc": "같은 종목을 3번 이상 나눠서 매수",
+        "category": "트레이딩", "desc": "같은 종목을 3번 이상 나눠서 매수",
         "check": lambda c: c["max_same_ticker_buys"] >= 3,
     },
     {
+        "key": "speed_trader", "name": "광속 매매", "icon": "⚡", "tier": "silver",
+        "category": "트레이딩", "desc": "매수한 날 바로 매도 (당일 단타)",
+        "check": lambda c: c["same_day_flip"],
+    },
+
+    # ─── 추가: 보유/포지션 (포트폴리오) ──────────────
+    {
         "key": "collector", "name": "종목 수집가", "icon": "🗂️", "tier": "gold",
-        "category": "스타일", "desc": "서로 다른 20개 종목 거래",
+        "category": "포트폴리오", "desc": "서로 다른 20개 종목 거래",
         "check": lambda c: c["unique_tickers_traded"] >= 20,
     },
     {
-        "key": "speed_trader", "name": "광속 매매", "icon": "⚡", "tier": "silver",
-        "category": "스타일", "desc": "매수한 날 바로 매도 (당일 단타)",
-        "check": lambda c: c["same_day_flip"],
-    },
-    {
         "key": "diamond_hands", "name": "다이아몬드 핸드", "icon": "💎", "tier": "gold",
-        "category": "스타일", "desc": "-20% 평가손실에도 안 팔고 버티는 중",
+        "category": "포트폴리오", "desc": "-20% 평가손실에도 안 팔고 버티는 중",
         "check": lambda c: c["worst_holding_pct"] <= -20 and c["holdings_count"] >= 1,
     },
     {
+        "key": "all_in", "name": "풀베팅", "icon": "🎲", "tier": "gold",
+        "category": "포트폴리오", "desc": "현금 비중 3% 미만 — 총알을 거의 다 투입",
+        "check": lambda c: c["holdings_count"] >= 1 and c["cash_ratio"] < 0.03,
+    },
+
+    # ─── 추가: 승부/관리 (성과) ──────────────────────
+    {
         "key": "win_streak_5", "name": "연승 행진", "icon": "🔥", "tier": "silver",
-        "category": "스타일", "desc": "5연속 익절 매도 성공",
+        "category": "성과", "desc": "5연속 익절 매도 성공",
         "check": lambda c: c["max_win_streak"] >= 5,
     },
     {
         "key": "sharp_cut", "name": "칼같은 손절", "icon": "✂️", "tier": "silver",
-        "category": "스타일", "desc": "손절 매도 5회 — 냉정한 리스크 관리",
+        "category": "성과", "desc": "손절 매도 5회 — 냉정한 리스크 관리",
         "check": lambda c: c["loss_cut_count"] >= 5,
-    },
-    {
-        "key": "all_in", "name": "풀베팅", "icon": "🎲", "tier": "gold",
-        "category": "스타일", "desc": "현금 비중 3% 미만 — 총알을 거의 다 투입",
-        "check": lambda c: c["holdings_count"] >= 1 and c["cash_ratio"] < 0.03,
     },
 ]
 
