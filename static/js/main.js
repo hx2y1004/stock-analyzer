@@ -1326,8 +1326,39 @@ function renderVerdict(analysis, stock) {
   }
 }
 
+function renderDrawdowns(stock) {
+  const w = document.getElementById('drawdownWidget');
+  if (!w) return;
+  const dd = stock.drawdowns;
+  if (!dd) { w.classList.add('hidden'); return; }
+  const cur = stock.currency;
+
+  const fill = (d, valId, highId) => {
+    const valEl = document.getElementById(valId);
+    const highEl = document.getElementById(highId);
+    if (!valEl) return;
+    if (!d) { valEl.textContent = '—'; valEl.className = 'dd-val'; if (highEl) highEl.textContent = ''; return; }
+    if (d.at_high) {
+      valEl.textContent = '🔺 신고가';
+      valEl.className = 'dd-val dd-newhigh';
+    } else {
+      const p = d.pct;                       // 음수
+      valEl.textContent = `${p.toFixed(1)}%`;
+      // 하락폭 클수록 진하게
+      const lvl = p <= -20 ? 'dd-deep' : p <= -8 ? 'dd-mid' : 'dd-soft';
+      valEl.className = `dd-val ${lvl}`;
+    }
+    if (highEl) highEl.textContent = `고점 ${fmt(d.high, cur)}`;
+  };
+  fill(dd['1w'], 'dd1w', 'dd1wHigh');
+  fill(dd['1m'], 'dd1m', 'dd1mHigh');
+  fill(dd['all'], 'ddAll', 'ddAllHigh');
+  w.classList.remove('hidden');
+}
+
 function renderMetrics(stock, analysis) {
   const cur = stock.currency;
+  renderDrawdowns(stock);
   document.getElementById('yearHigh').textContent = fmt(stock.year_high, cur);
   document.getElementById('yearLow').textContent = fmt(stock.year_low, cur);
 

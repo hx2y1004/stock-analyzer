@@ -3293,6 +3293,31 @@ def analyze():
         stock_data["return_3m"]  = calc_return(63)
         stock_data["return_1y"]  = calc_return(252)
 
+        # 기간별 고점 대비 현재가 하락률 (drawdown) — 현재가가 고점이면 신고가 갱신
+        def calc_drawdown(days=None):
+            try:
+                sub = df if days is None else df.tail(days)
+                if sub is None or len(sub) == 0:
+                    return None
+                col = "High" if "High" in sub.columns else "Close"
+                high = float(sub[col].max())
+                if not high or high <= 0 or current_price is None:
+                    return None
+                pct = (current_price / high - 1) * 100
+                return {
+                    "high":    round(high, 4),
+                    "pct":     round(pct, 2),                      # 0 또는 음수 (고점 아래일 때)
+                    "at_high": current_price >= high - 1e-9,       # 신고가 갱신 중
+                }
+            except Exception:
+                return None
+
+        stock_data["drawdowns"] = {
+            "1w":  calc_drawdown(5),
+            "1m":  calc_drawdown(21),
+            "all": calc_drawdown(None),
+        }
+
         news_data    = fetch_news(stock)
 
         # ── 시장 컨텍스트 + 다가오는 이벤트 ──────────────────────────────
