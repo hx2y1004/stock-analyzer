@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=40" />
+  <link rel="stylesheet" href="/static/css/style.css?v=41" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -133,7 +133,19 @@
 
       <!-- 보유 종목 -->
       <section class="card">
-        <h3 class="card-title">📦 보유 종목 (<span id="holdingCount">0</span>개)</h3>
+        <div class="pos-header">
+          <h3 class="card-title" style="margin:0">📦 보유 종목 (<span id="holdingCount">0</span>개)</h3>
+          <div class="pos-toggles">
+            <div class="ah-period-tabs">
+              <button class="ah-period-btn active" data-pv="value" onclick="setPosView('value', this)">평가금</button>
+              <button class="ah-period-btn" data-pv="price" onclick="setPosView('price', this)">현재가</button>
+            </div>
+            <div class="ah-period-tabs">
+              <button class="ah-period-btn active" data-pc="KRW" onclick="setPosCur('KRW', this)">원</button>
+              <button class="ah-period-btn" data-pc="USD" onclick="setPosCur('USD', this)">$</button>
+            </div>
+          </div>
+        </div>
         <div id="positionsList" class="positions-list">
           <div class="empty-state">보유 종목이 없습니다. 위에서 매수해보세요!</div>
         </div>
@@ -292,6 +304,6 @@
     </div>
   </div>
 
-  <script src="/static/js/trading.js?v=40"></script>
+  <script src="/static/js/trading.js?v=41"></script>
 </body>
 </html>

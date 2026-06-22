@@ -14,6 +14,35 @@ const fmtNative = (v, cur) => {
 const fmtPct = (v) => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
 const _ko = (t) => /[가-힯]/.test(t);
 
+// ── 보유종목 표시 토글 (토스 스타일: 평가금/현재가 · 원/$) ──
+let _posView = 'value';   // 'value'(평가금) | 'price'(현재가)
+let _posCur  = 'KRW';     // 'KRW'(원) | 'USD'($)
+// native 통화 금액 → 표시 통화로 환산
+function _convCur(val, fromCur, toCur, fx) {
+  if (val == null) return null;
+  if (fromCur === toCur) return val;
+  if (fromCur === 'USD' && toCur === 'KRW') return val * fx;
+  if (fromCur === 'KRW' && toCur === 'USD') return val / fx;
+  return val;
+}
+function _fmtCur(val, cur) {
+  if (val == null) return '—';
+  if (cur === 'KRW') return Math.round(val).toLocaleString('ko-KR') + '원';
+  return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function setPosView(v, btn) {
+  _posView = v;
+  btn.parentElement.querySelectorAll('.ah-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (dashboardData && dashboardData.positions) renderPositions(dashboardData.positions);
+}
+function setPosCur(c, btn) {
+  _posCur = c;
+  btn.parentElement.querySelectorAll('.ah-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (dashboardData && dashboardData.positions) renderPositions(dashboardData.positions);
+}
+
 // ── 초기화 ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   await checkAuthAndLoad();
@@ -266,6 +295,8 @@ function renderPositions(positions) {
   // 수익률 내림차순
   positions.sort((a, b) => (b.pnl_pct || 0) - (a.pnl_pct || 0));
 
+  const fx = dashboardData ? (dashboardData.exchange_rate || 1380) : 1380;
+
   el.innerHTML = positions.map((p, idx) => {
     const medals = ['🥇', '🥈', '🥉'];
     const rank = idx < 3 && p.pnl_pct > 0 ? `<div class="trend-rank trend-rank-medal">${medals[idx]}</div>`
@@ -286,6 +317,14 @@ function renderPositions(positions) {
       p.pnl_pct >  0      ? 'pf-dir-gain' :
       p.pnl_pct === 0     ? 'pf-dir-flat' : 'pf-dir-loss';
     const tierClass = (idx < 3 && p.pnl_pct > 0) ? `trend-tier-${idx + 1}` : '';
+    // 토글 모드별 메인 숫자/손익/매입가 (모두 native → 표시통화 환산)
+    const priceNative = p.current_price;
+    const valueNative = (p.current_price || 0) * p.quantity;
+    const mainConv = _convCur(_posView === 'price' ? priceNative : valueNative, p.currency, _posCur, fx);
+    const pnlNative = ((p.current_price || 0) - p.purchase_price) * p.quantity;
+    const pnlConv = _convCur(pnlNative, p.currency, _posCur, fx);
+    const buyConv = _convCur(p.purchase_price, p.currency, _posCur, fx);
+    const mainLabel = _posView === 'price' ? '현재가' : '평가금';
     return `
       <div class="pf-card trend-card-v2 ${tierClass} ${dirClass}">
         <div class="trend-card-row">
@@ -296,15 +335,15 @@ function renderPositions(positions) {
           </div>
           <div class="trend-spark-wrap"></div>
           <div class="trend-price-block">
-            <div class="trend-price-val">${fmtNative(p.current_price, p.currency)}</div>
-            <div class="trend-chg pf-${cls} pf-amount">${(p.pnl_krw >= 0 ? '+' : '') + fmtKRW(p.pnl_krw)}</div>
+            <div class="trend-price-val" title="${mainLabel}">${_fmtCur(mainConv, _posCur)}</div>
+            <div class="trend-chg pf-${cls} pf-amount">${(pnlConv >= 0 ? '+' : '') + _fmtCur(pnlConv, _posCur)}</div>
           </div>
           <div class="trend-score-v2 ${badgeCls}">
             ${icon} ${Math.abs(p.pnl_pct).toFixed(1)}<span class="score-suffix">%</span>
           </div>
         </div>
         <div class="pf-meta-row">
-          <span class="pf-meta-item">📌 매입 ${fmtNative(p.purchase_price, p.currency)}</span>
+          <span class="pf-meta-item">📌 매입 ${_fmtCur(buyConv, _posCur)}</span>
           <span class="pf-meta-item">📦 ${p.quantity}주</span>
           <button class="trade-action-btn buy" onclick="openBuyModalForHolding('${p.ticker}','${p.name}','${p.currency}',${p.current_price || 0})">💰 추가매수</button>
           <button class="trade-action-btn sell" onclick="openSellModal('${p.ticker}','${p.name}','${p.currency}',${p.current_price || 0},${p.quantity})">💸 매도</button>
