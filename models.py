@@ -26,6 +26,7 @@ class User(UserMixin, db.Model):
     # 랭킹/프로필
     nickname        = db.Column(db.String(30), unique=True, nullable=True)
     is_public       = db.Column(db.Boolean, default=True)   # 랭킹 공개 여부
+    reset_count     = db.Column(db.Integer, default=0)      # 모의투자 1억 초기화 횟수
 
     holdings = db.relationship(
         "Holding", backref="user", lazy=True, cascade="all, delete-orphan"

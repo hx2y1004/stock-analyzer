@@ -162,6 +162,14 @@ with app.app_context():
             conn.execute(text(
                 "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS note VARCHAR(300)"
             ))
+            # 모의투자 초기화 횟수
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_count INTEGER DEFAULT 0"
+            ))
+            # 일회성 보정: 컬럼 도입 전 초기화 이력 반영 (멱등 — 이미 값 있으면 스킵)
+            conn.execute(text(
+                "UPDATE users SET reset_count = 2 WHERE nickname = '안기명' AND COALESCE(reset_count, 0) = 0"
+            ))
             # ── paper_holdings: 모의투자 보유종목 (실제 포트폴리오 holdings와 분리) ──
             # 테이블(create_all 이 이미 생성)이 '원래 없었을 때만' 기존 holdings 를 1회 이전.
             conn.execute(text(
@@ -4701,7 +4709,9 @@ def _realtime_total_map(users):
             prices = dict(ex.map(lambda t: (t, _fetch_current_price(t)), tickers))
 
     pos_value = {}
+    holders = set()
     for h in holdings:
+        holders.add(h.user_id)
         cp = prices.get(h.ticker) or 0
         val_native = cp * h.quantity
         val_krw = val_native if (h.currency or "USD") == "KRW" else val_native * fx
@@ -4710,7 +4720,10 @@ def _realtime_total_map(users):
     out = {}
     for u in users:
         cash = u.cash_balance if u.cash_balance is not None else INITIAL_CAPITAL_KRW
-        out[u.id] = cash + pos_value.get(u.id, 0.0)
+        out[u.id] = {
+            "total":        cash + pos_value.get(u.id, 0.0),
+            "has_holdings": u.id in holders,
+        }
 
     _RT_TOTAL_CACHE["ts"] = now
     _RT_TOTAL_CACHE["data"] = out
@@ -4742,11 +4755,15 @@ def leaderboard():
 
     rows = []
     for u in users:
-        cur_total = totals.get(u.id)
-        if cur_total is None:
+        info = totals.get(u.id)
+        if not info:
+            continue
+        cur_total = info["total"]
+        initial = u.initial_capital or INITIAL_CAPITAL_KRW
+        # 보유 종목 없고 초기금(1억) 그대로면 = 사실상 미참여 → 랭킹 제외
+        if not info["has_holdings"] and abs(cur_total - initial) < 1:
             continue
         if metric == "total":
-            initial = u.initial_capital or INITIAL_CAPITAL_KRW
             ret_pct = (cur_total / initial - 1) * 100 if initial > 0 else 0
             total_krw = cur_total
         else:
@@ -4778,6 +4795,7 @@ def leaderboard():
             "profile_image":    u.profile_image,
             "return_pct":       round(ret_pct, 2),
             "total_assets_krw": round(total_krw),
+            "reset_count":      u.reset_count or 0,
         })
 
     # 정렬 + 랭크 부여
@@ -4814,8 +4832,9 @@ def trading_reset():
     UserBadge.query.filter_by(user_id=user.id).delete()
     user.cash_balance    = INITIAL_CAPITAL_KRW
     user.initial_capital = INITIAL_CAPITAL_KRW
+    user.reset_count     = (user.reset_count or 0) + 1
     db.session.commit()
-    return jsonify({"ok": True, "cash_balance": INITIAL_CAPITAL_KRW})
+    return jsonify({"ok": True, "cash_balance": INITIAL_CAPITAL_KRW, "reset_count": user.reset_count})
 
 
 def _is_toss_owner() -> bool:

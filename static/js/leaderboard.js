@@ -72,12 +72,15 @@ async function loadLeaderboard(metric, btn) {
       const img = r.profile_image
         ? `<img src="${r.profile_image}" class="lb-avatar" onerror="this.style.display='none'"/>`
         : `<div class="lb-avatar lb-avatar-fallback">${(r.nickname || '?')[0].toUpperCase()}</div>`;
+      const resetTag = r.reset_count > 0
+        ? ` <span class="lb-reset-tag" title="1억 초기화 ${r.reset_count}회">🔄${r.reset_count}</span>`
+        : '';
       return `
         <div class="lb-row${meCls}">
           ${rankBadge}
           ${img}
           <div class="lb-name">
-            ${r.nickname}${r.is_me ? ' <span class="lb-me-tag">나</span>' : ''}
+            ${r.nickname}${r.is_me ? ' <span class="lb-me-tag">나</span>' : ''}${resetTag}
           </div>
           <div class="lb-pct ${cls}">${_fmtPct(pct)}</div>
           <div class="lb-assets">${_fmtKrw(r.total_assets_krw)}원</div>
