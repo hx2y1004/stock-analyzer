@@ -120,12 +120,12 @@ let _ahCurrentDays = 30;
 
 async function loadAssetHistory(days, btn) {
   _ahCurrentDays = days;
-  // 버튼 active 토글
-  document.querySelectorAll('.ah-period-btn').forEach(b => b.classList.remove('active'));
+  // 버튼 active 토글 — 자산차트 토글만 (보유종목/리뷰 토글은 같은 클래스라 범위 제한 필수)
+  document.querySelectorAll('.asset-history-card .ah-period-btn').forEach(b => b.classList.remove('active'));
   if (btn) {
     btn.classList.add('active');
   } else {
-    const t = document.querySelector(`.ah-period-btn[data-days="${days}"]`);
+    const t = document.querySelector(`.asset-history-card .ah-period-btn[data-days="${days}"]`);
     if (t) t.classList.add('active');
   }
   try {
