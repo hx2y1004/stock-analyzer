@@ -849,7 +849,7 @@ function renderBadges(data) {
     if (!byCat[b.category]) byCat[b.category] = [];
     byCat[b.category].push(b);
   }
-  const order = ['활동', '수익', '트레이딩', '포트폴리오', '글로벌', '성과', '꾸준함'];
+  const order = ['활동', '수익', '트레이딩', '포트폴리오', '글로벌', '성과', '꾸준함', '스타일'];
   const sortedCats = Object.keys(byCat).sort((a, b) => {
     const ai = order.indexOf(a); const bi = order.indexOf(b);
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);

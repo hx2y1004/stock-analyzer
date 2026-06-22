@@ -3920,6 +3920,44 @@ def _build_badge_context(user, dashboard_summary, positions, holdings_count):
     # 스냅샷 일수
     snapshot_days = AssetSnapshot.query.filter_by(user_id=user.id).count()
 
+    # ── 재미 배지용 추가 통계 ──
+    from collections import Counter
+    # 올빼미: 한국시간 0~6시(미국장 시간대) 거래 수 (timestamp는 UTC 저장)
+    night_owl_count = sum(
+        1 for t in txs if t.timestamp and 0 <= ((t.timestamp.hour + 9) % 24) < 6
+    )
+    # 단일 거래 최대 금액 (KRW)
+    max_single_trade_krw = max((t.amount_krw or 0) for t in txs) if txs else 0
+    # 1주 매매 경험
+    has_single_share = any(abs((t.quantity or 0) - 1) < 1e-9 for t in txs)
+    # 동일 종목 최다 매수 횟수 (물타기)
+    buy_ticker_counts = Counter(t.ticker for t in txs if t.type == "buy")
+    max_same_ticker_buys = max(buy_ticker_counts.values()) if buy_ticker_counts else 0
+    # 누적 거래 고유 종목 수
+    unique_tickers_traded = len({t.ticker for t in txs})
+    # 현재 보유 중 최저 손익률 (가장 큰 평가손실, 다이아몬드 핸드)
+    worst_holding_pct = min((p.get("pnl_pct") or 0) for p in positions) if positions else 0
+    # 최대 연속 익절 (시간순 매도)
+    sorted_sells = sorted(sells, key=lambda s: s.timestamp or datetime.min)
+    max_win_streak = _cur_streak = 0
+    for s in sorted_sells:
+        if (s.realized_pnl_krw or 0) > 0:
+            _cur_streak += 1
+            max_win_streak = max(max_win_streak, _cur_streak)
+        else:
+            _cur_streak = 0
+    # 현금 비중 (풀베팅)
+    _total = dashboard_summary["total_assets_krw"]
+    cash_ratio = ((user.cash_balance or 0) / _total) if _total > 0 else 1.0
+    # 매수 당일 매도 (광속 매매) — 같은 종목 같은 날 buy+sell
+    _buy_days, _sell_days = {}, {}
+    for t in txs:
+        if not t.timestamp:
+            continue
+        d = t.timestamp.date()
+        (_buy_days if t.type == "buy" else _sell_days).setdefault(t.ticker, set()).add(d)
+    same_day_flip = any(_buy_days.get(tk, set()) & days for tk, days in _sell_days.items())
+
     return {
         "user_id":                 user.id,
         "total_assets_krw":        dashboard_summary["total_assets_krw"],
@@ -3938,6 +3976,16 @@ def _build_badge_context(user, dashboard_summary, positions, holdings_count):
         "kr_unique_buys":          len(kr_tickers),
         "us_unique_buys":          len(us_tickers),
         "snapshot_days":           snapshot_days,
+        # 재미 배지용
+        "night_owl_count":         night_owl_count,
+        "max_single_trade_krw":    max_single_trade_krw,
+        "has_single_share":        has_single_share,
+        "max_same_ticker_buys":    max_same_ticker_buys,
+        "unique_tickers_traded":   unique_tickers_traded,
+        "worst_holding_pct":       worst_holding_pct,
+        "max_win_streak":          max_win_streak,
+        "cash_ratio":              cash_ratio,
+        "same_day_flip":           same_day_flip,
     }
 
 
