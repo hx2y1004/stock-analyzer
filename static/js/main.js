@@ -1364,12 +1364,19 @@ function renderDcf(stock) {
   if (!d || !d.fair_value) { card.classList.add('hidden'); return; }
   const cur = stock.currency;
 
-  // 1) 주인공 — 역산 성장률
+  // 1) 주인공 — 역산 (성장률 우선, 불가 시 영업이익률로 전환)
+  const labEl = document.getElementById('dcfHeroLabel');
   const impEl = document.getElementById('dcfImplied');
   const cmpEl = document.getElementById('dcfImpliedCmp');
+  const altEl = document.getElementById('dcfImpliedAlt');
   const a = d.assumptions || {};
+  altEl.textContent = '';
+
   if (d.implied_growth_pct != null) {
+    // 마진을 현재 수준으로 고정했을 때, 시장이 전제하는 매출성장률
+    labEl.textContent = '현재 주가가 반영 중인 매출성장률';
     impEl.textContent = `연 ${d.implied_growth_pct}%`;
+    impEl.className = 'dcf-hero-val';
     const parts = [];
     if (a.consensus_growth_pct != null) parts.push(`컨센서스 ${a.consensus_growth_pct}%`);
     if (a.hist_cagr_pct != null) parts.push(`과거 ${a.hist_cagr_pct}%`);
@@ -1381,11 +1388,30 @@ function renderDcf(stock) {
               : ' · 컨센서스와 비슷한 수준';
     }
     cmpEl.textContent = (parts.length ? parts.join(' · ') : '') + verdict;
+    if (d.implied_margin_pct != null && a.ebit_margin_pct != null) {
+      altEl.textContent =
+        `또는 성장률이 컨센서스 수준이라면, 영업이익률이 ${a.ebit_margin_pct}% → ${d.implied_margin_pct}%로 올라야 합니다`;
+    }
+  } else if (d.implied_margin_pct != null) {
+    // 성장률만으로는 설명 불가 → 시장이 전제하는 '수익성 개선'으로 해석
+    labEl.textContent = '현재 주가가 반영 중인 영업이익률';
+    impEl.textContent = `${d.implied_margin_pct}%`;
     impEl.className = 'dcf-hero-val';
+    cmpEl.textContent =
+      `현재 ${a.ebit_margin_pct}% → 필요 ${d.implied_margin_pct}%` +
+      (a.base_growth_pct != null ? ` (매출 연 ${a.base_growth_pct}% 성장 가정 시)` : '');
+    altEl.textContent =
+      '성장률만으로는 현재 주가를 설명할 수 없어, 수익성 개선을 전제로 역산한 값입니다';
   } else {
-    impEl.textContent = '산출 불가';
+    // 성장·마진 어느 쪽으로도 설명 불가 — '실패'가 아니라 그 자체가 신호
+    labEl.textContent = '현재 주가가 반영 중인 기대';
+    impEl.textContent = '재무 범위 밖';
     impEl.className = 'dcf-hero-val dcf-na';
-    cmpEl.textContent = '현재 주가를 과거 재무 기반 모델로는 설명하기 어렵습니다';
+    cmpEl.textContent =
+      `매출 연 60% 성장 또는 영업이익률 70%를 가정해도 현재가에 도달하지 않습니다` +
+      (a.ebit_margin_pct != null ? ` (현재 영업이익률 ${a.ebit_margin_pct}%)` : '');
+    altEl.textContent =
+      '시장이 재무제표에 아직 없는 요인(신사업·시장 재편 기대)을 반영하고 있다는 뜻입니다';
   }
 
   // 2) 3개 기준점

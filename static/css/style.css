@@ -4286,3 +4286,9 @@ body {
   .dcf-assume-grid { grid-template-columns: 1fr 1fr; }
   .dcf-as-item { font-size: 11px; padding: 6px 8px; }
 }
+.dcf-hero-alt {
+  font-size: 11.5px; color: var(--text2); margin-top: 8px; line-height: 1.55;
+  padding-top: 8px; border-top: 1px dashed var(--border);
+}
+.dcf-hero-alt:empty { display: none; }
+@media (max-width: 560px) { .dcf-hero-alt { font-size: 10.5px; } }

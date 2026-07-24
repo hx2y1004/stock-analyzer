@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=47" />
+  <link rel="stylesheet" href="/static/css/style.css?v=48" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -325,9 +325,10 @@
 
       <!-- 주인공: 현재가가 반영 중인 성장률 -->
       <div class="dcf-hero">
-        <div class="dcf-hero-label">현재 주가가 반영 중인 매출성장률</div>
+        <div id="dcfHeroLabel" class="dcf-hero-label">현재 주가가 반영 중인 매출성장률</div>
         <div id="dcfImplied" class="dcf-hero-val">—</div>
         <div id="dcfImpliedCmp" class="dcf-hero-cmp"></div>
+        <div id="dcfImpliedAlt" class="dcf-hero-alt"></div>
       </div>
 
       <!-- 3개 기준점 -->
@@ -578,6 +579,6 @@
   </div>
 
   <script src="/static/js/chart.js"></script>
-  <script src="/static/js/main.js?v=47"></script>
+  <script src="/static/js/main.js?v=48"></script>
 </body>
 </html>
