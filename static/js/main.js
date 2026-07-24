@@ -11,16 +11,177 @@ let currentPositionData = null;
 let pfCollapsed = true;       // 포트폴리오 기본 상태: 접힘
 let pfAllHoldings = [];       // 마지막으로 불러온 전체 보유 종목
 
+// ── 페이지 모드: 홈(/) = 시황 대시보드, /stock/<ticker> = 분석 전용 ──
+function _pathTicker() {
+  const m = location.pathname.match(/^\/stock\/(.+)$/);
+  return m ? decodeURIComponent(m[1]).trim().toUpperCase() : null;
+}
+const PAGE_TICKER = _pathTicker();   // null이면 홈 모드
+
+function gotoStock(ticker) {
+  location.href = '/stock/' + encodeURIComponent(String(ticker).trim().toUpperCase());
+}
+
 // ── 앱 초기화 ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   checkAuth();
-  // /?ticker=XXX 로 진입 시 자동 분석 (모의투자 보유 종목 → 분석 연결)
+
+  // 구형 링크 호환: /?ticker=XXX → /stock/XXX 로 통일
   const _t = new URLSearchParams(location.search).get('ticker');
-  if (_t) {
+  if (!PAGE_TICKER && _t) { gotoStock(_t); return; }
+
+  if (PAGE_TICKER) {
+    // 분석 모드: 대시보드·포트폴리오 탭 숨기고(body 클래스, 비동기 로드에도 유지) 자동 분석
+    document.body.classList.add('stock-mode');
+    document.getElementById('backToHome')?.classList.remove('hidden');
     const inp = document.getElementById('tickerInput');
-    if (inp) { inp.value = _t.trim().toUpperCase(); analyze(); }
+    if (inp) inp.value = PAGE_TICKER;
+    analyze();
+  } else {
+    // 홈 모드: 시황 대시보드 로드
+    document.getElementById('marketDashboard')?.classList.remove('hidden');
+    loadMarketOverview();
+    loadHeatmap(_heatmapMarket);
+    loadMovers();
+    // 지수는 1분마다 자동 갱신
+    setInterval(loadMarketOverview, 60000);
   }
 });
+
+// ── 시황 대시보드 ────────────────────────────────────────────
+let _heatmapMarket = 'US';
+let _moversMarket = 'KR';
+let _moversData = null;
+
+async function loadMarketOverview() {
+  const el = document.getElementById('mdIndices');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/market/overview');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d.indices || !d.indices.length) return;
+    el.innerHTML = d.indices.map(ix => {
+      const chg = ix.change_pct;
+      const cls = chg == null ? '' : chg > 0 ? 'up' : chg < 0 ? 'down' : '';
+      const isVix = ix.kind === 'vix';
+      const val = ix.kind === 'fx'
+        ? '₩' + ix.value.toLocaleString('ko-KR', { maximumFractionDigits: 1 })
+        : ix.value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+      return `
+        <div class="md-idx ${isVix ? 'md-idx-vix' : ''}">
+          <div class="md-idx-label">${ix.label}</div>
+          <div class="md-idx-val">${val}</div>
+          <div class="md-idx-chg ${cls}">${chg == null ? '—' : (chg > 0 ? '+' : '') + chg.toFixed(2) + '%'}</div>
+        </div>`;
+    }).join('');
+    const st = document.getElementById('mdStatus');
+    if (st) {
+      st.innerHTML =
+        `<span class="md-dot ${d.kr_open ? 'on' : ''}"></span>한국 ${d.kr_open ? '장중' : '마감'} · ` +
+        `<span class="md-dot ${d.us_open ? 'on' : ''}"></span>미국 ${d.us_open ? '장중' : '마감'}`;
+    }
+  } catch (e) { /* 다음 주기에 재시도 */ }
+}
+
+function setHeatmapMarket(mkt, btn) {
+  _heatmapMarket = mkt;
+  btn.parentElement.querySelectorAll('.ah-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadHeatmap(mkt);
+}
+
+async function loadHeatmap(mkt) {
+  const el = document.getElementById('mdHeatmap');
+  if (!el) return;
+  el.innerHTML = '<div class="pf-loading">불러오는 중...</div>';
+  try {
+    const r = await fetch(`/api/sectors/strength?market=${mkt}`);
+    if (!r.ok) throw 0;
+    const d = await r.json();
+    let rows = d.sectors || [];
+    if (!rows.length) { el.innerHTML = '<div class="empty-state">데이터 없음</div>'; return; }
+    if (mkt === 'KR') rows = rows.slice(0, 18);   // 한국 테마는 상위만 (200개 전부는 과함)
+    // 등락률 → 색상 계층
+    const tile = (s) => {
+      const c = s.change_1d ?? 0;
+      const lvl = c >= 2 ? 'hm-up3' : c >= 1 ? 'hm-up2' : c > 0.15 ? 'hm-up1'
+                : c <= -2 ? 'hm-dn3' : c <= -1 ? 'hm-dn2' : c < -0.15 ? 'hm-dn1' : 'hm-flat';
+      const click = mkt === 'US'
+        ? `onclick="openSectorFromHeatmap('US','${s.ticker}')"`
+        : (s.theme_no ? `onclick="openSectorFromHeatmap('KR','${s.theme_no}')"` : '');
+      return `
+        <div class="hm-tile ${lvl}" ${click} title="${escapeHtmlMain(s.name)} ${c > 0 ? '+' : ''}${c}%">
+          <div class="hm-name">${escapeHtmlMain(s.name)}</div>
+          <div class="hm-chg">${c > 0 ? '+' : ''}${c}%</div>
+        </div>`;
+    };
+    el.innerHTML = `<div class="hm-grid">${rows.map(tile).join('')}</div>`;
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state">불러오기 실패 — 잠시 후 다시 시도해주세요</div>';
+  }
+}
+
+// 히트맵 타일 클릭 → 기존 섹터 강도 탭의 구성종목 API 재활용해 인라인 표시
+async function openSectorFromHeatmap(mkt, key) {
+  const el = document.getElementById('mdHeatmap');
+  try {
+    const url = mkt === 'US'
+      ? `/api/sectors/constituents?market=US&ticker=${key}`
+      : `/api/sectors/constituents?market=KR&theme_no=${key}`;
+    const r = await fetch(url);
+    if (!r.ok) return;
+    const d = await r.json();
+    const rows = d.stocks || [];
+    if (!rows.length) return;
+    const old = el.querySelector('.hm-drill');
+    if (old) old.remove();
+    const items = rows.slice(0, 10).map(s => {
+      const chg = s.change_1d;
+      const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : '';
+      const tk = s.ticker || '';
+      return `<button class="hm-drill-item" onclick="gotoStock('${tk}')">
+          <span>${escapeHtmlMain(s.name || tk)}</span>
+          <span class="${cls}">${chg == null ? '' : (chg > 0 ? '+' : '') + chg + '%'}</span>
+        </button>`;
+    }).join('');
+    el.insertAdjacentHTML('beforeend',
+      `<div class="hm-drill"><div class="hm-drill-head">구성 종목 (클릭 시 분석)</div>${items}</div>`);
+  } catch (e) { /* 무시 */ }
+}
+
+function setMoversMarket(mkt, btn) {
+  _moversMarket = mkt;
+  btn.parentElement.querySelectorAll('.ah-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderMovers();
+}
+
+async function loadMovers() {
+  try {
+    const r = await fetch('/api/market/movers');
+    if (!r.ok) return;
+    _moversData = await r.json();
+    renderMovers();
+  } catch (e) { /* 무시 */ }
+}
+
+function renderMovers() {
+  if (!_moversData) return;
+  const d = _moversData[_moversMarket];
+  if (!d) return;
+  const row = (s) => {
+    const cls = s.change_pct > 0 ? 'up' : s.change_pct < 0 ? 'down' : '';
+    return `<button class="md-mover" onclick="gotoStock('${s.ticker}')">
+        <span class="md-mover-name">${escapeHtmlMain(s.name)}</span>
+        <span class="md-mover-chg ${cls}">${s.change_pct > 0 ? '+' : ''}${s.change_pct}%</span>
+      </button>`;
+  };
+  const g = document.getElementById('mdGainers');
+  const l = document.getElementById('mdLosers');
+  if (g) g.innerHTML = (d.gainers || []).map(row).join('') || '<div class="empty-state">—</div>';
+  if (l) l.innerHTML = (d.losers || []).map(row).join('') || '<div class="empty-state">—</div>';
+}
 
 async function checkAuth() {
   try {
@@ -1083,6 +1244,12 @@ async function analyze() {
   const ticker = document.getElementById('tickerInput').value.trim();
   const period = 'max';
   if (!ticker) return;
+
+  // 홈(시황 대시보드)에서는 인라인 분석 대신 전용 페이지로 이동.
+  // 검색·빠른선택·추세카드 등 모든 진입점이 analyze()를 거치므로 여기 한 곳이면 충분.
+  if (!PAGE_TICKER) { gotoStock(ticker); return; }
+  // 분석 페이지에서 다른 종목 검색 → URL도 그 종목으로
+  if (ticker.toUpperCase() !== PAGE_TICKER) { gotoStock(ticker); return; }
 
   stopStockPricePolling();   // 이전 종목 현재가 폴링 중지
   document.getElementById('loading').classList.remove('hidden');
