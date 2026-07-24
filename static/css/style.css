@@ -4195,3 +4195,94 @@ body {
   .dd-item { padding: 7px 2px; }
   .dd-grid { gap: 6px; }
 }
+
+/* ── DCF 밸류에이션 카드 ─────────────────────────────── */
+.dcf-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.dcf-rel {
+  font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px;
+  white-space: nowrap;
+}
+.dcf-rel.rel-high { color: var(--green); background: rgba(63,185,80,.12); border: 1px solid rgba(63,185,80,.35); }
+.dcf-rel.rel-mid  { color: #e3b341; background: rgba(227,179,65,.12); border: 1px solid rgba(227,179,65,.35); }
+.dcf-rel.rel-low  { color: #f0883e; background: rgba(240,136,62,.12); border: 1px solid rgba(240,136,62,.35); }
+
+/* 주인공: 역산 성장률 */
+.dcf-hero {
+  text-align: center; padding: 20px 14px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(88,166,255,.10), rgba(88,166,255,.03));
+  border: 1px solid rgba(88,166,255,.25); margin-bottom: 16px;
+}
+.dcf-hero-label { font-size: 12px; color: var(--text2); font-weight: 600; margin-bottom: 6px; }
+.dcf-hero-val {
+  font-size: 34px; font-weight: 800; color: var(--accent);
+  line-height: 1.15; font-variant-numeric: tabular-nums;
+}
+.dcf-hero-val.dcf-na { font-size: 22px; color: #f0883e; }
+.dcf-hero-cmp { font-size: 12px; color: var(--text2); margin-top: 7px; line-height: 1.5; }
+
+/* 3개 기준점 */
+.dcf-refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.dcf-ref {
+  text-align: center; padding: 12px 6px; border-radius: 10px;
+  background: var(--bg3); border: 1px solid var(--border);
+}
+.dcf-ref-label { font-size: 11px; color: var(--text2); font-weight: 600; margin-bottom: 5px; }
+.dcf-ref-val {
+  font-size: 18px; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums; line-height: 1.2;
+}
+.dcf-ref-val.dcf-up   { color: var(--green); }
+.dcf-ref-val.dcf-down { color: var(--red); }
+.dcf-ref-sub { font-size: 10px; color: var(--text2); margin-top: 4px; line-height: 1.35; }
+
+.dcf-warnings:empty { display: none; }
+.dcf-warn {
+  font-size: 12px; color: #f0883e; background: rgba(240,136,62,.08);
+  border-left: 3px solid rgba(240,136,62,.5); border-radius: 6px;
+  padding: 9px 12px; margin-bottom: 8px; line-height: 1.55;
+}
+
+/* AI 해설 */
+.dcf-comment {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 8px;
+  padding: 12px 14px; margin: 12px 0;
+}
+.dcf-comment-label { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.dcf-comment p { margin: 0; font-size: 13px; line-height: 1.75; color: var(--text); }
+
+/* 가정 (접이식) */
+.dcf-assume { margin-top: 10px; }
+.dcf-assume > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text2);
+  padding: 8px 0; user-select: none;
+}
+.dcf-assume > summary:hover { color: var(--accent); }
+.dcf-assume-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px; margin: 8px 0;
+}
+.dcf-as-item {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 12px; padding: 7px 10px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+}
+.dcf-as-k { color: var(--text2); }
+.dcf-as-v { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.dcf-disclaimer { font-size: 11px; color: var(--text2); line-height: 1.6; margin: 10px 0 0; }
+
+@media (max-width: 560px) {
+  .dcf-hero { padding: 16px 10px; }
+  .dcf-hero-val { font-size: 27px; }
+  .dcf-hero-val.dcf-na { font-size: 18px; }
+  .dcf-refs { gap: 6px; }
+  .dcf-ref { padding: 10px 3px; }
+  .dcf-ref-val { font-size: 14px; }
+  .dcf-ref-label { font-size: 10px; }
+  .dcf-ref-sub { font-size: 9px; }
+  .dcf-assume-grid { grid-template-columns: 1fr 1fr; }
+  .dcf-as-item { font-size: 11px; padding: 6px 8px; }
+}
