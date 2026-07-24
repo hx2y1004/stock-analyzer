@@ -4451,3 +4451,66 @@ body.home-mode .search-desc { font-size: 13px; margin-bottom: 14px; }
   .hm-sm { padding: 8px !important; }
   .hm-sm .hm-name { font-size: 11px; }
 }
+
+/* ── 섹터 구성종목 모달 ─────────────────────────────── */
+.sector-modal-box { max-width: 420px; width: calc(100vw - 40px); }
+.sector-modal-list { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.sector-modal-item {
+  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px;
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 11px 14px; cursor: pointer;
+  color: var(--text); font-size: 13.5px; text-align: left;
+  transition: border-color 100ms ease, background 100ms ease;
+}
+.sector-modal-item:hover { border-color: var(--accent); background: rgba(88,166,255,.06); }
+.smi-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.smi-price { color: var(--text2); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.smi-chg { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 58px; text-align: right; }
+.smi-chg.up { color: var(--green); }
+.smi-chg.down { color: var(--red); }
+
+/* ── 추세감지/내포트폴리오 섹션: 시황 대시보드 톤으로 통일 ── */
+.portfolio-section {
+  background: transparent;
+  border-bottom: none;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px 16px;
+}
+.portfolio-inner {
+  max-width: none;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+/* 밑줄 탭 → 시황 토글과 같은 알약(segmented) 스타일 */
+.pf-tabs {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: none;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+.pf-tab {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-bottom: none;
+  margin-bottom: 0;
+  border-radius: 6px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.pf-tab.active {
+  color: #fff;
+  background: var(--accent);
+  border-bottom-color: transparent;
+}
+@media (max-width: 640px) {
+  .portfolio-section { padding: 0 12px 12px; }
+  .portfolio-inner { padding: 14px; }
+  .pf-tab { font-size: 12px; padding: 5px 10px; }
+}

@@ -163,25 +163,36 @@ async function loadSectorMap() {
   }
 }
 
-// 타일 클릭 → 구성 종목 (응답에 이미 포함돼 있어 추가 요청 없음)
+// 타일 클릭 → 구성 종목 모달 (응답에 이미 포함돼 있어 추가 요청 없음)
 function toggleSectorDrill(key) {
-  const el = document.getElementById('mdHeatmap');
-  if (!el || !_sectorMapData) return;
-  const old = el.querySelector('.hm-drill');
-  const wasOpen = old && old.dataset.key === key;
-  if (old) old.remove();
-  if (wasOpen) return;   // 같은 타일 재클릭 → 닫기
+  if (!_sectorMapData) return;
   const g = (_sectorMapData.groups || []).find(x => x.key === key);
   if (!g) return;
-  const items = g.members.map(m => {
+  const title = document.getElementById('sectorModalTitle');
+  const desc = document.getElementById('sectorModalDesc');
+  const list = document.getElementById('sectorModalList');
+  if (!title || !list) return;
+  const c = g.change_pct;
+  title.textContent = `${_dashMarket === 'KR' ? '🇰🇷' : '🇺🇸'} ${g.name}`;
+  desc.innerHTML = `오늘 <span class="${c > 0 ? 'up' : c < 0 ? 'down' : ''}" style="font-weight:700">${c > 0 ? '+' : ''}${c}%</span> · 종목을 누르면 분석 페이지로 이동`;
+  list.innerHTML = g.members.map(m => {
     const cls = m.change_pct > 0 ? 'up' : m.change_pct < 0 ? 'down' : '';
-    return `<button class="hm-drill-item" onclick="gotoStock('${m.ticker}')">
-        <span>${escapeHtmlMain(m.name)}</span>
-        <span class="${cls}">${m.change_pct > 0 ? '+' : ''}${m.change_pct}%</span>
+    const cur = _dashMarket === 'KR'
+      ? Math.round(m.price).toLocaleString('ko-KR') + '원'
+      : '$' + Number(m.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `<button class="sector-modal-item" onclick="gotoStock('${m.ticker}')">
+        <span class="smi-name">${escapeHtmlMain(m.name)}</span>
+        <span class="smi-price">${cur}</span>
+        <span class="smi-chg ${cls}">${m.change_pct > 0 ? '+' : ''}${m.change_pct}%</span>
       </button>`;
   }).join('');
-  el.insertAdjacentHTML('beforeend',
-    `<div class="hm-drill" data-key="${key}"><div class="hm-drill-head">${escapeHtmlMain(g.name)} 구성 종목 (클릭 시 분석)</div>${items}</div>`);
+  document.getElementById('sectorModal').classList.remove('hidden');
+}
+
+function closeSectorModal(event) {
+  if (!event || event.target === document.getElementById('sectorModal')) {
+    document.getElementById('sectorModal').classList.add('hidden');
+  }
 }
 
 async function loadMovers() {
