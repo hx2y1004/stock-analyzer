@@ -4404,3 +4404,50 @@ body {
 /* 분석 전용 페이지(/stock/*): 홈 요소 숨김 (비동기 로드 후에도 유지) */
 body.stock-mode #portfolioSection,
 body.stock-mode #marketDashboard { display: none !important; }
+
+/* ── 시황 대시보드 v2: 통합 토글 + 핀비즈 트리맵 + 2열 ── */
+.md-head-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.md-sub-label { font-size: 14px; }
+.md-duo { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; align-items: start; }
+
+/* 핀비즈 스타일 트리맵: 크기 = 시총 근사(weight) */
+.hm-tree {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  grid-auto-rows: 62px;
+  grid-auto-flow: dense;
+  gap: 5px;
+}
+.hm-xl { grid-column: span 3; grid-row: span 2; }
+.hm-lg { grid-column: span 2; grid-row: span 2; }
+.hm-md { grid-column: span 2; grid-row: span 1; }
+.hm-sm { grid-column: span 1; grid-row: span 1; }
+.hm-tree .hm-tile { min-height: 0; padding: 10px 12px; justify-content: flex-start; }
+.hm-xl .hm-name, .hm-lg .hm-name { font-size: 14px; white-space: normal; }
+.hm-xl .hm-chg, .hm-lg .hm-chg { font-size: 17px; }
+.hm-sm { padding: 6px 8px !important; }
+.hm-sm .hm-name { font-size: 10px; }
+.hm-sm .hm-chg { font-size: 11px; margin-top: 1px; }
+.hm-mini {
+  display: flex; justify-content: space-between; gap: 6px;
+  font-size: 10.5px; color: rgba(255,255,255,.85);
+  margin-top: 4px; font-variant-numeric: tabular-nums;
+}
+.hm-mini span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 홈 모드: 검색 컴팩트 */
+body.home-mode .search-section { padding: 26px 20px 18px; }
+body.home-mode .search-title { font-size: 22px; margin-bottom: 4px; }
+body.home-mode .search-desc { font-size: 13px; margin-bottom: 14px; }
+
+@media (max-width: 860px) {
+  .md-duo { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .hm-tree { grid-template-columns: repeat(4, 1fr); grid-auto-rows: 54px; }
+  .hm-xl { grid-column: span 4; grid-row: span 2; }
+  .hm-lg { grid-column: span 2; grid-row: span 2; }
+  .hm-md, .hm-sm { grid-column: span 2; grid-row: span 1; }
+  .hm-sm { padding: 8px !important; }
+  .hm-sm .hm-name { font-size: 11px; }
+}
