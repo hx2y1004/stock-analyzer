@@ -4656,7 +4656,9 @@ def dcf_comment():
 현재가: {dcf['current_price']:,.2f} {cur_unit}
 DCF 적정주가(기본): {dcf['fair_value']:,.2f} — 현재가 대비 {dcf['upside_pct']:+.1f}%
 시나리오: 비관 {dcf['scenarios']['bear']['fair_value']} / 기본 {dcf['scenarios']['base']['fair_value']} / 낙관 {dcf['scenarios']['bull']['fair_value']}
-현재가가 반영 중인 매출성장률(역산): {dcf['implied_growth_pct']}%
+현재가가 반영 중인 매출성장률(역산, 이익률 고정): {dcf['implied_growth_pct']}%
+현재가가 반영 중인 영업이익률(역산, 성장률 고정): {dcf['implied_margin_pct']}%
+  (현재 영업이익률 {a['ebit_margin_pct']}% → 위 수치로 개선돼야 현재가 정당화)
 애널리스트 평균 목표가: {dcf.get('analyst_target')}
 [가정]
 WACC {a['wacc_pct']}% (베타 {a['beta']}, 무위험 {a['risk_free_pct']}%)
@@ -4676,8 +4678,10 @@ WACC {a['wacc_pct']}% (베타 {a['beta']}, 무위험 {a['risk_free_pct']}%)
 
 [규칙]
 1) 숫자를 새로 계산하지 마라. 위에 주어진 값만 인용한다.
-2) "역산 성장률"을 중심으로 설명하라 — 현재 주가가 어떤 성장을 전제하는지,
-   그게 컨센서스/과거 대비 공격적인지 보수적인지.
+2) 역산 값을 중심으로 설명하라 — 현재 주가가 어떤 성장/수익성을 전제하는지,
+   그게 컨센서스·과거 대비 공격적인지 보수적인지.
+   역산 매출성장률이 None이면, 대신 "역산 영업이익률"로 설명하라
+   (예: 현재 이익률 12%가 30%까지 올라야 현재 주가가 설명된다는 뜻).
 3) 신뢰도가 low면 "과거 재무 기반 DCF의 한계"를 반드시 언급하고,
    적정주가를 단정적으로 말하지 마라.
 4) "매수하세요/파세요" 같은 투자 권유 금지. 판단 근거만 제시.

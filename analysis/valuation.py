@@ -329,12 +329,42 @@ def compute_dcf(ticker, info, income_stmt, cashflow, balance_sheet,
         if hi < 0.595:                      # 상한에 붙지 않았으면 유효한 해
             implied_growth = round(hi * 100, 1)
 
+    # ── 5-b2) 역산 #2: 현재가를 정당화하는 영업이익률 ──
+    # 마진 확대는 DCF에서 가장 남용되는 가정이므로 '가정하지 않고 역산'한다.
+    # 성장률은 기본 시나리오로 고정 → 마진만 풀어 시장이 전제한 수익성을 드러냄.
+    implied_margin = None
+    if current_price and current_price > 0:
+        lo, hi = 0.005, 0.70
+        for _ in range(40):
+            mid = (lo + hi) / 2
+            _, _, _, ev_m = _project_and_discount(
+                base_rev, scen_growth["base"], mid, tax_rate,
+                da_pct, capex_pct, wc_per_drev, wacc, a["terminal_g"]
+            )
+            ps_m = _equity_per_share(ev_m, net_debt, shares)
+            if ps_m is None or ps_m < current_price:
+                lo = mid
+            else:
+                hi = mid
+        if hi < 0.695:                      # 상한에 붙지 않았으면 유효한 해
+            implied_margin = round(hi * 100, 1)
+
     # ── 5-c) 신뢰도 판정 ────────────────────────────────
     # 과거 재무 기반 DCF는 미래 옵션가치(신사업·플랫폼 전환 등)를 담지 못한다.
     # 괴리가 클수록 '고평가 판정'이 아니라 '이 방법론으로는 설명 안 됨'에 가깝다.
     gap = scenarios["base"]["upside_pct"]
+    # 성장·수익성 어느 쪽으로도 현재가를 설명할 수 없는 극단 케이스
+    beyond_model = (implied_growth is None and implied_margin is None)
+
     if gap is None:
         reliability = "low"
+    elif beyond_model:
+        reliability = "low"
+        warnings.append(
+            "현재 주가는 이 모델의 설명 범위를 벗어납니다. 매출이 연 60% 성장하거나 "
+            "영업이익률이 70%까지 올라도 도달하지 않는 수준으로, 시장은 재무제표에 "
+            "아직 나타나지 않은 요인(신사업 확대·시장 재편 기대 등)을 반영하고 있습니다."
+        )
     elif gap < -70 or implied_growth is None:
         reliability = "low"
         warnings.append(
@@ -383,7 +413,9 @@ def compute_dcf(ticker, info, income_stmt, cashflow, balance_sheet,
         "upside_pct": scenarios["base"]["upside_pct"],
         "currency": currency,
         "scenarios": scenarios,
-        "implied_growth_pct": implied_growth,   # 현재가가 반영 중인 매출성장률 (역산)
+        "implied_growth_pct": implied_growth,   # 현재가가 반영 중인 매출성장률 (역산, 마진 고정)
+        "implied_margin_pct": implied_margin,   # 현재가가 반영 중인 영업이익률 (역산, 성장 고정)
+        "beyond_model": beyond_model,           # 성장·마진 어느 쪽으로도 설명 불가
         "reliability": reliability,             # high | medium | low
         # 교차검증용 애널리스트 컨센서스 목표가 (DCF와 독립적인 제3의 기준점)
         "analyst_target": _f(info.get("targetMeanPrice")),
