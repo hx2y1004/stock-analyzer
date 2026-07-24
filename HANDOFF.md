@@ -1,20 +1,41 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-06-12 KST (모의매매 조작차단 + 랭킹 실시간평가 + 토글/배지/drawdown UI 세션)
+> 마지막 업데이트: 2026-07-25 KST (DCF 밸류에이션 + 홈 시황 대시보드/분석 페이지 분리 세션)
 
 ---
 
-## 🚀 현재 상태 (2026-06-12)
+## 🚀 현재 상태 (2026-07-25)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `b916a5a` (배지 카테고리 분배) / SW **`sa-v46`** / HTML `?v=46`
+- 최신 커밋: `60d76ad` (검색 카드 톤 통일) / SW **`sa-v52`** / HTML `?v=52`
 - **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 + 계좌 import + 고정 IP 프록시)
-- **AI 전부 Gemini 우선** — 코치/점검/기업분석/급등이유 모두 `_ai_chat()` 경유
-- **모의투자 신뢰성**: 매수/매도 체결가는 **서버 실시간가로 강제**(클라 price 무시 → 수익률 조작 차단)
-- **랭킹 실시간 평가**: 본인 접속과 무관하게 전 참가자 수익률 갱신 (90초 캐시)
+- **AI 전부 Gemini 우선** — 코치/점검/기업분석/급등이유/DCF해설 모두 `_ai_chat()` 경유
+- **모의투자 신뢰성**: 매수/매도 체결가는 서버 실시간가로 강제 (수익률 조작 차단)
+- **🆕 페이지 구조**: 홈(/) = 시황 대시보드(지수/섹터맵/급등락), 분석 = **`/stock/<ticker>` 별도 페이지**
+- **🆕 DCF 밸류에이션**: `analysis/valuation.py` — 역산 성장률/이익률 중심 표시 + AI 해설
 
-### ✅ 최신 세션 핵심 (2026-06-12, Opus)
+### ✅ 최신 세션 핵심 (2026-07-25, Opus)
+- **DCF 밸류에이션 카드** (`5f001e2`, `5da2506`): anthropics/financial-services의
+  dcf-model 스킬(Apache-2.0) 방법론을 `analysis/valuation.py`로 이식.
+  숫자는 Python 결정적 계산, AI는 해설만(`/api/dcf/comment`, 6h 캐시).
+  검증 중 실버그 4개 수정(운전자본 부호/수준비례, Blume 베타, 컨센서스 블렌딩).
+  UI는 단일 적정주가 대신 **역산**("현재가가 반영 중인 성장률/이익률") 중심,
+  둘 다 산출 불가면 beyond_model("재무 범위 밖") 안내. 신뢰도 뱃지 3단계.
+- **홈 시황 대시보드 + /stock/<ticker> 분리** (`571cd41`): 시장현황 지수(1분 갱신,
+  장중 상태 점), 급등락 Top5(대표주 55개). analyze() 한 곳 게이트로 모든 진입점이
+  전용 페이지로 이동. body.stock-mode로 홈 요소 숨김. /?ticker= 하위호환.
+- **실전 섹터맵(핀비즈 스타일)** (`1bbad2d`): GICS/네이버테마 대신 매매 단위
+  큐레이션 그룹(한/미 각 12개, `_SECTORMAP_KR/US`). 타일 크기=시총 근사(weight),
+  색=등락률 7단계. `/api/market/sectormap` 10분 캐시. KR 44개 티커 실측 OK.
+- **대시보드 통합 토글 + 홈 재배치** (`1bbad2d`): 섹터맵·급등락 시장 토글 하나로
+  통합, 기본값=장 열린 시장(KR장중→KR, US장중→US, 마감 시 KST 06~17시→KR).
+  홈 순서: 검색→시황→추세감지/포트폴리오 (JS DOM 재배치).
+- **UX 통일** (`6f30be7`, `60d76ad`): 섹터 강도 탭 제거(섹터맵으로 대체, API는 유지),
+  섹터맵 클릭→구성종목 **모달**(sectorModal), 탭 섹션·검색 영역을 시황과 같은
+  max-width 1200 카드 + 알약 탭 톤으로 리디자인.
+
+### ✅ 직전 세션 핵심 (2026-06-12, Opus)
 - **모의매매 체결가 서버 강제** (`616739a`): `trading_buy/sell`이 클라 price 무시,
   `_fetch_current_price`로 서버 실시간가 체결. `/api/realtime-price` 신설, 프론트 가격칸 readonly+1초 폴링
 - **분석 페이지 모의매수 메모칸** 추가 (`616739a`)
@@ -111,6 +132,7 @@ stock-analyzer/
 ├─ build_stock_db.py         # 종목 DB 빌더 → stock_db.json
 ├─ stock_db.json             # 종목명/티커 매핑 + 메타 (자동완성용)
 ├─ analysis/
+│  ├─ valuation.py           # NEW — DCF 밸류에이션 (역산 성장률/이익률, 민감도)
 │  ├─ ai_analysis.py         # Groq AI 분석 + 번역 + 캐시 + 스코어카드 연결
 │  ├─ advanced.py            # 월가 4팩터 스코어카드 (Q/V/G/M + 10개 지표)
 │  └─ indicators.py          # 기술지표 (MA, RSI, OBV, 스테이지 등)
@@ -261,9 +283,76 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
   - `toss_api.*` — `get_prices/get_price`, `get_candles_df`, `get_exchange_rate`,
     `get_accounts`, `get_account_holdings`(다계좌 합산), `_proxies/_req`(프록시)
 
+### 페이지 / 시황 대시보드 / DCF (NEW — 2026-07-25)
+- `GET /` — 홈 = 시황 대시보드 (검색→시황→추세감지/포트폴리오 탭, JS DOM 재배치)
+- `GET /stock/<ticker>` — 분석 전용 페이지 (같은 index.html, JS가 URL 경로로 모드 전환)
+- `GET /api/market/overview` — 주요 지수 6종 + kr_open/us_open (1분 캐시)
+- `GET /api/market/movers` — 대표주 55개 급등/급락 Top5 (KR/US, 10분 캐시)
+- `GET /api/market/sectormap?market=KR|US` — 실전 섹터맵 12그룹+구성종목 (10분 캐시)
+- `GET /api/dcf/comment?ticker=` — DCF AI 해설 (종목별 6h 캐시)
+- analyze 응답에 `stock.dcf` 포함 (`compute_dcf` — analysis/valuation.py)
+- 헬퍼: `_get_financials`(재무3표 6h 캐시), `_get_risk_free_rate`(^TNX 12h, KR은 None),
+  `_SECTORMAP_KR/US`(큐레이션 그룹), `_stock_name`
+
 ---
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
+
+### 📌 2026-07-25 — DCF 밸류에이션 + 홈 시황 대시보드/분석 페이지 분리 (Opus 세션)
+
+**1) DCF 밸류에이션** (`5f001e2` → `5da2506`)
+- 출처: anthropics/financial-services 레포의 dcf-model 스킬(Apache-2.0).
+  핀비즈/기관용 Excel 산출물 대신 계산 절차만 `analysis/valuation.py`로 이식.
+- 원칙: AI 코치의 `_coach_stats_block` 패턴 — 숫자는 Python 결정적 계산, AI는 해석만.
+- 절차: 과거재무 → 컨센서스 블렌딩 성장 3시나리오(bear/base/bull, 고성장은 10년 fade)
+  → EBIT→NOPAT→FCF → CAPM WACC(Blume 베타조정) → mid-year 할인 → 영구성장 터미널
+  → EV−순부채 → 주당가치 + 민감도 5×5.
+- **검증 중 잡은 실버그 4개** (전 종목 -60~98% 고평가로 나오던 원인):
+  ① 운전자본 부호 이중 반영(AAPL FCF 138B 과대→87.8B, 실제 98.8B)
+  ② 운전자본을 매출 '수준'에 비례→'증가분' 비례로(wc_per_drev)
+  ③ 원본 베타 사용→Blume 조정(0.67β+0.33, NVDA 2.21→1.81)
+  ④ 과거 CAGR만 사용→컨센서스(info.revenueGrowth) 60% 블렌딩(삼성 -67%→-38.5%)
+- **UI 설계 — 역산이 주인공**: 과거재무 DCF는 고배수 성장주를 구조적으로 낮게
+  평가하므로 적정주가 단정 대신 3단계 표시:
+  역산 성장률(마진 고정) → 없으면 역산 영업이익률(성장 고정, TSLA 5.9%→66%)
+  → 둘 다 없으면 beyond_model "재무 범위 밖"(AMD: 성장60%·마진70%로도 도달불가
+  = 시장이 재무제표 밖 요인 반영 중이라는 신호로 안내).
+- 현재가/DCF적정가(범위)/애널목표가 3개 기준점 + 신뢰도 뱃지(high/medium/low)
+  + 경고 + 가정 접이식. `GET /api/dcf/comment` AI 해설(종목별 6h 캐시, 비차단 로드).
+- 재무제표 `_get_financials` 6h 캐시, DCF 계산은 매 요청 실시간가로(역산값 최신 유지).
+  무위험수익률: US=^TNX 12h 캐시, KR=yfinance 미제공→상수 3.2% (가정 UI 노출).
+- ⚠️ 마진을 고정하는 이유(사용자 질문): 마진 확대는 DCF에서 가장 남용되는 가정
+  → 가정하지 않고 역산해서 드러내는 방향. HANDOFF에 기록해둠.
+
+**2) 홈 시황 대시보드 + /stock/<ticker> 분리** (`571cd41`)
+- 홈(/)이 검색 전 텅 비던 구조 → 시황 대시보드로 개편.
+- `GET /api/market/overview`: ^KS11/^KQ11/KRW=X/^GSPC/^IXIC/^VIX 배치(1분 캐시)
+  + kr_open/us_open. `GET /api/market/movers`: 대표주 55개 Top5 급등/급락(10분 캐시).
+- `GET /stock/<ticker>` 라우트 = 같은 index.html, JS가 `PAGE_TICKER`(URL 경로)로
+  홈/분석 모드 전환. **analyze() 한 곳 게이트**: 홈이면 gotoStock() 이동,
+  분석 페이지에서 다른 종목 검색해도 URL 이동 → 모든 진입점 자동 커버.
+- body.stock-mode CSS로 홈 요소(대시보드/포트폴리오탭) 숨김 — 비동기 로드 후에도 유지.
+- 구형 /?ticker=X → /stock/X 리다이렉트.
+
+**3) 실전 섹터맵 (핀비즈 스타일)** (`1bbad2d`)
+- 사용자 피드백: GICS 11개(미국)·네이버 테마 200개(한국)는 실전 매매와 안 맞음.
+  핀비즈는 공식 임베드 미제공(iframe 차단) → 동일 문법 자체 구현.
+- `_SECTORMAP_US/KR`: 매매 단위 큐레이션 12그룹씩(빅테크/반도체/AI소프트웨어/
+  방산/원자력/크립토... · 반도체/2차전지/방산/조선/바이오/엔터...), 대표주 구성.
+- `GET /api/market/sectormap`: yf.download 배치 1회, 그룹 등락=구성종목 단순평균,
+  10분 캐시. weight(시총 근사 1~10) → 타일 크기(hm-xl/lg/md/sm), 색=등락률 7단계.
+  큰 타일엔 대표종목 미리보기. KR 44개 티커 전부 실측 확인.
+- 시장 토글 통합(setDashMarket): 섹터맵+급등락 동시 전환. 기본값=열린 시장,
+  둘 다 마감이면 KST 06~17시→KR, 그 외→US. 사용자가 토글하면 유지.
+
+**4) UX 통일** (`6f30be7`, `60d76ad`)
+- 섹터 강도 탭 제거(섹터맵이 대체). JS는 기존 가드로 안전, `/api/sectors/strength`
+  API·함수는 유지(구성종목 API는 사용 중이지 않지만 보존).
+- 섹터맵 클릭 → 인라인 드릴다운 대신 **모달**(#sectorModal): 이름/현재가/등락 3열,
+  응답에 members 포함이라 추가 요청 없음.
+- 추세감지/내포트폴리오 섹션: 풀폭 밑줄 탭 → 시황과 같은 1200px 카드+알약 탭.
+- 검색 영역: 풀폭 그라데이션 히어로 → 같은 톤 카드(제목 "🔍 종목 검색" 인라인).
+- 홈 순서(JS DOM 재배치): 검색 → 시황 → 추세감지/포트폴리오 탭.
 
 ### 📌 2026-06-12 (저녁) — 모의매매 조작차단 + 랭킹 실시간평가 + UI 다수 (Opus 세션)
 
@@ -1032,12 +1121,19 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
 
 ---
 
-## 11. Git 상태 스냅샷 (2026-06-12)
+## 11. Git 상태 스냅샷 (2026-07-25)
 
 ```
 main 브랜치 (origin/main과 동기화됨, 모두 정상 배포)
 
-b916a5a refactor: 신규 배지 10종 기존 카테고리로 분배 (스타일 제거)          ← HEAD
+60d76ad ux: 검색 영역을 시황 대시보드 카드 톤으로 통일                       ← HEAD
+6f30be7 ux: 섹터 강도 탭 제거 + 섹터맵 구성종목 모달 + 탭 섹션 톤 통일
+1bbad2d feat: 실전 섹터맵(핀비즈 스타일) + 대시보드 통합 토글 + 홈 재배치
+571cd41 feat: 홈 시황 대시보드 + 분석 전용 페이지(/stock/<ticker>) 분리
+5da2506 feat: DCF 역산 영업이익률 추가 — 산출 불가 화면 제거
+5f001e2 feat: DCF 밸류에이션 카드 (financial-services 방법론 이식)
+1f1e2ab docs: HANDOFF.md 최신화 (2026-06-12 세션)
+b916a5a refactor: 신규 배지 10종 기존 카테고리로 분배 (스타일 제거)
 8aeb12c feat: 분석 페이지 고점 대비 현재가(drawdown) 위젯
 da8e7c0 feat: 재미 배지 10종 추가 (스타일 카테고리, 25→35개)
 dcb475a feat: 랭킹 초기화 횟수 배지 + 빈 포트폴리오(1억) 제외
@@ -1093,8 +1189,8 @@ b52dfcb feat: 섹터/테마 강도 랭킹 탭 추가 (모멘텀+거래량/breadt
 68d0575 feat: 분석↔모의투자 통합 - 분석 페이지에서 바로 모의 매수/매도
 ```
 
-**Service Worker**: `sa-v46`
-**HTML 캐시 버스팅 쿼리**: `?v=46`
+**Service Worker**: `sa-v52`
+**HTML 캐시 버스팅 쿼리**: `?v=52`
 
 **2026-06-05 토스 세션 신규/수정 파일**:
 - `toss_api.py` — 시세/캔들/환율/계좌/보유종목 + OAuth2 + 프록시(`_req`) + 다계좌 합산
