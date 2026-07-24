@@ -713,6 +713,144 @@ def _fetch_kr_theme_strength():
     return results
 
 
+# ── 홈 시황 대시보드 ────────────────────────────────────────
+_MARKET_OVERVIEW_CACHE = {"ts": 0.0, "data": None}
+_MARKET_OVERVIEW_TTL = 60          # 지수는 1분 캐시
+
+_OVERVIEW_INDICES = [
+    # (symbol, label, market, kind)  kind: index|fx|vix
+    ("^KS11",  "KOSPI",   "KR", "index"),
+    ("^KQ11",  "KOSDAQ",  "KR", "index"),
+    ("KRW=X",  "USD/KRW", "KR", "fx"),
+    ("^GSPC",  "S&P 500", "US", "index"),
+    ("^IXIC",  "나스닥",   "US", "index"),
+    ("^VIX",   "VIX",     "US", "vix"),
+]
+
+
+@app.route("/api/market/overview")
+def market_overview():
+    """홈 대시보드용 주요 지수 스냅샷 (1분 캐시)."""
+    now = time.time()
+    c = _MARKET_OVERVIEW_CACHE
+    if c["data"] and (now - c["ts"]) < _MARKET_OVERVIEW_TTL:
+        return jsonify(c["data"])
+
+    out = []
+    try:
+        symbols = [s for s, *_ in _OVERVIEW_INDICES]
+        data = yf.download(
+            " ".join(symbols), period="5d", interval="1d",
+            group_by="ticker", progress=False, threads=True, auto_adjust=False,
+        )
+        for sym, label, mkt, kind in _OVERVIEW_INDICES:
+            try:
+                df = data[sym].dropna(subset=["Close"])
+                if df.empty:
+                    continue
+                cur = float(df["Close"].iloc[-1])
+                prev = float(df["Close"].iloc[-2]) if len(df) >= 2 else None
+                chg = ((cur / prev - 1) * 100) if prev else None
+                out.append({
+                    "symbol": sym, "label": label, "market": mkt, "kind": kind,
+                    "value": round(cur, 2),
+                    "change_pct": round(chg, 2) if chg is not None else None,
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        app.logger.warning(f"[market_overview] {e}")
+
+    payload = {
+        "indices": out,
+        "kr_open": _is_market_open("005930.KS"),
+        "us_open": _is_market_open("AAPL"),
+        "fetched_at": datetime.utcnow().isoformat() + "Z",
+    }
+    if out:
+        _MARKET_OVERVIEW_CACHE.update(ts=now, data=payload)
+    return jsonify(payload)
+
+
+# 급등/급락 관찰 유니버스 — 유동성 큰 대표주 (한국 25 + 미국 30)
+_MOVERS_KR = [
+    "005930.KS", "000660.KS", "373220.KS", "207940.KS", "005380.KS",
+    "000270.KS", "068270.KS", "005490.KS", "035420.KS", "035720.KS",
+    "051910.KS", "006400.KS", "012450.KS", "042700.KS", "011200.KS",
+    "086520.KQ", "247540.KQ", "028300.KQ", "196170.KQ", "066970.KQ",
+    "105560.KS", "055550.KS", "329180.KS", "010130.KS", "009540.KS",
+]
+_MOVERS_US = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO",
+    "AMD", "NFLX", "CRM", "ORCL", "ADBE", "INTC", "QCOM", "MU",
+    "PLTR", "COIN", "UBER", "SMCI", "ARM", "MRVL", "TSM", "ASML",
+    "JPM", "V", "LLY", "UNH", "XOM", "BA",
+]
+_MOVERS_CACHE = {"ts": 0.0, "data": None}
+_MOVERS_TTL = 60 * 10              # 10분 캐시
+
+
+@app.route("/api/market/movers")
+def market_movers():
+    """홈 대시보드용 급등/급락 랭킹 (대표주 유니버스, 10분 캐시)."""
+    now = time.time()
+    c = _MOVERS_CACHE
+    if c["data"] and (now - c["ts"]) < _MOVERS_TTL:
+        return jsonify(c["data"])
+
+    def _calc(tickers, market):
+        rows = []
+        try:
+            data = yf.download(
+                " ".join(tickers), period="5d", interval="1d",
+                group_by="ticker", progress=False, threads=True, auto_adjust=False,
+            )
+        except Exception as e:
+            app.logger.warning(f"[movers {market}] download: {e}")
+            return rows
+        for t in tickers:
+            try:
+                df = data[t].dropna(subset=["Close"])
+                if df is None or len(df) < 2:
+                    continue
+                cur = float(df["Close"].iloc[-1])
+                prev = float(df["Close"].iloc[-2])
+                if not prev:
+                    continue
+                # 종목명: STOCK_DB 우선
+                name = t
+                for s in STOCK_DB:
+                    if s.get("symbol") == t:
+                        name = s.get("name") or t
+                        break
+                if name == t and market == "US":
+                    name = _lookup_us_name(t) or t
+                rows.append({
+                    "ticker": t, "name": name, "market": market,
+                    "price": round(cur, 2),
+                    "change_pct": round((cur / prev - 1) * 100, 2),
+                })
+            except Exception:
+                continue
+        return rows
+
+    kr = _calc(_MOVERS_KR, "KR")
+    us = _calc(_MOVERS_US, "US")
+
+    def _split(rows):
+        s = sorted(rows, key=lambda r: r["change_pct"], reverse=True)
+        return {"gainers": s[:5], "losers": s[-5:][::-1]}
+
+    payload = {
+        "KR": _split(kr),
+        "US": _split(us),
+        "fetched_at": datetime.utcnow().isoformat() + "Z",
+    }
+    if kr or us:
+        _MOVERS_CACHE.update(ts=now, data=payload)
+    return jsonify(payload)
+
+
 @app.route("/api/sectors/strength", methods=["GET"])
 def sectors_strength():
     """섹터(미국 ETF) / 테마(한국 네이버) 강도 점수 랭킹."""
@@ -1100,6 +1238,13 @@ def fetch_naver_fundamentals(krx_code):
 
 @app.route("/")
 def index():
+    return render_template("index.html")
+
+
+@app.route("/stock/<path:ticker>")
+def stock_page(ticker):
+    """종목 분석 전용 페이지. 같은 템플릿을 쓰고 JS가 URL 경로를 보고
+    홈(시황 대시보드) / 분석 모드를 전환한다."""
     return render_template("index.html")
 
 
