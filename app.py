@@ -52,6 +52,7 @@ from flask_login import LoginManager, login_required, current_user
 
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
+from analysis.valuation import compute_dcf
 from models import db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, INITIAL_CAPITAL_KRW
 from auth import auth_bp
 
@@ -2374,6 +2375,57 @@ def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=N
     return "관련 뉴스: " + " / ".join(top)
 
 
+# ── DCF 재무제표 캐시 ──────────────────────────────────────
+# 재무제표는 분기당 1회만 갱신되므로 길게 캐시. DCF 계산 자체는 순수 수학이라
+# 매 요청마다 실시간 가격으로 재계산한다(역산 성장률이 현재가를 반영해야 함).
+_FIN_CACHE = {}                   # ticker → (timestamp, income_stmt, cashflow, balance_sheet)
+_FIN_TTL   = 60 * 60 * 6          # 6시간
+
+def _get_financials(ticker, stock):
+    """연간 재무제표 3종 (6시간 캐시). Returns (income_stmt, cashflow, balance_sheet)."""
+    now = time.time()
+    c = _FIN_CACHE.get(ticker)
+    if c and (now - c[0]) < _FIN_TTL:
+        return c[1], c[2], c[3]
+    inc = cf = bs = None
+    try:
+        inc = stock.income_stmt
+    except Exception:
+        pass
+    try:
+        cf = stock.cashflow
+    except Exception:
+        pass
+    try:
+        bs = stock.balance_sheet
+    except Exception:
+        pass
+    _FIN_CACHE[ticker] = (now, inc, cf, bs)
+    return inc, cf, bs
+
+
+_RF_CACHE = {"ts": 0.0, "value": None}
+_RF_TTL   = 60 * 60 * 12          # 12시간
+
+def _get_risk_free_rate(currency):
+    """무위험수익률. 미국은 10년물(^TNX), 한국은 yfinance 미제공 → None(모듈 기본가정 사용)."""
+    if currency == "KRW":
+        return None
+    now = time.time()
+    if _RF_CACHE["value"] and (now - _RF_CACHE["ts"]) < _RF_TTL:
+        return _RF_CACHE["value"]
+    try:
+        h = yf.Ticker("^TNX").history(period="5d")
+        if h is not None and not h.empty:
+            v = float(h["Close"].iloc[-1]) / 100
+            if 0.001 < v < 0.15:
+                _RF_CACHE.update(ts=now, value=v)
+                return v
+    except Exception:
+        pass
+    return _RF_CACHE["value"]
+
+
 # ── Groq 응답 캐시 (rate limit 회피) ──
 _OVERVIEW_CACHE = {}              # ticker → (timestamp, sections)
 _OVERVIEW_TTL   = 60 * 60 * 6     # 6시간 캐시
@@ -3317,6 +3369,20 @@ def analyze():
             "1m":  calc_drawdown(21),
             "all": calc_drawdown(None),
         }
+
+        # ── DCF 밸류에이션 ────────────────────────────────
+        # 재무제표 조회(네트워크 3회)만 캐시하고, DCF 계산은 순수 수학이라
+        # 매번 실시간 가격으로 재계산 → 역산 성장률이 항상 현재가 기준.
+        try:
+            stock_data["dcf"] = compute_dcf(
+                ticker, info,
+                *_get_financials(ticker, stock),
+                current_price, stock_data.get("currency", "USD"),
+                risk_free_rate=_get_risk_free_rate(stock_data.get("currency")),
+            )
+        except Exception as e:
+            app.logger.warning(f"[dcf] {ticker}: {e}")
+            stock_data["dcf"] = None
 
         news_data    = fetch_news(stock)
 
@@ -4546,6 +4612,84 @@ def trading_coach():
     iso = datetime.utcnow().isoformat() + "Z"
     _COACH_CACHE[user.id] = {"text": text, "ts": now, "iso": iso, "tx_count": len(txs)}
     return jsonify({"ok": True, "feedback": text, "generated_at": iso, "cached": False})
+
+
+# ── AI DCF 해설 ────────────────────────────────────────────
+# 숫자는 valuation.py 가 결정적으로 계산. AI는 '해석'만 한다.
+_DCF_COMMENT_CACHE = {}        # ticker -> {"text", "ts"}
+_DCF_COMMENT_TTL = 60 * 60 * 6 # 6시간 (종목별 1회 → 무료 한도 보호)
+
+
+@app.route("/api/dcf/comment")
+def dcf_comment():
+    """DCF 결과 해설. 분석 응답과 분리해 페이지 로딩을 막지 않는다."""
+    ticker = (request.args.get("ticker") or "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "ticker 필요"}), 400
+
+    now = time.time()
+    c = _DCF_COMMENT_CACHE.get(ticker)
+    if c and (now - c["ts"]) < _DCF_COMMENT_TTL:
+        return jsonify({"ok": True, "comment": c["text"], "cached": True})
+
+    # 캐시된 재무제표로 DCF 재계산 (실시간 가격 반영)
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info or {}
+        currency = info.get("currency", "USD")
+        price = _fetch_current_price(ticker) or safe_float(info.get("currentPrice"))
+        dcf = compute_dcf(
+            ticker, info, *_get_financials(ticker, stock),
+            price, currency, risk_free_rate=_get_risk_free_rate(currency),
+        )
+    except Exception as e:
+        app.logger.warning(f"[dcf_comment] {ticker}: {e}")
+        return jsonify({"error": "밸류에이션 계산 실패"}), 503
+    if not dcf:
+        return jsonify({"error": "이 종목은 DCF 산출이 어렵습니다"}), 404
+
+    a = dcf["assumptions"]
+    name = info.get("longName") or info.get("shortName") or ticker
+    cur_unit = "원" if currency == "KRW" else "달러"
+    stats = f"""[계산 결과]
+종목: {name} ({ticker})
+현재가: {dcf['current_price']:,.2f} {cur_unit}
+DCF 적정주가(기본): {dcf['fair_value']:,.2f} — 현재가 대비 {dcf['upside_pct']:+.1f}%
+시나리오: 비관 {dcf['scenarios']['bear']['fair_value']} / 기본 {dcf['scenarios']['base']['fair_value']} / 낙관 {dcf['scenarios']['bull']['fair_value']}
+현재가가 반영 중인 매출성장률(역산): {dcf['implied_growth_pct']}%
+애널리스트 평균 목표가: {dcf.get('analyst_target')}
+[가정]
+WACC {a['wacc_pct']}% (베타 {a['beta']}, 무위험 {a['risk_free_pct']}%)
+적용 매출성장률 {a['base_growth_pct']}% (컨센서스 {a['consensus_growth_pct']}%, 과거 {a['hist_cagr_pct']}%)
+영업이익률 {a['ebit_margin_pct']}%, 영구성장률 {a['terminal_g_pct']}%, 예측기간 {a['years']}년
+터미널 비중 {a['terminal_share_pct']}%
+신뢰도: {dcf['reliability']}"""
+
+    system_msg = (
+        "당신은 한국 개인 투자자에게 밸류에이션을 설명하는 애널리스트입니다. "
+        "반드시 순수 한글로만 답하며 한자는 절대 쓰지 않습니다. "
+        "영문 약어(DCF, WACC, EBIT)와 종목명·티커만 영문 허용."
+    )
+    user_msg = f"""{stats}
+
+위 DCF 계산 결과를 한국 개인 투자자에게 3~4문장으로 해설해줘.
+
+[규칙]
+1) 숫자를 새로 계산하지 마라. 위에 주어진 값만 인용한다.
+2) "역산 성장률"을 중심으로 설명하라 — 현재 주가가 어떤 성장을 전제하는지,
+   그게 컨센서스/과거 대비 공격적인지 보수적인지.
+3) 신뢰도가 low면 "과거 재무 기반 DCF의 한계"를 반드시 언급하고,
+   적정주가를 단정적으로 말하지 마라.
+4) "매수하세요/파세요" 같은 투자 권유 금지. 판단 근거만 제시.
+5) 서론 없이 바로 본문. 모호한 표현("주의가 필요합니다") 금지."""
+
+    text = _ai_chat(system_msg, user_msg, max_tokens=500, temperature=0.35,
+                    label=f"dcf:{ticker}")
+    if not text:
+        return jsonify({"error": "AI 해설 생성 실패"}), 503
+    text = _COACH_FOREIGN_RE.sub("", text).strip()
+    _DCF_COMMENT_CACHE[ticker] = {"text": text, "ts": now}
+    return jsonify({"ok": True, "comment": text, "cached": False})
 
 
 # ── AI 포트폴리오 점검 ──────────────────────────────────────

@@ -1356,9 +1356,128 @@ function renderDrawdowns(stock) {
   w.classList.remove('hidden');
 }
 
+// ── DCF 밸류에이션 ──────────────────────────────────────
+function renderDcf(stock) {
+  const card = document.getElementById('dcfCard');
+  if (!card) return;
+  const d = stock.dcf;
+  if (!d || !d.fair_value) { card.classList.add('hidden'); return; }
+  const cur = stock.currency;
+
+  // 1) 주인공 — 역산 성장률
+  const impEl = document.getElementById('dcfImplied');
+  const cmpEl = document.getElementById('dcfImpliedCmp');
+  const a = d.assumptions || {};
+  if (d.implied_growth_pct != null) {
+    impEl.textContent = `연 ${d.implied_growth_pct}%`;
+    const parts = [];
+    if (a.consensus_growth_pct != null) parts.push(`컨센서스 ${a.consensus_growth_pct}%`);
+    if (a.hist_cagr_pct != null) parts.push(`과거 ${a.hist_cagr_pct}%`);
+    let verdict = '';
+    if (a.consensus_growth_pct != null) {
+      const gap = d.implied_growth_pct - a.consensus_growth_pct;
+      verdict = gap > 10 ? ' · 컨센서스보다 공격적인 기대'
+              : gap < -5 ? ' · 컨센서스보다 보수적인 기대'
+              : ' · 컨센서스와 비슷한 수준';
+    }
+    cmpEl.textContent = (parts.length ? parts.join(' · ') : '') + verdict;
+    impEl.className = 'dcf-hero-val';
+  } else {
+    impEl.textContent = '산출 불가';
+    impEl.className = 'dcf-hero-val dcf-na';
+    cmpEl.textContent = '현재 주가를 과거 재무 기반 모델로는 설명하기 어렵습니다';
+  }
+
+  // 2) 3개 기준점
+  document.getElementById('dcfPrice').textContent = fmt(d.current_price, cur);
+
+  const fairEl = document.getElementById('dcfFair');
+  fairEl.textContent = fmt(d.fair_value, cur);
+  fairEl.className = 'dcf-ref-val ' +
+    (d.upside_pct > 0 ? 'dcf-up' : d.upside_pct < 0 ? 'dcf-down' : '');
+  const s = d.scenarios || {};
+  document.getElementById('dcfFairRange').textContent =
+    (s.bear && s.bull && s.bear.fair_value && s.bull.fair_value)
+      ? `${d.upside_pct > 0 ? '+' : ''}${d.upside_pct}% · 범위 ${fmt(s.bear.fair_value, cur)}~${fmt(s.bull.fair_value, cur)}`
+      : `${d.upside_pct > 0 ? '+' : ''}${d.upside_pct}%`;
+
+  const tEl = document.getElementById('dcfTarget');
+  const tSub = document.getElementById('dcfTargetSub');
+  if (d.analyst_target) {
+    tEl.textContent = fmt(d.analyst_target, cur);
+    const up = (d.analyst_target / d.current_price - 1) * 100;
+    tEl.className = 'dcf-ref-val ' + (up > 0 ? 'dcf-up' : up < 0 ? 'dcf-down' : '');
+    tSub.textContent = `${up > 0 ? '+' : ''}${up.toFixed(1)}%` +
+      (d.analyst_count ? ` · ${d.analyst_count}명` : '');
+  } else {
+    tEl.textContent = '—'; tEl.className = 'dcf-ref-val'; tSub.textContent = '';
+  }
+
+  // 3) 신뢰도 뱃지
+  const relEl = document.getElementById('dcfReliability');
+  const relMap = {
+    high:   ['신뢰도 높음', 'rel-high'],
+    medium: ['참고용', 'rel-mid'],
+    low:    ['해석 주의', 'rel-low'],
+  };
+  const [relTxt, relCls] = relMap[d.reliability] || relMap.medium;
+  relEl.textContent = relTxt;
+  relEl.className = 'dcf-rel ' + relCls;
+
+  // 4) 경고
+  const warnEl = document.getElementById('dcfWarnings');
+  warnEl.innerHTML = (d.warnings || [])
+    .map(w => `<div class="dcf-warn">⚠️ ${escapeHtmlMain(w)}</div>`).join('');
+
+  // 5) 가정
+  const rows = [
+    ['WACC (할인율)', a.wacc_pct != null ? a.wacc_pct + '%' : '—'],
+    ['자기자본비용', a.cost_equity_pct != null ? a.cost_equity_pct + '%' : '—'],
+    ['베타 (조정)', a.beta != null ? `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}` : '—'],
+    ['무위험수익률', a.risk_free_pct != null ? a.risk_free_pct + '%' : '—'],
+    ['적용 매출성장률', a.base_growth_pct != null ? a.base_growth_pct + '%' : '—'],
+    ['영업이익률', a.ebit_margin_pct != null ? a.ebit_margin_pct + '%' : '—'],
+    ['영구성장률', a.terminal_g_pct != null ? a.terminal_g_pct + '%' : '—'],
+    ['예측 기간', a.years ? a.years + '년' : '—'],
+    ['법인세율', a.tax_rate_pct != null ? a.tax_rate_pct + '%' : '—'],
+    ['터미널 비중', a.terminal_share_pct != null ? a.terminal_share_pct + '%' : '—'],
+  ];
+  document.getElementById('dcfAssumptions').innerHTML = rows.map(([k, v]) =>
+    `<div class="dcf-as-item"><span class="dcf-as-k">${k}</span><span class="dcf-as-v">${v}</span></div>`
+  ).join('');
+
+  card.classList.remove('hidden');
+
+  // 6) AI 해설 (비동기 — 페이지 로딩 막지 않음)
+  loadDcfComment(stock.ticker);
+}
+
+function escapeHtmlMain(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+async function loadDcfComment(ticker) {
+  const el = document.getElementById('dcfComment');
+  if (!el) return;
+  el.classList.add('hidden');
+  el.innerHTML = '';
+  try {
+    const r = await fetch(`/api/dcf/comment?ticker=${encodeURIComponent(ticker)}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d || !d.comment) return;
+    el.innerHTML = `<div class="dcf-comment-label">🤖 AI 해설</div>` +
+                   `<p>${escapeHtmlMain(d.comment).replace(/\n/g, '<br>')}</p>`;
+    el.classList.remove('hidden');
+  } catch (e) { /* 해설 실패는 조용히 무시 — 숫자는 이미 표시됨 */ }
+}
+
 function renderMetrics(stock, analysis) {
   const cur = stock.currency;
   renderDrawdowns(stock);
+  renderDcf(stock);
   document.getElementById('yearHigh').textContent = fmt(stock.year_high, cur);
   document.getElementById('yearLow').textContent = fmt(stock.year_low, cur);
 
