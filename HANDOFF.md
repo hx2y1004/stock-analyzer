@@ -1,14 +1,14 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-07-25 KST (DCF 밸류에이션 + 홈 시황 대시보드/분석 페이지 분리 세션)
+> 마지막 업데이트: 2026-07-25 KST (DCF 밸류에이션 + 홈 시황 대시보드 + 상세분석 탭 재구성)
 
 ---
 
 ## 🚀 현재 상태 (2026-07-25)
 
 - **Railway 정상 동작** (HOBBY 플랜, 배포 정상)
-- 최신 커밋: `60d76ad` (검색 카드 톤 통일) / SW **`sa-v52`** / HTML `?v=52`
+- 최신 커밋: `89fac4b` (밸류에이션 탭 편입 + 모바일 검색 수정) / SW **`sa-v53`** / HTML `?v=53`
 - **토스증권 Open API 운영 동작 확인 완료** ✅ (시세/차트/환율 + 계좌 import + 고정 IP 프록시)
 - **AI 전부 Gemini 우선** — 코치/점검/기업분석/급등이유/DCF해설 모두 `_ai_chat()` 경유
 - **모의투자 신뢰성**: 매수/매도 체결가는 서버 실시간가로 강제 (수익률 조작 차단)
@@ -16,6 +16,12 @@
 - **🆕 DCF 밸류에이션**: `analysis/valuation.py` — 역산 성장률/이익률 중심 표시 + AI 해설
 
 ### ✅ 최신 세션 핵심 (2026-07-25, Opus)
+- **상세분석 탭 재구성** (`89fac4b`): 독립 DCF 카드가 너무 크게 튀어나와 있어
+  탭으로 편입. [기술적 분석(+매수/매도 구간 통합)] [투자 판단] [💰 밸류에이션].
+  DCF 산출 불가 종목은 탭 버튼 자체를 숨기고, 분석할 때마다 기술적 탭으로 초기화.
+- **모바일 검색창 찌그러짐 수정** (`89fac4b`): 480px 쿼리의 옛 `.search-btn{width:100%}`가
+  살아있어 버튼이 폭 독식 → 입력창 압착. 버튼 `width:auto/flex:0 0 auto`,
+  입력 래퍼 `flex:1 1 auto + min-width:0`으로 해결.
 - **DCF 밸류에이션 카드** (`5f001e2`, `5da2506`): anthropics/financial-services의
   dcf-model 스킬(Apache-2.0) 방법론을 `analysis/valuation.py`로 이식.
   숫자는 Python 결정적 계산, AI는 해설만(`/api/dcf/comment`, 6h 캐시).
@@ -297,6 +303,34 @@ conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS cash_balance DOUBL
 ---
 
 ## 5. 최신 작업 로그 (최신 → 과거 순)
+
+### 📌 2026-07-25 (저녁) — 상세분석 탭 재구성 + 모바일 검색 수정 (`89fac4b`)
+
+**1) 밸류에이션을 상세분석 탭으로 편입**
+- 문제: DCF가 독립 `<section class="card dcf-card">`로 분석 화면 중간에 통째로
+  튀어나와 비중이 과했음.
+- 탭 재구성: [📊 기술적 분석] [📈 투자 판단] [💰 밸류에이션]
+  - 기술적 분석 = 기존 지표(`#detailList`) + 매수/매도 구간(`#zonesList`) 통합.
+    `#technicalContainer`로 감싸고 구간 앞에 `.detail-subhead` 소제목·구분선.
+  - 비워진 3번째 자리에 `#valuationPanel` → 그 안에 기존 `#dcfCard` 이동.
+  - DCF는 상세분석 카드 내부이므로 자체 배경/테두리/패딩·카드 제목 제거
+    (`#valuationPanel .dcf-card{background:transparent;border:none;padding:0}`),
+    탭 라벨이 제목 역할. 신뢰도 뱃지만 우측 정렬로 유지.
+- **탭 조건부 노출**: 종목마다 DCF 산출 가능 여부가 다름(적자기업 등 None) →
+  `#valuationTabBtn`을 `renderDcf`에서 show/hide. 또 매 분석마다
+  `switchDetailTab('technical')`로 초기화(이전 종목의 밸류 탭이 남지 않게).
+- `switchDetailTab`은 technical/fundamental/valuation 3개 컨테이너 토글로 변경
+  (`data-tab="zones"` 제거됨).
+
+**2) 모바일 검색창 찌그러짐 (480px 이하)**
+- 원인: 480px 미디어쿼리에 **옛 세로배치용** `.search-btn{width:100%}`가 남아있는데,
+  카드형 개편 때 나중 쿼리에서 `flex-direction:row`만 되돌림 → 버튼이 100% 폭을
+  요구해 입력창이 거의 0으로 압착됨.
+- 수정: 480px 쿼리를 row 유지로 정리 + `.search-btn{width:auto; flex:0 0 auto}`,
+  `.search-input-wrap{flex:1 1 auto; min-width:0}` (640px·480px 양쪽 쿼리 모두).
+  카드형 전환 후 남아있던 모바일 `.search-title` 20px → 14px 정리.
+- 교훈: 레이아웃 방향을 바꿀 땐 **같은 브레이크포인트의 옛 규칙(width/flex)도
+  함께 정리**할 것. `flex-direction`만 되돌리면 잔여 규칙이 살아남음.
 
 ### 📌 2026-07-25 — DCF 밸류에이션 + 홈 시황 대시보드/분석 페이지 분리 (Opus 세션)
 
@@ -1045,6 +1079,24 @@ None 값을 만나면 크래시. 일부 한국 소형주는 marketCap이 None.
 - 설정 가이드: `TOSS_PROXY_SETUP.md` (Oracle 무료 VM + tinyproxy)
 - 미설정 시 직접 연결 (현재 상태) → 재배포마다 `/api/debug/toss`로 IP 확인 후 재등록
 
+### 7.19 페이지 구조 / 화면 관례 (2026-07-25)
+- **홈(`/`) = 시황 대시보드, 분석 = `/stock/<ticker>`**. 같은 `index.html`을 쓰고
+  JS `PAGE_TICKER`(URL 경로 파싱)로 모드 전환. 홈 요소 숨김은 `body.stock-mode` CSS
+  (비동기 로드 후에도 유지되도록 클래스 방식 — 개별 hidden 토글 금지)
+- **종목 이동은 `gotoStock(ticker)` 하나로 통일.** `analyze()` 앞단에 게이트가 있어
+  홈에서 호출되면 자동으로 `/stock/`으로 이동 → 새 진입점(카드/리스트) 추가 시
+  별도 처리 불필요, `analyze()`나 `gotoStock()`만 부르면 됨
+- **분석 상세 탭 = 3개**: technical(지표+매수/매도구간) / fundamental / valuation.
+  각각 `#technicalContainer` `#fundamentalContainer` `#valuationPanel` 토글.
+  밸류에이션 탭은 DCF 산출 가능할 때만 노출(`#valuationTabBtn`)
+- **카드 톤 통일**: 홈/분석 모든 섹션은 `max-width:1200px` + `.card`(bg2/border/radius).
+  풀폭 그라데이션 히어로·풀폭 배경 섹션은 쓰지 않음
+- **공유 클래스 토글 주의**: `.ah-period-btn`은 자산차트·보유종목·리뷰·대시보드가
+  공유 → active 갱신 시 반드시 컨테이너 범위로 한정 (`.asset-history-card .ah-period-btn` 등).
+  전역 `document.querySelectorAll('.ah-period-btn')`는 다른 토글 선택을 지움
+- **미디어쿼리 정리**: 레이아웃 방향(`flex-direction`)을 바꿀 땐 같은 브레이크포인트의
+  옛 `width:100%`/`flex` 규칙도 함께 제거할 것 (모바일 검색창 압착 사고 원인)
+
 ---
 
 ## 8. 외부 의존성 / 환경변수
@@ -1126,7 +1178,9 @@ Service Worker가 옛 버전 캐시할 수 있으므로 새 JS/CSS 테스트는 
 ```
 main 브랜치 (origin/main과 동기화됨, 모두 정상 배포)
 
-60d76ad ux: 검색 영역을 시황 대시보드 카드 톤으로 통일                       ← HEAD
+89fac4b ux: 밸류에이션 탭 편입 + 모바일 검색창 찌그러짐 수정                 ← HEAD
+af0160a docs: HANDOFF.md 최신화 (2026-07-25 DCF/시황대시보드 세션)
+60d76ad ux: 검색 영역을 시황 대시보드 카드 톤으로 통일
 6f30be7 ux: 섹터 강도 탭 제거 + 섹터맵 구성종목 모달 + 탭 섹션 톤 통일
 1bbad2d feat: 실전 섹터맵(핀비즈 스타일) + 대시보드 통합 토글 + 홈 재배치
 571cd41 feat: 홈 시황 대시보드 + 분석 전용 페이지(/stock/<ticker>) 분리
@@ -1189,8 +1243,8 @@ b52dfcb feat: 섹터/테마 강도 랭킹 탭 추가 (모멘텀+거래량/breadt
 68d0575 feat: 분석↔모의투자 통합 - 분석 페이지에서 바로 모의 매수/매도
 ```
 
-**Service Worker**: `sa-v52`
-**HTML 캐시 버스팅 쿼리**: `?v=52`
+**Service Worker**: `sa-v53`
+**HTML 캐시 버스팅 쿼리**: `?v=53`
 
 **2026-06-05 토스 세션 신규/수정 파일**:
 - `toss_api.py` — 시세/캔들/환율/계좌/보유종목 + OAuth2 + 프록시(`_req`) + 다계좌 합산
