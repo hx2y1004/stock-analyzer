@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=52" />
+  <link rel="stylesheet" href="/static/css/style.css?v=53" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -353,10 +353,30 @@
       </div>
     </div>
 
-    <!-- DCF 밸류에이션 (전체 너비) -->
-    <section class="card dcf-card hidden" id="dcfCard">
+    <!-- 상세 분석 (전체 너비) — 기술적분석(+매수/매도구간) / 투자판단 / 밸류에이션 -->
+    <section class="card analysis-full-card">
+      <div class="analysis-tabs">
+        <button class="analysis-tab active" data-tab="technical" onclick="switchDetailTab('technical')">📊 기술적 분석</button>
+        <button class="analysis-tab" data-tab="fundamental" onclick="switchDetailTab('fundamental')">📈 투자 판단</button>
+        <button class="analysis-tab hidden" id="valuationTabBtn" data-tab="valuation" onclick="switchDetailTab('valuation')">💰 밸류에이션</button>
+      </div>
+
+      <!-- 기술적 분석 = 지표 + 매수/매도 구간 -->
+      <div id="technicalContainer">
+        <div id="detailList" class="detail-list detail-grid"></div>
+        <div class="detail-subhead">📍 매수 / 매도 구간</div>
+        <div id="zonesList" class="detail-list"></div>
+      </div>
+
+      <div id="fundamentalContainer" class="hidden">
+        <div id="scorecardPanel" class="scorecard-panel hidden"></div>
+        <div id="fundamentalList" class="detail-list detail-grid"></div>
+      </div>
+
+      <!-- 밸류에이션 (DCF) -->
+      <div id="valuationPanel" class="hidden">
+      <div class="dcf-card hidden" id="dcfCard">
       <div class="dcf-head">
-        <h3 class="card-title" style="margin:0">💰 밸류에이션 (DCF)</h3>
         <span id="dcfReliability" class="dcf-rel"></span>
       </div>
 
@@ -400,21 +420,8 @@
           미래 옵션가치는 반영되지 않으므로 참고 지표로만 활용하세요. 투자 권유가 아닙니다.
         </p>
       </details>
-    </section>
-
-    <!-- 상세 분석 (전체 너비) -->
-    <section class="card analysis-full-card">
-      <div class="analysis-tabs">
-        <button class="analysis-tab active" data-tab="technical" onclick="switchDetailTab('technical')">📊 기술적 분석</button>
-        <button class="analysis-tab" data-tab="fundamental" onclick="switchDetailTab('fundamental')">📈 투자 판단</button>
-        <button class="analysis-tab" data-tab="zones" onclick="switchDetailTab('zones')">📍 매수/매도 구간</button>
-      </div>
-      <div id="detailList" class="detail-list detail-grid"></div>
-      <div id="fundamentalContainer" class="hidden">
-        <div id="scorecardPanel" class="scorecard-panel hidden"></div>
-        <div id="fundamentalList" class="detail-list detail-grid"></div>
-      </div>
-      <div id="zonesList" class="detail-list hidden"></div>
+      </div><!-- /#dcfCard -->
+      </div><!-- /#valuationPanel -->
     </section>
 
     <!-- 하단 그리드: 애널리스트 + 뉴스 -->
@@ -626,6 +633,6 @@
   </div>
 
   <script src="/static/js/chart.js"></script>
-  <script src="/static/js/main.js?v=52"></script>
+  <script src="/static/js/main.js?v=53"></script>
 </body>
 </html>
