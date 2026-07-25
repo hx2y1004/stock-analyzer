@@ -1564,9 +1564,17 @@ function renderDrawdowns(stock) {
 // ── DCF 밸류에이션 ──────────────────────────────────────
 function renderDcf(stock) {
   const card = document.getElementById('dcfCard');
+  const tabBtn = document.getElementById('valuationTabBtn');
   if (!card) return;
   const d = stock.dcf;
-  if (!d || !d.fair_value) { card.classList.add('hidden'); return; }
+  // 종목마다 DCF 가능 여부가 다르므로 탭 자체를 조건부 노출, 탭은 항상 기술적 분석으로 초기화
+  switchDetailTab('technical');
+  if (!d || !d.fair_value) {
+    card.classList.add('hidden');
+    tabBtn?.classList.add('hidden');
+    return;
+  }
+  tabBtn?.classList.remove('hidden');
   const cur = stock.currency;
 
   // 1) 주인공 — 역산 (성장률 우선, 불가 시 영업이익률로 전환)
@@ -1817,10 +1825,13 @@ function switchDetailTab(tab) {
   document.querySelectorAll('.analysis-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  document.getElementById('detailList').classList.toggle('hidden', tab !== 'technical');
+  // 기술적 분석 = 지표 + 매수/매도 구간 (한 탭으로 통합)
+  const techCont = document.getElementById('technicalContainer');
+  if (techCont) techCont.classList.toggle('hidden', tab !== 'technical');
   const fundCont = document.getElementById('fundamentalContainer');
   if (fundCont) fundCont.classList.toggle('hidden', tab !== 'fundamental');
-  document.getElementById('zonesList').classList.toggle('hidden', tab !== 'zones');
+  const valPanel = document.getElementById('valuationPanel');
+  if (valPanel) valPanel.classList.toggle('hidden', tab !== 'valuation');
 }
 
 function _buildCards(details) {

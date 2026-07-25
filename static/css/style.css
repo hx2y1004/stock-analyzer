@@ -586,9 +586,11 @@ body {
 
   /* 검색 */
   .search-section { padding: 24px 12px; }
-  .search-title { font-size: 20px; }
-  .search-row { flex-direction: column; gap: 8px; }
-  .search-btn { width: 100%; padding: 12px; }
+  .search-title { font-size: 14px; }
+  /* 한 줄 유지: 입력창이 남는 폭을 모두 차지하고 버튼은 내용만큼만 */
+  .search-row { flex-direction: row; gap: 6px; }
+  .search-input-wrap { flex: 1 1 auto; min-width: 0; }
+  .search-btn { width: auto; flex: 0 0 auto; padding: 12px 14px; }
   .quick-tickers { gap: 6px; }
   .quick-btn { padding: 4px 10px; font-size: 12px; }
 
@@ -4534,6 +4536,21 @@ body.stock-mode #marketDashboard { display: none !important; }
   .search-section { padding: 12px 12px 12px; }
   .search-box { padding: 14px; }
   .search-row { flex-direction: row; }
-  .search-btn { padding: 12px 16px; font-size: 14px; }
+  .search-input-wrap { flex: 1 1 auto; min-width: 0; }
+  .search-btn { width: auto; flex: 0 0 auto; padding: 12px 16px; font-size: 14px; }
   .quick-tickers .quick-label { display: none; }
 }
+
+/* 기술적 분석 탭 내부 소제목 (매수/매도 구간) */
+.detail-subhead {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  margin: 20px 0 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+/* 밸류에이션 탭: 상세분석 카드 안에 들어가므로 자체 배경 없음 */
+#valuationPanel .dcf-card { background: transparent; border: none; padding: 0; }
+#valuationPanel .dcf-head { justify-content: flex-end; margin-bottom: 10px; }
+#valuationPanel .dcf-head:empty { display: none; }
