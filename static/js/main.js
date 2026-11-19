@@ -1351,11 +1351,22 @@ function fmt(num, currency = 'USD', noRound = false) {
   return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// yfinance 영문 섹터/거래소 코드 → 화면 표시용 한글
+const SECTOR_KO = {
+  'Technology': '기술', 'Financial Services': '금융', 'Healthcare': '헬스케어',
+  'Consumer Cyclical': '경기소비재', 'Consumer Defensive': '필수소비재',
+  'Communication Services': '커뮤니케이션', 'Industrials': '산업재', 'Energy': '에너지',
+  'Basic Materials': '소재', 'Real Estate': '부동산', 'Utilities': '유틸리티',
+};
+const EXCHANGE_KO = { 'KSC': 'KOSPI', 'KOE': 'KOSDAQ', 'NMS': 'NASDAQ', 'NGM': 'NASDAQ', 'NCM': 'NASDAQ', 'NYQ': 'NYSE' };
+const sectorKo   = (s) => (s && SECTOR_KO[s]) || s || '';
+const exchangeKo = (e) => (e && EXCHANGE_KO[e]) || e || '';
+
 function renderStockInfo(stock) {
   document.getElementById('stockName').textContent = stock.name;
   document.getElementById('stockTicker').textContent = stock.ticker;
-  document.getElementById('stockSector').textContent = stock.sector || '';
-  document.getElementById('stockExchange').textContent = stock.exchange ? `· ${stock.exchange}` : '';
+  document.getElementById('stockSector').textContent = sectorKo(stock.sector);
+  document.getElementById('stockExchange').textContent = stock.exchange ? `· ${exchangeKo(stock.exchange)}` : '';
 
   const cur = stock.currency;
   document.getElementById('currentPrice').textContent = fmt(stock.current_price, cur);
@@ -1455,8 +1466,11 @@ function renderVerdict(analysis, stock) {
   document.getElementById('scoreMarker').style.left = `${pct}%`;
 
   const cur = stock.currency;
-  document.getElementById('entryPrice').textContent  = fmt(analysis.entry_price,  cur);
-  document.getElementById('targetPrice').textContent = fmt(analysis.target_price, cur);
+  const _noEntry = analysis.trade_recommendation === 'avoid';
+  document.getElementById('entryPrice').textContent  =
+    (_noEntry && analysis.entry_price == null)  ? '관망' : fmt(analysis.entry_price,  cur);
+  document.getElementById('targetPrice').textContent =
+    (_noEntry && analysis.target_price == null) ? '관망' : fmt(analysis.target_price, cur);
   document.getElementById('stopLoss').textContent    = fmt(analysis.stop_loss,    cur);
 
   // ── Plan D: 추천 등급 + R:R 정보 표시 ──
@@ -2141,7 +2155,7 @@ function renderFundamental(details, stock) {
         <div class="co-header">
           <span class="co-icon">🏢</span>
           <span class="co-title">기업 분석 (AI)</span>
-          ${stock.sector ? `<span class="co-sector">${stock.sector}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
+          ${stock.sector ? `<span class="co-sector">${sectorKo(stock.sector)}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
         </div>
         ${intro    ? `<div class="co-section-label">기업 소개</div><p class="co-desc">${intro}</p>` : ''}
         ${bizHtml  ? `<div class="co-section-label">주요 사업</div>${bizHtml}` : ''}
@@ -2158,7 +2172,7 @@ function renderFundamental(details, stock) {
           <div class="co-header">
             <span class="co-icon">🏢</span>
             <span class="co-title">회사 소개</span>
-            ${stock.sector ? `<span class="co-sector">${stock.sector}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
+            ${stock.sector ? `<span class="co-sector">${sectorKo(stock.sector)}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
           </div>
           <p class="co-desc">${formatted}</p>
         </div>`;
@@ -2396,6 +2410,8 @@ function renderZones(analysis, stock) {
   const monthHigh  = analysis.month_high  || target;
   const monthLow   = analysis.month_low   || stop;
   const trend      = analysis.trend       || 'sideways';
+  // 종합 판단이 '진입 비추천'이면 매수 구간을 추천처럼 보여주지 않는다 (상단 판단과 모순 방지)
+  const isAvoid    = analysis.trade_recommendation === 'avoid';
   const monthRange = monthHigh - monthLow || 1;
   const rangePct   = (price - monthLow) / monthRange; // 0~1 (1개월 범위 내 위치)
 
@@ -2483,13 +2499,15 @@ function renderZones(analysis, stock) {
       </div>
 
       <div class="zone-row zone-buy">
-        <div class="zone-icon-col">🟢</div>
+        <div class="zone-icon-col">${isAvoid ? '⚪' : '🟢'}</div>
         <div class="zone-content">
           <div class="zone-title-row">
-            <span class="zone-name">매수 추천 구간</span>
+            <span class="zone-name">${isAvoid ? '1개월 저점 구간 (참고)' : '매수 추천 구간'}</span>
             <span class="zone-price-range">${fmt(entryLow)} ~ ${fmt(entryHigh)}</span>
           </div>
-          <div class="zone-explanation">최근 한 달 저점 부근이에요. 이 구간으로 주가가 내려오면 분할 매수를 고려해보세요. 한 번에 전액 투자하기보다 2~3번에 나눠 사면 리스크를 줄일 수 있어요.</div>
+          <div class="zone-explanation">${isAvoid
+            ? `최근 한 달 저점 부근이에요. 다만 지금은 종합 판단이 <strong>진입 비추천</strong>이라, 이 구간에 있어도 바로 사기보다 추세 전환 신호(MA 골든크로스, RSI 회복 등)를 먼저 확인하세요.`
+            : `최근 한 달 저점 부근이에요. 이 구간으로 주가가 내려오면 분할 매수를 고려해보세요. 한 번에 전액 투자하기보다 2~3번에 나눠 사면 리스크를 줄일 수 있어요.`}</div>
         </div>
       </div>
 
@@ -2500,7 +2518,8 @@ function renderZones(analysis, stock) {
             <span class="zone-name">현재 위치 <span class="zone-badge ${priceColor}">${priceZone}</span></span>
             <span class="zone-price-range">${fmt(price)}</span>
           </div>
-          <div class="zone-explanation">${_getZoneAdvice(priceZone, analysis)}</div>
+          <div class="zone-explanation">${_getZoneAdvice(priceZone, analysis)}${isAvoid && priceColor === 'bullish'
+            ? ' 다만 종합 판단은 <strong>진입 비추천</strong>이라 신규 매수는 신중하게 접근하세요.' : ''}</div>
         </div>
       </div>
 
@@ -2550,6 +2569,10 @@ function renderZones(analysis, stock) {
           nba = { action: '매수 구간 대기', color: 'neutral',
             reason: `횡보 구간 중반이에요. 매수 추천 구간(${fmt(entryLow)}~${fmt(entryHigh)})까지 내려오면 분할 매수를 고려하세요.` };
       }
+      if (isAvoid && nba.color === 'bullish') {
+        nba = { action: '관망 권장', color: 'neutral',
+          reason: `가격 위치만 보면 매수를 고려할 만한 자리지만, 종합 판단은 진입 비추천이에요(추세가 약하거나 손익비 부족). 추세가 강해지거나 손익비가 개선될 때까지 기다리는 게 안전해요.` };
+      }
       const cls = nba.color === 'bullish' ? 'nba-bullish' : nba.color === 'bearish' ? 'nba-bearish' : 'nba-neutral';
       return `
     <div class="new-buyer-advice ${cls}">
@@ -2564,7 +2587,9 @@ function renderZones(analysis, stock) {
       <div class="zones-guide-grid">
         <div class="guide-card buy-guide">
           <div class="guide-card-title">✅ 언제 살까요?</div>
-          <div class="guide-card-body">현재가가 <strong>${fmt(entryLow)} ~ ${fmt(entryHigh)}</strong> 구간(최근 1개월 저점 부근)에 오거나 RSI가 40 이하로 내려오면 분할 매수를 고려하세요. 급등하는 종목을 쫓아가며 사는 건 위험해요.</div>
+          <div class="guide-card-body">${isAvoid
+            ? `지금은 종합 판단이 <strong>진입 비추천</strong>이에요. 추세 전환 신호(MA 골든크로스, RSI 30 이상 회복 등)가 확인된 뒤 <strong>${fmt(entryLow)} ~ ${fmt(entryHigh)}</strong> 구간(최근 1개월 저점 부근)에서 분할 매수를 고려하세요.`
+            : `현재가가 <strong>${fmt(entryLow)} ~ ${fmt(entryHigh)}</strong> 구간(최근 1개월 저점 부근)에 오거나 RSI가 40 이하로 내려오면 분할 매수를 고려하세요. 급등하는 종목을 쫓아가며 사는 건 위험해요.`}</div>
         </div>
         <div class="guide-card sell-guide">
           <div class="guide-card-title">💰 언제 팔까요?</div>
@@ -2741,6 +2766,15 @@ function renderAnalysts(analysts, stock) {
     return;
   }
   const { targets = [], summary = {} } = analysts;
+
+  // 요약도 목표가 목록도 없으면 '—' 칸을 늘어놓지 않고 한 줄 안내만 보여준다
+  const hasSummary = ['recommendation', 'mean', 'high', 'low', 'num_analysts']
+    .some(k => summary[k] != null && summary[k] !== '');
+  if (!hasSummary && !targets.length) {
+    document.getElementById('analystConsensus').innerHTML = '<p class="no-data">애널리스트 데이터가 없습니다.</p>';
+    document.getElementById('analystTargets').innerHTML = '';
+    return;
+  }
 
   // 컨센서스 요약
   const REC_MAP = {
@@ -2921,11 +2955,22 @@ function syncPriceScaleWidths(charts) {
   }
 }
 
-function makeChart(el, height, showTimeAxis = true) {
+// 차트 가격축/크로스헤어 숫자 형식: 원화는 정수 + 쉼표, 그 외는 소수 둘째 자리.
+// kind: 'price'(가격·MACD 등 통화 단위) | 'osc'(RSI 등 0~100 지표)
+function chartPriceFormatter(kind) {
+  if (kind === 'osc') return (v) => v.toFixed(1);
+  const isKRW = (window._lastStock && window._lastStock.currency) === 'KRW';
+  return isKRW
+    ? (v) => Math.round(v).toLocaleString('ko-KR')
+    : (v) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function makeChart(el, height, showTimeAxis = true, kind = 'price') {
   const width = el.clientWidth || el.parentElement.clientWidth || 900;
   const chart = LightweightCharts.createChart(el, {
     width,
     height,
+    localization: { priceFormatter: chartPriceFormatter(kind) },
     layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
     grid: { vertLines: { color: '#21262d' }, horzLines: { visible: false } },
     crosshair: { mode: 1 },
@@ -3020,7 +3065,7 @@ function renderMainChart(data) {
 function renderRSIChart(data) {
   const el = document.getElementById('rsiChart');
   el.innerHTML = '';
-  const chart = makeChart(el, getChartHeights().sub, false);   // 시간축 숨김 (가운데 차트)
+  const chart = makeChart(el, getChartHeights().sub, false, 'osc');   // 시간축 숨김 (가운데 차트)
 
   chart.addLineSeries({ color: '#bc8cff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.rsi));
