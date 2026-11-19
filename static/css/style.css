@@ -4668,3 +4668,6 @@ button, input, select, textarea { font-family: inherit; }
   .md-idx:nth-child(2n+1) { border-left: none; padding-left: 0; }
 }
 .price-change-label { color: var(--text2); font-weight: 500; margin-right: 2px; }
+
+/* 기술 지표 칩: 고정폭 대신 본문 서체 + 자릿수 정렬 */
+.detail-chip { font-family: var(--font-ui); font-variant-numeric: tabular-nums; }

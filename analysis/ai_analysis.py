@@ -1,4 +1,16 @@
+import threading
+
 import numpy as np
+
+# 분석 문구 속 가격 표기 자릿수. 원화는 정수, 그 외 통화는 소수 둘째 자리.
+# gthread 다중 스레드에서 요청끼리 섞이지 않도록 스레드별로 둔다.
+_FMT = threading.local()
+
+
+def _fp(v):
+    """가격을 통화에 맞는 자릿수로 쉼표 포함 문자열로."""
+    dec = getattr(_FMT, "dec", 2)
+    return f"{v:,.{dec}f}"
 
 
 def _pct(a, b):
@@ -186,8 +198,8 @@ def _analyze_fundamental(df, info):
         elif mom60 <= -15:
             pos_score -= 5
 
-    pos_items.append({"label": f"52주 고가: {year_high:,.2f}", "up": None})
-    pos_items.append({"label": f"52주 저가: {year_low:,.2f}", "up": None})
+    pos_items.append({"label": f"52주 고가: {_fp(year_high)}", "up": None})
+    pos_items.append({"label": f"52주 저가: {_fp(year_low)}", "up": None})
 
     score += pos_score
     if pos_score >= 10:
@@ -198,7 +210,7 @@ def _analyze_fundamental(df, info):
         pos_state, pos_color = "하락 추세 (약세)", "bearish"
 
     pos_desc = ". ".join(pos_parts)
-    pos_desc += f". 52주 고가({year_high:,.2f})까지 {_pct(year_high, close):+.1f}%, 저가({year_low:,.2f}) 대비 {_pct(close, year_low):+.1f}% 위치합니다."
+    pos_desc += f". 52주 고가({_fp(year_high)})까지 {_pct(year_high, close):+.1f}%, 저가({_fp(year_low)}) 대비 {_pct(close, year_low):+.1f}% 위치합니다."
 
     details.append({
         "indicator": "시장 위치 & 모멘텀",
@@ -307,6 +319,7 @@ def _analyze_fundamental(df, info):
 
 
 def analyze_signals(df, info, df_weekly=None, stock=None):
+    _FMT.dec = 0 if (info or {}).get("currency") == "KRW" else 2
     latest = df.iloc[-1]
     prev   = df.iloc[-2]
     signals = []
@@ -336,7 +349,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             score += 15
             ma_state, ma_color = "정배열 (상승 추세)", "bullish"
             ma_desc = (
-                f"MA5({ma5:,.2f}) > MA20({ma20:,.2f}) > MA60({ma60:,.2f}) 순서로 "
+                f"MA5({_fp(ma5)}) > MA20({_fp(ma20)}) > MA60({_fp(ma60)}) 순서로 "
                 f"정배열 상태입니다. 단기·중기·장기 이동평균이 모두 우상향하고 있어 "
                 f"추세적 상승 흐름이 유지되고 있습니다. "
                 f"현재가는 MA5 대비 {_pct(close, ma5):+.1f}%, MA20 대비 {_pct(close, ma20):+.1f}% 위치합니다."
@@ -346,7 +359,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             score -= 15
             ma_state, ma_color = "역배열 (하락 추세)", "bearish"
             ma_desc = (
-                f"MA5({ma5:,.2f}) < MA20({ma20:,.2f}) < MA60({ma60:,.2f}) 순서로 "
+                f"MA5({_fp(ma5)}) < MA20({_fp(ma20)}) < MA60({_fp(ma60)}) 순서로 "
                 f"역배열 상태입니다. 단기 이동평균이 장기 이동평균 아래에 있어 "
                 f"하락 추세가 지속되고 있습니다. "
                 f"현재가는 MA20 대비 {_pct(close, ma20):+.1f}% 위치합니다."
@@ -355,7 +368,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             ma_state, ma_color = "혼조 (방향 불명확)", "neutral"
             ma_desc = (
                 f"이동평균선이 혼조 상태입니다. "
-                f"MA5({ma5:,.2f}), MA20({ma20:,.2f}), MA60({ma60:,.2f})이 "
+                f"MA5({_fp(ma5)}), MA20({_fp(ma20)}), MA60({_fp(ma60)})이 "
                 f"완전한 정·역배열을 이루지 않고 있어 방향성이 불분명합니다. "
                 f"추세 확인 후 진입을 권장합니다."
             )
@@ -366,10 +379,10 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         "indicator": "이동평균선 (MA)",
         "state": ma_state, "color": ma_color, "desc": ma_desc,
         "items": [
-            {"label": f"MA5  {ma5:,.2f}"   if ma5   else "MA5 —",   "up": ma_analysis.get("MA5",  {}).get("above")},
-            {"label": f"MA20 {ma20:,.2f}"  if ma20  else "MA20 —",  "up": ma_analysis.get("MA20", {}).get("above")},
-            {"label": f"MA60 {ma60:,.2f}"  if ma60  else "MA60 —",  "up": ma_analysis.get("MA60", {}).get("above")},
-            {"label": f"MA120 {ma120:,.2f}" if ma120 else "MA120 —", "up": ma_analysis.get("MA120",{}).get("above")},
+            {"label": f"MA5  {_fp(ma5)}"   if ma5   else "MA5 —",   "up": ma_analysis.get("MA5",  {}).get("above")},
+            {"label": f"MA20 {_fp(ma20)}"  if ma20  else "MA20 —",  "up": ma_analysis.get("MA20", {}).get("above")},
+            {"label": f"MA60 {_fp(ma60)}"  if ma60  else "MA60 —",  "up": ma_analysis.get("MA60", {}).get("above")},
+            {"label": f"MA120 {_fp(ma120)}" if ma120 else "MA120 —", "up": ma_analysis.get("MA120",{}).get("above")},
         ]
     })
 
@@ -387,7 +400,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             score -= 10
             bb_state, bb_color = "상단 돌파 (과매수)", "bearish"
             bb_desc = (
-                f"현재가({close:,.2f})가 볼린저밴드 상단({bb_upper:,.2f})을 돌파했습니다. "
+                f"현재가({_fp(close)})가 볼린저밴드 상단({_fp(bb_upper)})을 돌파했습니다. "
                 f"통계적으로 상단 이탈은 전체의 약 5%로 단기 과매수 가능성이 높습니다. "
                 f"단기 조정 또는 상단 저항에 주의가 필요합니다. 밴드 폭(변동성) {bb_width_pct}%"
             )
@@ -396,7 +409,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             score += 10
             bb_state, bb_color = "하단 이탈 (과매도)", "bullish"
             bb_desc = (
-                f"현재가({close:,.2f})가 볼린저밴드 하단({bb_lower:,.2f})을 이탈했습니다. "
+                f"현재가({_fp(close)})가 볼린저밴드 하단({_fp(bb_lower)})을 이탈했습니다. "
                 f"과매도 구간으로 기술적 반등 가능성이 있습니다. "
                 f"단, 강한 하락 추세에서는 하단 이탈이 지속될 수 있으므로 추세 지표와 함께 확인이 필요합니다. "
                 f"밴드 폭 {bb_width_pct}%"
@@ -406,17 +419,17 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             score += 5
             bb_state, bb_color = "중심선 위 (상승 우위)", "bullish"
             bb_desc = (
-                f"현재가({close:,.2f})가 볼린저밴드 중심선({bb_mid:,.2f}) 위에 위치합니다. "
+                f"현재가({_fp(close)})가 볼린저밴드 중심선({_fp(bb_mid)}) 위에 위치합니다. "
                 f"밴드 내 상위 {bb_position:.1f}% 구간으로 상승 모멘텀이 우세합니다. "
-                f"상단({bb_upper:,.2f})까지 {_pct(bb_upper, close):+.1f}% 여유가 있습니다. "
+                f"상단({_fp(bb_upper)})까지 {_pct(bb_upper, close):+.1f}% 여유가 있습니다. "
                 f"밴드 폭(변동성) {bb_width_pct}%"
             )
         else:
             bb_state, bb_color = "중심선 아래 (하락 우위)", "bearish"
             bb_desc = (
-                f"현재가({close:,.2f})가 볼린저밴드 중심선({bb_mid:,.2f}) 아래에 위치합니다. "
+                f"현재가({_fp(close)})가 볼린저밴드 중심선({_fp(bb_mid)}) 아래에 위치합니다. "
                 f"밴드 내 하위 {bb_position:.1f}% 구간으로 하락 압력이 우세합니다. "
-                f"하단({bb_lower:,.2f})까지 {_pct(bb_lower, close):+.1f}%입니다. "
+                f"하단({_fp(bb_lower)})까지 {_pct(bb_lower, close):+.1f}%입니다. "
                 f"밴드 폭(변동성) {bb_width_pct}%"
             )
     else:
@@ -429,9 +442,9 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         "indicator": "볼린저밴드 (BB)",
         "state": bb_state, "color": bb_color, "desc": bb_desc,
         "items": [
-            {"label": f"상단  {bb_upper:,.2f}" if not np.isnan(bb_upper) else "상단 —", "up": None},
-            {"label": f"중심  {bb_mid:,.2f}"   if not np.isnan(bb_mid)   else "중심 —", "up": None},
-            {"label": f"하단  {bb_lower:,.2f}" if not np.isnan(bb_lower) else "하단 —", "up": None},
+            {"label": f"상단  {_fp(bb_upper)}" if not np.isnan(bb_upper) else "상단 —", "up": None},
+            {"label": f"중심  {_fp(bb_mid)}"   if not np.isnan(bb_mid)   else "중심 —", "up": None},
+            {"label": f"하단  {_fp(bb_lower)}" if not np.isnan(bb_lower) else "하단 —", "up": None},
             {"label": f"위치  {bb_position:.1f}%" if bb_position is not None else "위치 —",
              "up": bb_position > 50 if bb_position is not None else None},
         ]
@@ -447,14 +460,14 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
 
     if not any(np.isnan(v) for v in [tenkan, kijun]):
         if tenkan > kijun:
-            ichi_parts.append(f"전환선({tenkan:,.2f}) > 기준선({kijun:,.2f}) → 단기 매수 우위")
+            ichi_parts.append(f"전환선({_fp(tenkan)}) > 기준선({_fp(kijun)}) → 단기 매수 우위")
             ichi_score_delta += 10
         else:
-            ichi_parts.append(f"전환선({tenkan:,.2f}) < 기준선({kijun:,.2f}) → 단기 매도 우위")
+            ichi_parts.append(f"전환선({_fp(tenkan)}) < 기준선({_fp(kijun)}) → 단기 매도 우위")
             ichi_score_delta -= 10
         ichi_items += [
-            {"label": f"전환선 {tenkan:,.2f}", "up": tenkan > kijun},
-            {"label": f"기준선 {kijun:,.2f}",  "up": tenkan > kijun},
+            {"label": f"전환선 {_fp(tenkan)}", "up": tenkan > kijun},
+            {"label": f"기준선 {_fp(kijun)}",  "up": tenkan > kijun},
         ]
 
     cloud_top = cloud_bot = None
@@ -462,18 +475,18 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         cloud_top = max(senkou_a, senkou_b)
         cloud_bot = min(senkou_a, senkou_b)
         if close > cloud_top:
-            ichi_parts.append(f"구름대({cloud_bot:,.2f}~{cloud_top:,.2f}) 위 → 강한 상승 신호")
+            ichi_parts.append(f"구름대({_fp(cloud_bot)}~{_fp(cloud_top)}) 위 → 강한 상승 신호")
             ichi_score_delta += 15
             ichi_state, ichi_color = "구름대 위 (강세)", "bullish"
         elif close < cloud_bot:
-            ichi_parts.append(f"구름대({cloud_bot:,.2f}~{cloud_top:,.2f}) 아래 → 강한 하락 신호")
+            ichi_parts.append(f"구름대({_fp(cloud_bot)}~{_fp(cloud_top)}) 아래 → 강한 하락 신호")
             ichi_score_delta -= 15
             ichi_state, ichi_color = "구름대 아래 (약세)", "bearish"
         else:
-            ichi_parts.append(f"구름대({cloud_bot:,.2f}~{cloud_top:,.2f}) 내부 → 방향 탐색 중")
+            ichi_parts.append(f"구름대({_fp(cloud_bot)}~{_fp(cloud_top)}) 내부 → 방향 탐색 중")
             ichi_state, ichi_color = "구름대 내부 (중립)", "neutral"
-        ichi_items.append({"label": f"구름상단 {cloud_top:,.2f}", "up": close > cloud_top})
-        ichi_items.append({"label": f"구름하단 {cloud_bot:,.2f}", "up": close > cloud_bot})
+        ichi_items.append({"label": f"구름상단 {_fp(cloud_top)}", "up": close > cloud_top})
+        ichi_items.append({"label": f"구름하단 {_fp(cloud_bot)}", "up": close > cloud_bot})
     else:
         ichi_state, ichi_color = "데이터 부족", "neutral"
 
