@@ -350,6 +350,36 @@ _KR_SUPPLEMENT_CACHE = {}
 _KR_SUPPLEMENT_TTL = 1800  # 30분 (일별 데이터라 자주 변경 안 됨)
 
 
+def _ttl_cached(cache: dict, key, ttl_ok: int, ttl_empty: int, is_empty, fetch, max_entries: int = 300):
+    """종목별 결과 메모리 캐시 (단일 프로세스 전제).
+
+    - 데이터가 있으면 ttl_ok 초, 비어 있으면(일시 오류 가능) ttl_empty 초만 보관
+    - 호출 측이 결과를 수정해도 캐시가 오염되지 않도록 깊은 복사본을 반환
+    - 항목이 max_entries 를 넘으면 가장 오래된 것부터 제거
+    """
+    import copy
+    now_ts = time.time()
+    hit = cache.get(key)
+    if hit and (now_ts - hit[0]) < hit[1]:
+        return copy.deepcopy(hit[2])
+    result = fetch()
+    ttl = ttl_empty if is_empty(result) else ttl_ok
+    with _TTL_CACHE_LOCK:   # gthread 다중 스레드에서 정리 중 dict 변경 충돌 방지
+        cache[key] = (now_ts, ttl, copy.deepcopy(result))
+        if len(cache) > max_entries:
+            for k, _ in sorted(cache.items(), key=lambda kv: kv[1][0])[: len(cache) - max_entries]:
+                cache.pop(k, None)
+    return result
+
+
+_TTL_CACHE_LOCK = threading.Lock()
+_KR_QUARTERLY_CACHE = {}
+_KR_QUARTERLY_TTL = 6 * 3600       # 분기 실적: 자주 바뀌지 않음
+_KR_ANALYST_CACHE = {}
+_KR_ANALYST_TTL = 3600             # 증권사 리포트: 하루 몇 건 수준
+_KR_EMPTY_TTL = 600                # 빈 결과(조회 실패 포함)는 10분만 보관
+
+
 def _naver_request(url):
     """네이버 모바일/PC 페이지 GET — 인코딩 처리 포함."""
     headers = {
@@ -1617,6 +1647,15 @@ GRADE_SCORE = {
 }
 
 def fetch_kr_quarterly_data(krx_code):
+    """fetch_kr_quarterly_data 의 캐시 래퍼 (6시간, 빈 결과는 10분)."""
+    return _ttl_cached(
+        _KR_QUARTERLY_CACHE, krx_code, _KR_QUARTERLY_TTL, _KR_EMPTY_TTL,
+        is_empty=lambda d: not any((d or {}).get(k) for k in ("rev_act", "oi_act", "rev_est", "oi_est")),
+        fetch=lambda: _fetch_kr_quarterly_data_uncached(krx_code),
+    )
+
+
+def _fetch_kr_quarterly_data_uncached(krx_code):
     """네이버 금융 분기 API → actuals + 컨센서스 estimates 동시 수집.
 
     yfinance 가 한국 종목 실적 업데이트가 느려서, 네이버 데이터를
@@ -2042,6 +2081,15 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
 
 
 def fetch_kr_analysts(code):
+    """fetch_kr_analysts 의 캐시 래퍼 (1시간, 빈 결과는 10분)."""
+    return _ttl_cached(
+        _KR_ANALYST_CACHE, code, _KR_ANALYST_TTL, _KR_EMPTY_TTL,
+        is_empty=lambda d: not (d or {}).get("targets"),
+        fetch=lambda: _fetch_kr_analysts_uncached(code),
+    )
+
+
+def _fetch_kr_analysts_uncached(code):
     """네이버 금융 리서치 리포트에서 국내 증권사 목표가·투자의견 수집.
 
     전략:
