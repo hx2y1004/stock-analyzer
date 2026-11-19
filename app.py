@@ -350,6 +350,36 @@ _KR_SUPPLEMENT_CACHE = {}
 _KR_SUPPLEMENT_TTL = 1800  # 30분 (일별 데이터라 자주 변경 안 됨)
 
 
+def _ttl_cached(cache: dict, key, ttl_ok: int, ttl_empty: int, is_empty, fetch, max_entries: int = 300):
+    """종목별 결과 메모리 캐시 (단일 프로세스 전제).
+
+    - 데이터가 있으면 ttl_ok 초, 비어 있으면(일시 오류 가능) ttl_empty 초만 보관
+    - 호출 측이 결과를 수정해도 캐시가 오염되지 않도록 깊은 복사본을 반환
+    - 항목이 max_entries 를 넘으면 가장 오래된 것부터 제거
+    """
+    import copy
+    now_ts = time.time()
+    hit = cache.get(key)
+    if hit and (now_ts - hit[0]) < hit[1]:
+        return copy.deepcopy(hit[2])
+    result = fetch()
+    ttl = ttl_empty if is_empty(result) else ttl_ok
+    with _TTL_CACHE_LOCK:   # gthread 다중 스레드에서 정리 중 dict 변경 충돌 방지
+        cache[key] = (now_ts, ttl, copy.deepcopy(result))
+        if len(cache) > max_entries:
+            for k, _ in sorted(cache.items(), key=lambda kv: kv[1][0])[: len(cache) - max_entries]:
+                cache.pop(k, None)
+    return result
+
+
+_TTL_CACHE_LOCK = threading.Lock()
+_KR_QUARTERLY_CACHE = {}
+_KR_QUARTERLY_TTL = 6 * 3600       # 분기 실적: 자주 바뀌지 않음
+_KR_ANALYST_CACHE = {}
+_KR_ANALYST_TTL = 3600             # 증권사 리포트: 하루 몇 건 수준
+_KR_EMPTY_TTL = 600                # 빈 결과(조회 실패 포함)는 10분만 보관
+
+
 def _naver_request(url):
     """네이버 모바일/PC 페이지 GET — 인코딩 처리 포함."""
     headers = {
@@ -1617,6 +1647,15 @@ GRADE_SCORE = {
 }
 
 def fetch_kr_quarterly_data(krx_code):
+    """fetch_kr_quarterly_data 의 캐시 래퍼 (6시간, 빈 결과는 10분)."""
+    return _ttl_cached(
+        _KR_QUARTERLY_CACHE, krx_code, _KR_QUARTERLY_TTL, _KR_EMPTY_TTL,
+        is_empty=lambda d: not any((d or {}).get(k) for k in ("rev_act", "oi_act", "rev_est", "oi_est")),
+        fetch=lambda: _fetch_kr_quarterly_data_uncached(krx_code),
+    )
+
+
+def _fetch_kr_quarterly_data_uncached(krx_code):
     """네이버 금융 분기 API → actuals + 컨센서스 estimates 동시 수집.
 
     yfinance 가 한국 종목 실적 업데이트가 느려서, 네이버 데이터를
@@ -1708,14 +1747,25 @@ def fetch_kr_quarterly_data(krx_code):
                     if is_rev: target_rev[period] = krw_val
                     else:      target_oi[period]  = krw_val
 
-    # ── 시도 1: m.stock.naver.com/api/stock/.../finance/quarterly ──
+    # ── 시도 1: m.stock.naver.com/api/stock/.../finance/quarter ──
+    # (2026-11 확인: 예전 경로 .../finance/quarterly 는 404, 단수형 quarter 가 정상)
     try:
-        url  = f"https://m.stock.naver.com/api/stock/{krx_code}/finance/quarterly"
+        url  = f"https://m.stock.naver.com/api/stock/{krx_code}/finance/quarter"
         resp = requests.get(url, headers=_hdrs, timeout=8)
         if resp.status_code == 200:
             _parse_naver_finance(resp.json().get("financeInfo", {}))
+        else:
+            app.logger.warning(f"[KR qtr] mobile quarter API → {resp.status_code}")
     except Exception as e:
         app.logger.error(f"[KR qtr] mobile quarterly error: {e}")
+
+    # 시도 1 로 발표치를 얻었으면 아래 폴백(요청 최대 5개, 수 초 소요)은 건너뛴다
+    if rev_act and oi_act:
+        app.logger.info(f"[KR qtr] FINAL(api): rev_act_periods={sorted(rev_act.keys())}")
+        return {
+            "rev_act": rev_act, "oi_act":  oi_act,
+            "rev_est": rev_est, "oi_est":  oi_est,
+        }
 
     # ── 시도 2: integration 엔드포인트 (항상 시도, 데이터 머지) ──
     try:
@@ -2042,63 +2092,63 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
 
 
 def fetch_kr_analysts(code):
-    """네이버 금융 리서치 리포트에서 국내 증권사 목표가·투자의견 수집.
+    """fetch_kr_analysts 의 캐시 래퍼 (1시간, 빈 결과는 10분)."""
+    return _ttl_cached(
+        _KR_ANALYST_CACHE, code, _KR_ANALYST_TTL, _KR_EMPTY_TTL,
+        is_empty=lambda d: not (d or {}).get("targets"),
+        fetch=lambda: _fetch_kr_analysts_uncached(code),
+    )
 
-    전략:
-      1) 리서치 목록 페이지에서 nid(리포트ID) / 증권사 / 날짜 수집 (증권사 중복 제거)
-      2) 개별 리포트 페이지를 ThreadPoolExecutor 로 병렬 요청
-         → view_info_1 div 에서 em.money(목표가) + em.coment(투자의견) 파싱
+
+def _fetch_kr_analysts_uncached(code):
+    """네이버 증권 리서치에서 국내 증권사 목표가·투자의견 수집.
+
+    2026-11 확인: finance.naver.com/research/* HTML 페이지가 stock.naver.com
+    (클라이언트 렌더링)으로 리다이렉트되어 예전 HTML 파싱이 동작하지 않음.
+    모바일 JSON API 를 사용한다.
+      1) /api/research/stock/{code}       → 종목 리포트 목록 (id, 증권사, 날짜)
+      2) /api/research/company/{id}       → 리포트별 goalPrice, opinion (병렬)
       3) 수집 결과로 컨센서스 요약 계산
     """
-    from concurrent.futures import ThreadPoolExecutor as _TPE
-    try:
-        from bs4 import BeautifulSoup as _BS
-    except ImportError:
-        app.logger.warning("beautifulsoup4 not installed")
-        return {"targets": [], "summary": {}}
+    from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _as_completed
 
     GRADE_MAP = {
-        '강력매수': 5, '매수': 4, '비중확대': 4, 'Outperform': 4,
+        '강력매수': 5, '매수': 4, '비중확대': 4,
         '중립': 3, '보유': 3, '시장수익률': 3,
         '비중축소': 2, '매도': 1,
+    }
+    # API 의 영문 투자의견 → 화면용 한글
+    OPINION_KO = {
+        'strong buy': '강력매수', 'buy': '매수', 'trading buy': '매수',
+        'outperform': '비중확대', 'overweight': '비중확대',
+        'hold': '중립', 'neutral': '중립', 'marketperform': '시장수익률',
+        'market perform': '시장수익률',
+        'underperform': '비중축소', 'underweight': '비중축소', 'reduce': '비중축소',
+        'sell': '매도',
+        '없음': '의견 없음', 'nr': '의견 없음', 'not rated': '의견 없음',
     }
     hdrs = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept-Language': 'ko-KR,ko;q=0.9',
-        'Referer': 'https://finance.naver.com/',
+        'Referer': 'https://m.stock.naver.com/',
     }
 
-    # ── 1. 리서치 목록 파싱 → (nid, 증권사, 날짜) ────────────────────
-    items = []   # [(nid, firm, date)]
+    # ── 1. 종목 리포트 목록 → (id, 증권사, 날짜), 증권사 중복 제거 최대 6개 ──
+    items = []
     try:
-        r = requests.get(
-            f"https://finance.naver.com/research/company_list.naver"
-            f"?searchType=itemCode&itemCode={code}&page=1",
-            headers=hdrs, timeout=10,
-        )
-        soup = _BS(r.content, 'html.parser', from_encoding='euc-kr')
-        table = soup.find('table', class_='type_1')
-        if table:
+        r = requests.get(f"https://m.stock.naver.com/api/research/stock/{code}",
+                         headers=hdrs, timeout=8)
+        if r.status_code != 200:
+            app.logger.warning(f"[kr_analysts] list {code} → {r.status_code}")
+        else:
             seen_firms = set()
-            for row in table.find_all('tr'):
-                cells = row.find_all('td')
-                if len(cells) < 5:
-                    continue
-                # 구조: [종목명, 제목, 증권사, pdf, 날짜, 조회수]
-                a_tag = cells[1].find('a')
-                if not a_tag:
-                    continue
-                href = a_tag.get('href', '')
-                m = re.search(r'nid=(\d+)', href)
-                if not m:
-                    continue
-                nid  = m.group(1)
-                firm = cells[2].get_text(strip=True)
-                date = cells[4].get_text(strip=True)
-                if not firm or firm in seen_firms:
+            for it in r.json() or []:
+                rid  = it.get('researchId')
+                firm = (it.get('brokerName') or '').strip()
+                if not rid or not firm or firm in seen_firms:
                     continue
                 seen_firms.add(firm)
-                items.append((nid, firm, date))
+                items.append((rid, firm, it.get('writeDate') or ''))
                 if len(items) >= 6:
                     break
     except Exception as e:
@@ -2107,68 +2157,49 @@ def fetch_kr_analysts(code):
     if not items:
         return {"targets": [], "summary": {}}
 
-    # ── 2. 개별 리포트 병렬 요청 → 목표가·투자의견 추출 ─────────────
+    # ── 2. 리포트별 목표가·투자의견 (병렬) ─────────────────────────────
     def _fetch_detail(item):
-        nid, firm, date = item
+        rid, firm, date = item
         try:
-            rd = requests.get(
-                f"https://finance.naver.com/research/company_read.naver?nid={nid}",
-                headers=hdrs, timeout=8,
-            )
-            s = _BS(rd.content, 'html.parser', from_encoding='euc-kr')
-            div = s.find('div', class_='view_info_1')
-            target_price, opinion = None, None
-            if div:
-                money = div.find('em', class_='money')
-                if money:
-                    strong = money.find('strong')
-                    if strong:
-                        try:
-                            target_price = float(strong.get_text(strip=True).replace(',', ''))
-                        except ValueError:
-                            pass
-                coment = div.find('em', class_='coment')
-                if coment:
-                    opinion = coment.get_text(strip=True)
-            return firm, date, target_price, opinion
+            rd = requests.get(f"https://m.stock.naver.com/api/research/company/{rid}",
+                              headers=hdrs, timeout=8)
+            rc = (rd.json() or {}).get('researchContent') or {}
+            target_price = None
+            gp = str(rc.get('goalPrice') or '').replace(',', '').strip()
+            if gp:
+                try:
+                    target_price = float(gp) or None   # 0 = 목표가 없음
+                except ValueError:
+                    pass
+            return firm, date, target_price, (rc.get('opinion') or '').strip() or None
         except Exception:
             return firm, date, None, None
 
-    # 개별 fetch 8s, 전체 25s 안에 안 끝나면 강제 종료
     details = []
-    from concurrent.futures import as_completed as _as_completed
-    with _TPE(max_workers=4) as ex:
+    with _TPE(max_workers=6) as ex:
         futures = {ex.submit(_fetch_detail, it): it for it in items}
         try:
-            for fut in _as_completed(futures, timeout=25):
-                try:
-                    details.append(fut.result(timeout=8))
-                except Exception as e:
-                    it = futures[fut]
-                    app.logger.warning(f"[kr_analysts] {it[1]} {it[2]} failed: {e}")
-                    details.append((it[1], it[2], None, None))
+            for fut in _as_completed(futures, timeout=20):
+                details.append(fut.result())
         except Exception as e:
             app.logger.warning(f"[kr_analysts] overall timeout/error: {e}")
-            # 남은 futures 의 결과는 (firm, date, None, None) 으로 채움
-            for fut in futures:
-                if fut.done():
-                    continue
-                it = futures[fut]
-                details.append((it[1], it[2], None, None))
+            for fut, it in futures.items():
+                if not fut.done():
+                    details.append((it[1], it[2], None, None))
+    details.sort(key=lambda d: d[1], reverse=True)   # 최신 리포트 먼저
 
     # ── 3. 결과 정리 ──────────────────────────────────────────────────
     targets = []
     for firm, date, target_price, opinion in details:
-        grade = opinion if opinion in GRADE_MAP else '매수'
-        score = GRADE_MAP.get(grade, 4)
+        grade = OPINION_KO.get((opinion or '').lower(), opinion)
         targets.append({
-            'firm':        firm,
-            'grade':       grade,
-            'target':      target_price,
+            'firm':         firm,
+            'grade':        grade if grade else '의견 없음',
+            'target':       target_price,
             'prior_target': None,
-            'action':      '',
-            'date':        date,
-            'score':       score,
+            'action':       '',
+            'date':         date,
+            'score':        GRADE_MAP.get(grade),   # 알 수 없는 의견은 None (평균에서 제외)
         })
 
     # ── 4. 컨센서스 요약 계산 ─────────────────────────────────────────
@@ -2178,13 +2209,15 @@ def fetch_kr_analysts(code):
         summary['mean'] = round(sum(prices) / len(prices))
         summary['high'] = max(prices)
         summary['low']  = min(prices)
-    if targets:
-        avg_sc = sum(t['score'] for t in targets) / len(targets)
+    scores = [t['score'] for t in targets if t['score'] is not None]
+    if scores:
+        avg_sc = sum(scores) / len(scores)
         summary['recommendation'] = (
             'strong_buy' if avg_sc >= 4.5 else
             'buy'        if avg_sc >= 3.5 else
             'sell'       if avg_sc <  2.5 else 'hold'
         )
+    if targets:
         summary['num_analysts'] = len(targets)
 
     return {"targets": targets, "summary": summary}

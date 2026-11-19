@@ -1559,12 +1559,14 @@ body {
 .grade-5, .grade-4 { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
 .grade-3 { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
 .grade-2, .grade-1 { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
-.analyst-target { font-size: 18px; font-weight: 700; margin-left: auto; }
+/* 투자의견 없음(score null) */
+.grade-null { background: var(--bg2); color: var(--text2); border: 1px solid var(--border); }
+.analyst-target { font-size: 18px; font-weight: 700; margin-left: auto; white-space: nowrap; }
 .analyst-target-up { color: var(--green); }
 .analyst-target-down { color: var(--red); }
 .analyst-target-same { color: var(--text2); }
 .analyst-prior { font-size: 12px; color: var(--text2); margin-left: 6px; }
-.analyst-date { font-size: 12px; color: var(--text2); min-width: 80px; text-align: right; }
+.analyst-date { font-size: 12px; color: var(--text2); min-width: 80px; text-align: right; white-space: nowrap; }
 
 /* ── 뉴스 ── */
 .news-list { display: flex; flex-direction: column; gap: 10px; }
