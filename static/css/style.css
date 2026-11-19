@@ -4556,3 +4556,115 @@ body.stock-mode #marketDashboard { display: none !important; }
 #valuationPanel .dcf-card { background: transparent; border: none; padding: 0; }
 #valuationPanel .dcf-head { justify-content: flex-end; margin-bottom: 10px; }
 #valuationPanel .dcf-head:empty { display: none; }
+
+/* ════════════════════════════════════════════════════════════════
+   UI 정리 (v55) — 토스증권식 원칙 참고: 숫자 중심, 넉넉한 여백,
+   경계선 최소화, 이모지 대신 굵기·크기로 위계, 평평한 목록.
+   다크 테마와 상승 초록/하락 빨강은 유지.
+   이 블록은 파일 끝에 두어 앞선 규칙을 덮는다. 모바일 값도 여기서 다시 정한다.
+   ════════════════════════════════════════════════════════════════ */
+:root {
+  --border-soft: rgba(240, 246, 252, 0.07);
+  --radius: 16px;
+  --font-ui: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+             'Apple SD Gothic Neo', 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+body {
+  font-family: var(--font-ui);
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font-family: inherit; }
+
+/* 숫자: 고정폭 서체 대신 본문 서체 + 자릿수 정렬 */
+.stock-ticker-badge, .sector-breadth,
+.current-price, .price-change, .md-idx-val, .md-idx-chg, .md-mover-chg,
+.analyst-target, .consensus-value, .metric-value, .target-value, .zone-price-range {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 헤더: 선택된 메뉴는 채운 버튼 대신 굵은 흰 글씨 */
+.header { background: rgba(13, 17, 23, 0.85); backdrop-filter: blur(12px); border-bottom-color: var(--border-soft); }
+.logo { color: var(--text); font-weight: 800; }
+.nav-link { font-weight: 600; padding: 6px 14px; }
+.nav-link.active { background: transparent; color: var(--text); font-weight: 800; }
+.nav-link:hover { background: rgba(240, 246, 252, 0.06); }
+
+/* 카드: 테두리를 거의 보이지 않게, 모서리와 여백은 넉넉하게 */
+.card, .search-box {
+  border-color: var(--border-soft);
+  border-radius: var(--radius);
+}
+.card { padding: 24px; }
+.card-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+
+/* 검색 */
+.search-title { font-size: 17px; font-weight: 700; }
+.search-input { border-radius: 12px; border-color: var(--border-soft); background: var(--bg3); }
+.search-input:focus { border-color: var(--accent); }
+.search-btn { border-radius: 12px; font-weight: 700; }
+.quick-btn { border-radius: 999px; border-color: transparent; background: var(--bg3); font-weight: 600; }
+.quick-btn:hover { border-color: transparent; background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+
+/* 시장 지수: 박스 대신 숫자만 또렷하게 */
+.md-indices { gap: 0; }
+.md-idx {
+  text-align: left; background: transparent; border: none; border-radius: 0;
+  padding: 4px 20px; border-left: 1px solid var(--border-soft);
+}
+.md-idx:first-child { border-left: none; padding-left: 0; }
+.md-idx-vix { border-style: none; border-left: 1px solid var(--border-soft); }
+.md-idx-label { font-weight: 500; margin-bottom: 2px; }
+.md-idx-val { font-size: 22px; font-weight: 700; }
+.md-idx-chg { font-weight: 600; }
+
+/* 급등락 목록: 칸마다 박스 대신 평평한 행 */
+.md-mover {
+  background: transparent; border: none; border-radius: 10px;
+  padding: 10px 8px; margin-bottom: 2px; font-size: 14px;
+}
+.md-mover:hover { background: rgba(240, 246, 252, 0.05); border-color: transparent; }
+
+/* 종목 헤더: 이름 → 큰 가격 → 등락 순서로 왼쪽 정렬 */
+.stock-header { flex-direction: column; align-items: flex-start; gap: 6px; }
+.stock-name-row { margin-bottom: 2px; gap: 8px; }
+.stock-name { font-size: 18px; font-weight: 700; }
+.stock-ticker-badge { background: transparent; border: none; padding: 0; color: var(--text2); font-size: 14px; }
+.stock-price-block { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.current-price { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; text-align: left; }
+.price-change { font-size: 15px; font-weight: 600; text-align: left; margin-top: 0; }
+.price-freshness { flex-basis: 100%; text-align: left; justify-content: flex-start; margin-top: 2px; }
+
+/* 탭: 회색 상자 대신 밑줄 */
+.analysis-tabs { background: transparent; padding: 0; gap: 20px; border-bottom: 1px solid var(--border-soft); border-radius: 0; }
+.analysis-tab {
+  flex: 0 0 auto; padding: 10px 2px; border-radius: 0; font-size: 15px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.analysis-tab.active { background: transparent; color: var(--text); box-shadow: none; border-bottom-color: var(--text); }
+
+/* 애널리스트 행: 평평하게 */
+.analyst-row { background: transparent; border: none; border-bottom: 1px solid var(--border-soft); border-radius: 0; padding: 12px 4px; }
+.analyst-row:last-child { border-bottom: none; }
+
+@media (max-width: 768px) {
+  .card { padding: 18px; }
+  .current-price { font-size: 28px; }
+  .md-indices { grid-template-columns: repeat(3, 1fr); row-gap: 14px; }
+  .md-idx { padding: 2px 12px; }
+  .md-idx:nth-child(3n+1) { border-left: none; padding-left: 0; }
+  .md-idx-val { font-size: 18px; }
+}
+@media (max-width: 480px) {
+  .card { padding: 16px; border-radius: 14px; }
+  .card-title { font-size: 16px; }
+  .current-price { font-size: 26px; }
+  .stock-name { font-size: 17px; }
+  .analysis-tabs { gap: 14px; }
+  .analysis-tab { font-size: 14px; padding: 9px 2px; }
+  .md-indices { grid-template-columns: repeat(2, 1fr); }
+  .md-idx:nth-child(3n+1) { border-left: 1px solid var(--border-soft); padding-left: 12px; }
+  .md-idx:nth-child(2n+1) { border-left: none; padding-left: 0; }
+}
+.price-change-label { color: var(--text2); font-weight: 500; margin-right: 2px; }
