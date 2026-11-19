@@ -1374,7 +1374,7 @@ function renderStockInfo(stock) {
   const changeEl = document.getElementById('priceChange');
   if (stock.price_change != null) {
     const sign = stock.price_change >= 0 ? '+' : '';
-    changeEl.textContent = `${sign}${fmt(stock.price_change, cur)} (${sign}${stock.price_change_pct}%)`;
+    changeEl.innerHTML = `<span class="price-change-label">어제보다</span> ${sign}${fmt(stock.price_change, cur)} (${sign}${stock.price_change_pct}%)`;
     changeEl.className = 'price-change ' + (stock.price_change >= 0 ? 'up' : 'down');
   }
 
@@ -1433,7 +1433,7 @@ function startStockPricePolling(stock) {
         const changeEl = document.getElementById('priceChange');
         if (changeEl) {
           const sign = change >= 0 ? '+' : '';
-          changeEl.textContent = `${sign}${fmt(change, cur)} (${sign}${pct.toFixed(2)}%)`;
+          changeEl.innerHTML = `<span class="price-change-label">어제보다</span> ${sign}${fmt(change, cur)} (${sign}${pct.toFixed(2)}%)`;
           changeEl.className = 'price-change ' + (change >= 0 ? 'up' : 'down');
         }
       }

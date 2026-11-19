@@ -16,7 +16,8 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
-  <link rel="stylesheet" href="/static/css/style.css?v=54" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=55" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -35,7 +36,7 @@
       <nav class="nav">
         <a href="/" class="nav-link">분석</a>
         <a href="/trading" class="nav-link active">모의투자</a>
-        <a href="/leaderboard" class="nav-link">🏆 랭킹</a>
+        <a href="/leaderboard" class="nav-link">랭킹</a>
       </nav>
       <div id="authArea" class="auth-area">
         <button class="login-btn" onclick="location.href='/auth/google'">로그인</button>
@@ -63,7 +64,7 @@
       <!-- 자산 요약 -->
       <section class="card portfolio-summary">
         <div class="ps-header">
-          <h2 class="card-title">💼 내 자산</h2>
+          <h2 class="card-title">내 자산</h2>
           <div class="ps-actions">
             <button class="ps-refresh-btn" onclick="openNicknameModal()" title="닉네임 변경" id="nicknameBtn">🏷️</button>
             <button class="ps-refresh-btn" onclick="refreshDashboard(this)" title="자산 새로고침">↻</button>
@@ -98,7 +99,7 @@
       <!-- 자산 변화 차트 -->
       <section class="card asset-history-card">
         <div class="ah-header">
-          <h3 class="card-title" style="margin:0">📈 자산 변화 추이</h3>
+          <h3 class="card-title" style="margin:0">자산 변화 추이</h3>
           <div class="ah-period-tabs">
             <button class="ah-period-btn" data-days="7"  onclick="loadAssetHistory(7, this)">7D</button>
             <button class="ah-period-btn active" data-days="30" onclick="loadAssetHistory(30, this)">30D</button>
@@ -120,7 +121,7 @@
 
       <!-- 빠른 매수 -->
       <section class="card quick-buy-card">
-        <h3 class="card-title">⚡ 빠른 매수</h3>
+        <h3 class="card-title">빠른 매수</h3>
         <div class="qb-row">
           <div class="qb-search-wrap" style="position:relative; flex:2; min-width:0;">
             <input id="qbTicker" class="add-input" type="text" placeholder="종목명 또는 티커 (예: AAPL, 삼성전자)" autocomplete="off"/>
@@ -134,7 +135,7 @@
       <!-- 보유 종목 -->
       <section class="card">
         <div class="pos-header">
-          <h3 class="card-title" style="margin:0">📦 보유 종목 (<span id="holdingCount">0</span>개)</h3>
+          <h3 class="card-title" style="margin:0">보유 종목 (<span id="holdingCount">0</span>개)</h3>
           <div class="pos-toggles">
             <div class="ah-period-tabs">
               <button class="ah-period-btn active" data-pv="value" onclick="setPosView('value', this)">평가금</button>
@@ -154,7 +155,7 @@
       <!-- 내 배지 -->
       <section class="card badges-card">
         <div class="badges-header">
-          <h3 class="card-title" style="margin:0">🏅 내 배지 <span id="badgeProgress" class="badge-progress">—</span></h3>
+          <h3 class="card-title" style="margin:0">내 배지 <span id="badgeProgress" class="badge-progress">—</span></h3>
           <a href="/leaderboard" class="lb-link" style="font-size:13px">랭킹 보기 →</a>
         </div>
         <div id="badgesList" class="badges-grid">
@@ -165,7 +166,7 @@
       <!-- AI 매매 코치 -->
       <section class="card coach-card">
         <div class="badges-header">
-          <h3 class="card-title" style="margin:0">🧠 AI 매매 코치</h3>
+          <h3 class="card-title" style="margin:0">AI 매매 코치</h3>
           <button class="ps-reset-btn" id="coachBtn" onclick="requestCoach()">✨ 분석 받기</button>
         </div>
         <div id="coachBody">
@@ -177,7 +178,7 @@
       <!-- AI 포트폴리오 점검 -->
       <section class="card review-card">
         <div class="badges-header">
-          <h3 class="card-title" style="margin:0">🩺 AI 포트폴리오 점검</h3>
+          <h3 class="card-title" style="margin:0">AI 포트폴리오 점검</h3>
           <div style="display:flex; gap:8px; align-items:center;">
             <div class="ah-period-tabs">
               <button class="ah-period-btn active" data-mode="paper" onclick="setReviewMode('paper', this)">모의</button>
@@ -195,7 +196,7 @@
 
       <!-- 거래 내역 -->
       <section class="card">
-        <h3 class="card-title">📜 거래 내역</h3>
+        <h3 class="card-title">거래 내역</h3>
         <div id="transactionsList" class="tx-list">
           <div class="empty-state">거래 내역이 없습니다</div>
         </div>
