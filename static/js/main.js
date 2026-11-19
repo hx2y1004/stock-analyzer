@@ -18,6 +18,23 @@ function _pathTicker() {
 }
 const PAGE_TICKER = _pathTicker();   // null이면 홈 모드
 
+// 종목 페이지에서는 검색창에 종목명을 보여주고 실제 티커는 data-ticker 에 둔다.
+// 사용자가 글자를 고치면(input 이벤트) data-ticker 를 지워 입력값을 그대로 쓴다.
+function _inputTicker() {
+  const inp = document.getElementById('tickerInput');
+  if (!inp) return '';
+  const v = inp.value.trim();
+  if (inp.dataset.ticker && v === inp.dataset.label) return inp.dataset.ticker;
+  return v;
+}
+function _showInputName(ticker, name) {
+  const inp = document.getElementById('tickerInput');
+  if (!inp || !name || name === ticker) return;
+  inp.value = name;
+  inp.dataset.ticker = ticker;
+  inp.dataset.label = name;
+}
+
 function gotoStock(ticker) {
   location.href = '/stock/' + encodeURIComponent(String(ticker).trim().toUpperCase());
 }
@@ -1256,7 +1273,7 @@ async function setChartInterval(interval) {
     b.classList.toggle('active', b.dataset.interval === interval);
   });
 
-  const ticker = document.getElementById('tickerInput').value.trim();
+  const ticker = _inputTicker();
   if (!ticker || document.getElementById('result').classList.contains('hidden')) return;
 
   // 차트 영역만 로딩 표시
@@ -1279,7 +1296,7 @@ async function setChartInterval(interval) {
 }
 
 async function analyze() {
-  const ticker = document.getElementById('tickerInput').value.trim();
+  const ticker = _inputTicker();
   const period = 'max';
   if (!ticker) return;
 
@@ -1304,6 +1321,7 @@ async function analyze() {
     }
 
     currentAnalysisTicker = data.stock.ticker;
+    _showInputName(data.stock.ticker, data.stock.name);
     chartData = data.chart;
     window._lastAnalysis = data.analysis;     // 포지션 카드에서 참조용
     window._lastStock    = data.stock;        // 모의투자 매수/매도에서 참조용
@@ -3107,6 +3125,8 @@ const input = document.getElementById('tickerInput');
 const acList = document.getElementById('autocompleteList');
 
 input.addEventListener('input', () => {
+  delete input.dataset.ticker;   // 직접 입력 → 종목명 매핑 해제
+  delete input.dataset.label;
   clearTimeout(acTimer);
   const q = input.value.trim();
   if (q.length < 1) { hideAC(); return; }
