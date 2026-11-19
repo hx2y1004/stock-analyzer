@@ -1067,6 +1067,16 @@ _US_NAME_FALLBACK = {
 }
 
 
+def _display_name(ticker: str, info: dict) -> str:
+    """분석 화면용 종목명. 한국 종목(.KS/.KQ)은 STOCK_DB의 한글명을 우선 쓰고,
+    그 외는 yfinance 영문명(longName → shortName) → 티커 순."""
+    if ticker and ticker.upper().endswith((".KS", ".KQ")):
+        kr = _lookup_us_name(ticker)
+        if kr and kr.upper() != ticker.upper():
+            return kr
+    return (info or {}).get("longName") or (info or {}).get("shortName") or ticker
+
+
 def _lookup_us_name(ticker: str) -> str:
     """STOCK_DB → 폴백 매핑 → 티커 자체 순으로 종목명 반환."""
     if not ticker:
@@ -3545,7 +3555,7 @@ def analyze():
 
         stock_data = {
             "ticker": ticker,
-            "name": info.get("longName") or info.get("shortName") or ticker,
+            "name": _display_name(ticker, info),
             "current_price": current_price,
             "prev_close": prev_close,
             "price_change": price_change,
