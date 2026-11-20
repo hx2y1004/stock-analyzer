@@ -5126,3 +5126,17 @@ button, input, select, textarea { font-family: inherit; }
 .smi-name { overflow: visible; }
 .smi-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .hm-in > * { flex-shrink: 0; }
+
+/* 알림 설정: 모바일/브라우저 푸시 */
+.push-box .sub-legend { padding-bottom: 8px; }
+.push-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.push-state { font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); }
+.push-state.on { color: var(--green); border-color: rgba(63,185,80,.45); }
+.push-state.off { color: var(--text2); }
+.push-state.blocked { color: var(--red); border-color: rgba(248,81,73,.45); }
+.push-toggle, .push-test { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg3);
+  color: var(--text); font-size: 13px; cursor: pointer; }
+.push-toggle[aria-pressed="false"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.push-toggle:disabled, .push-test:disabled { opacity: .6; cursor: default; }
+.push-toggle:focus-visible, .push-test:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.push-box .sub-hint { margin-top: 6px; }

@@ -4,6 +4,8 @@
 - Provider: 알림 한 건을 실제로 전달하는 방법. 지금은 사이트 안 알림(InAppProvider)만 있다.
   웹 푸시·이메일·텔레그램 등을 붙이려면 NotifyProvider 를 상속해 send() 를 구현하고 PROVIDERS 에 등록한다.
   어떤 Provider 를 쓸지는 환경변수 NOTIFY_PROVIDERS (콤마 구분, 기본 "inapp").
+- 웹 푸시(webpush.py)는 VAPID 키가 있을 때만 켜진다. 인앱에 새로 저장된 알림만 사용자 기기로 보내고,
+  한 배치에서 한 사용자에게 4건 이상이면 요약 1건으로 묶는다.
 - dispatch(new_signals, closed_signals): 봇 배치가 끝난 뒤 호출.
   · 새 매수 신호 → 구독 조건(봇·범위·최소 신뢰도)에 맞는 사용자에게
   · 청산·취소 → 그 신호의 매수 알림을 받았던 사용자에게만 (받은 적 없는 신호의 청산 알림은 혼란스러움)
@@ -117,19 +119,74 @@ def dispatch(new_signals, closed_signals):
         return 0
 
 
+PUSH_BUNDLE_AT = 4               # 한 배치에서 한 사용자에게 갈 푸시가 이만큼 이상이면 요약 1건으로 묶음
+
+
+def _core_reason(sig):
+    """신호 근거 한 줄: AI 요약이 있으면 그것, 없으면 진입 경로 (reason 의 마지막/첫 토막)."""
+    parts = [p.strip() for p in (sig.reason or "").split("·") if p.strip()]
+    if not parts:
+        return ""
+    tail = parts[-1]
+    return tail if not tail.startswith(("RSI", "손익비")) else parts[0]
+
+
+def push_payload(sig, kind, bot_name):
+    """웹 푸시 1건의 내용. title 예: [균형형 스윙] 매수 신호 · NVDA"""
+    label = bot_name.split(" ", 1)[-1] if bot_name else sig.strategy_key   # 이모지 뺀 봇 이름
+    tk = sig.ticker.split(".")[0] if sig.market == "KR" else sig.ticker
+    who = f"{sig.name} ({tk})" if sig.market == "KR" and sig.name else tk
+    if kind == "signal_new":
+        core = _core_reason(sig)
+        body = (f"신뢰도 {sig.confidence} · 진입 {_fmt_px(sig.entry_price, sig.market)} / 목표 {_fmt_px(sig.target_price, sig.market)}"
+                f" / 손절 {_fmt_px(sig.stop_price, sig.market)}" + (f" — {core}" if core else ""))
+        return {"title": f"[{label}] 매수 신호 · {who}", "body": body[:180], "url": f"/stock/{sig.ticker}",
+                "tag": f"sig-{sig.id}"}
+    if kind == "signal_exit":
+        pnl = f"{sig.pnl_pct:+.2f}%" if sig.pnl_pct is not None else "-"
+        return {"title": f"[{label}] {STATUS_KO.get(sig.status, sig.status)} · {who}",
+                "body": f"청산 {_fmt_px(sig.exit_price, sig.market)} · 수익률 {pnl} (수수료 반영) · 보유 {sig.holding_days or 0}일",
+                "url": f"/ai-bots#{sig.strategy_key}", "tag": f"sig-{sig.id}-exit"}
+    return {"title": f"[{label}] 신호 취소 · {who}", "body": (sig.status_reason or "다음 장 시가가 계획 조건을 벗어남")[:180],
+            "url": f"/ai-bots#{sig.strategy_key}", "tag": f"sig-{sig.id}-cancel"}
+
+
+def bundle_pushes(items):
+    """한 사용자의 이번 배치 푸시 목록 → 실제로 보낼 목록. PUSH_BUNDLE_AT 건 이상이면 요약 1건."""
+    if len(items) < PUSH_BUNDLE_AT:
+        return items
+    n_new = sum(1 for it in items if it["kind"] == "signal_new")
+    n_other = len(items) - n_new
+    title = f"AI 봇 새 신호 {n_new}건 도착 — 탭해서 확인하기" if n_new else f"AI 봇 알림 {len(items)}건 — 탭해서 확인하기"
+    body = " · ".join(x for x in (f"새 매수 신호 {n_new}건" if n_new else "", f"청산·취소 {n_other}건" if n_other else "") if x)
+    return [{"kind": "bundle", "payload": {"title": title, "body": body, "url": "/ai-bots", "tag": "ai-bots-batch"}}]
+
+
 def _dispatch(new_signals, closed_signals):
     db, N = D["db"], D["Notification"]
     providers = _providers()
     names = _strategy_names()
     sent = 0
+    pushes = {}                                    # user_id → [{"kind", "payload"}]  (인앱에 새로 저장된 것만)
+
+    def deliver(uid, kind, title, body, link, sig):
+        nonlocal sent
+        new_inapp = False
+        for p in providers:
+            ok = bool(p.send(uid, kind, title, body, link, sig.id))
+            sent += ok
+            if ok and isinstance(p, InAppProvider):
+                new_inapp = True
+        if new_inapp:                              # 이미 받은 알림이면 푸시도 다시 안 보냄
+            pushes.setdefault(uid, []).append({"kind": kind, "payload": push_payload(sig, kind, names.get(sig.strategy_key))})
+
     for sig in new_signals:
         bot = names.get(sig.strategy_key, sig.strategy_key)
         title = f"{bot} · {sig.name} 매수 신호"
         body = (f"진입 {_fmt_px(sig.entry_price, sig.market)} · 목표 {_fmt_px(sig.target_price, sig.market)} · "
                 f"손절 {_fmt_px(sig.stop_price, sig.market)} · 신뢰도 {sig.confidence} · 다음 장 시가 체결 가정")
         for uid in subscribers_for(sig):
-            for p in providers:
-                sent += bool(p.send(uid, "signal_new", title, body, f"/stock/{sig.ticker}", sig.id))
+            deliver(uid, "signal_new", title, body, f"/stock/{sig.ticker}", sig)
     for sig in closed_signals:
         kind = "signal_cancel" if sig.status == "CANCELLED" else "signal_exit"
         bot = names.get(sig.strategy_key, sig.strategy_key)
@@ -143,11 +200,34 @@ def _dispatch(new_signals, closed_signals):
             body = sig.status_reason or "다음 장 시가가 계획 조건을 벗어남"
         receivers = [n.user_id for n in N.query.filter_by(signal_id=sig.id, kind="signal_new").all()]
         for uid in receivers:
-            for p in providers:
-                sent += bool(p.send(uid, kind, title, body, f"/stock/{sig.ticker}", sig.id))
+            deliver(uid, kind, title, body, f"/stock/{sig.ticker}", sig)
     # 오래된 알림 정리
     N.query.filter(N.created_at < datetime.utcnow() - timedelta(days=RETENTION_DAYS)).delete(synchronize_session=False)
     db.session.commit()
     if sent:
         log(f"보냄 {sent}건 (신규 {len(new_signals)}, 청산·취소 {len(closed_signals)})")
+    _send_pushes(pushes)
     return sent
+
+
+def _send_pushes(pushes):
+    """웹 푸시 (VAPID 미설정이면 아무것도 안 함). 실패해도 인앱 알림·배치에는 영향 없음."""
+    wp = D.get("webpush")
+    if not pushes or not wp or not wp.enabled():
+        return None
+    total = {"users": 0, "sent": 0, "failed": 0, "removed": 0, "bundled": 0}
+    for uid, items in pushes.items():
+        out_items = bundle_pushes(items)
+        total["users"] += 1
+        total["bundled"] += int(len(out_items) == 1 and out_items[0]["kind"] == "bundle")
+        for it in out_items:
+            try:
+                r = wp.send_to_user(uid, it["payload"])
+            except Exception as e:
+                D["db"].session.rollback()
+                log(f"푸시 오류 user={uid}: {e}")
+                continue
+            for k in ("sent", "failed", "removed"):
+                total[k] += r[k]
+    log(f"푸시 {total}")
+    return total

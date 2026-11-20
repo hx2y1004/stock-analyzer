@@ -66,7 +66,7 @@ from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
-                    BotPosition)
+                    BotPosition, PushSubscription)
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -5934,6 +5934,8 @@ def debug_ai():
              not (_has("GEMINI_API_KEY") or _has("GROQ_API_KEY") or _has("AI_BACKUP_API_KEY"))),
         ) if bad],
         "bot": {"scheduler": os.environ.get("BOT_SCHEDULER", "1") != "0", "ai_daily_budget": bot_engine.ai_budget_limit()},
+        "push": {"enabled": webpush.status()[0], "reason": webpush.status()[1],
+                 "vapid_subject_set": _has("VAPID_SUBJECT"), "devices": PushSubscription.query.count()},
     }
     test = request.args.get("test") == "1"
     if test:
@@ -5987,9 +5989,12 @@ import bot_engine
 import bot_trader
 import notifier
 
+import webpush
+webpush.init({"app": app, "db": db, "PushSubscription": PushSubscription})
 notifier.init({
     "app": app, "db": db, "Notification": Notification, "UserSignalSubscription": UserSignalSubscription,
     "WatchlistItem": WatchlistItem, "Holding": Holding, "PaperHolding": PaperHolding, "BotStrategy": BotStrategy,
+    "webpush": webpush,
 })
 
 bot_engine.init({
@@ -6506,6 +6511,59 @@ def ai_bots_trades(key):
             it["holding_days"] = sig.holding_days if sig else None
         items.append(it)
     return jsonify({"items": items, "page": page, "per": per, "has_more": has_more, "side": side, "counts": counts})
+
+
+
+# ── 웹 푸시 (PWA 모바일·브라우저 알림) ─────────────────────────────────────────
+@app.route("/api/push/vapid-public-key")
+def push_vapid_public_key():
+    """푸시 켜짐 여부와 공개키. 로그인했다면 등록된 기기 수도."""
+    ok, reason = webpush.status()
+    out = {"enabled": ok, "public_key": webpush.public_key() if ok else None, "reason": None if ok else reason}
+    if current_user.is_authenticated:
+        out["devices"] = [{"device": r.user_agent, "created_at": r.created_at.isoformat() + "Z" if r.created_at else None}
+                          for r in PushSubscription.query.filter_by(user_id=current_user.id).all()]
+    if not ok:
+        out["reason"] = "서버에 푸시 알림이 아직 설정되지 않았습니다"   # 상세 원인(키·라이브러리)은 소유자 진단 화면에서
+    return jsonify(out)
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+@login_required
+def push_subscribe():
+    """현재 기기의 PushSubscription.toJSON() 저장 (같은 기기면 갱신)."""
+    if not webpush.enabled():
+        return jsonify({"error": "서버에 푸시 알림이 설정되지 않았습니다"}), 503
+    body = request.get_json(silent=True) or {}
+    row, err = webpush.save_subscription(current_user.id, body.get("subscription") or body,
+                                         request.headers.get("User-Agent", ""))
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"ok": True, "device": row.user_agent,
+                    "devices": PushSubscription.query.filter_by(user_id=current_user.id).count()})
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+@login_required
+def push_unsubscribe():
+    body = request.get_json(silent=True) or {}
+    n = webpush.remove_subscription(current_user.id, body.get("endpoint"))
+    return jsonify({"ok": True, "removed": n})
+
+
+@app.route("/api/push/test", methods=["POST"])
+@login_required
+def push_test():
+    """내 등록 기기 전체로 테스트 푸시 1건."""
+    if not webpush.enabled():
+        return jsonify({"error": "서버에 푸시 알림이 설정되지 않았습니다"}), 503
+    if not PushSubscription.query.filter_by(user_id=current_user.id).count():
+        return jsonify({"error": "이 계정에 푸시를 켠 기기가 없습니다"}), 400
+    r = webpush.send_to_user(current_user.id, {
+        "title": "StockAnalyzer 테스트 알림",
+        "body": "푸시 알림이 정상적으로 연결됐어요. AI 봇 신호가 나오면 이렇게 알려 드립니다.",
+        "url": "/ai-bots", "tag": "push-test"})
+    return jsonify({"ok": r["sent"] > 0, **r})
 
 
 if __name__ == "__main__":

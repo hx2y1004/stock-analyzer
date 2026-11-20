@@ -57,6 +57,20 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### PWA 웹 푸시 (PR #25) + README 최신화
+- `push_subscriptions` 테이블(기기별, endpoint 유니크, 사용자당 최대 10대). `webpush.py`: VAPID 확인·구독 저장/해제·발송·404/410 만료 구독 자동 삭제
+- 켜짐 조건: `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY` 가 있고 pywebpush 를 import 할 수 있을 때. 아니면 푸시만 꺼지고 서버·인앱 알림은 정상
+- `pywebpush==1.14.1` 고정: 최신 2.5.0 은 aiohttp 를 끌어와 import 시 +25MB, 1.14.1 은 +11MB. 실제로 보낼 때만 import
+  (이 클라우드 컨테이너의 시스템 파이썬은 http-ece 빌드가 실패했지만 깨끗한 venv 에서는 정상 설치됨. 운영에서 설치가 실패해도 푸시만 꺼진다)
+- `notifier.py`: 인앱에 새로 저장된 알림만 푸시. 한 배치에서 한 사용자에게 4건 이상이면 요약 1건("AI 봇 새 신호 N건 도착 — 탭해서 확인하기" → /ai-bots)
+  페이로드: 신규 `[봇] 매수 신호 · 티커` / `신뢰도 · 진입/목표/손절 — 근거`, url `/stock/<티커>`. 청산·취소는 url `/ai-bots#<전략키>`
+- API: `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`·`unsubscribe`·`test`. 소유자 진단 `/api/debug/ai` 의 `config.push`
+- 서비스워커 `sa-v56`: `push`(icon·badge·tag) · `notificationclick`(열린 창 포커스 후 이동, 없으면 새 창)
+- 알림 설정 모달에 '모바일/브라우저 푸시' 영역: 켜짐/꺼짐/차단됨/미지원/서버 미설정, 켜기·끄기, 테스트 푸시. iPhone 은 홈 화면에 추가한 앱에서만
+- 운영에서 켜려면: 서버에서 `.env.example` 의 한 줄 명령으로 키 생성 → `.env` 에 `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT` → 재시작
+- 이 환경에서 확인 못 한 것: 실제 FCM/Mozilla/Apple 푸시 서버로의 전달(헤드리스 크롬은 푸시 서비스가 없음). 암호화·VAPID 서명·만료 처리는 HTTP 만 가짜로 두고 확인
+- 같은 PR: `/ai-bots` 차트 축 라벨 함수가 값 없음(null)에서 오류 나던 것 수정. README 를 현재 구조(Oracle VM·DuckDNS·자동 배포·봇·섹터맵·푸시)로 전면 갱신
+
 ### 섹터맵 개편 (PR #24) — 전체 유니버스 시총가중 + 상승/하락 분포 + 백그라운드 스냅샷
 - 대상: `stock_db.json` 전체(한국 350 / 미국 537). 섹터 분류·미국 발행주식수는 `sector_universe.json`(정적, `build_sector_universe.py` 로 생성)
   - 한국: 네이버 업종 79개 → 대분류 16개(반도체, IT·전자부품, 2차전지·화학 …). 미국: S&P 500 GICS 11개 + 반도체 분리, 나머지 나스닥은 yfinance

@@ -4,7 +4,7 @@
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v55';
+const CACHE_VERSION = 'sa-v56';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -114,3 +114,37 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// ── 웹 푸시: 서버 JSON {title, body, url, tag} → 알림 표시 ──
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (e) { d = { body: event.data ? event.data.text() : '' }; }
+  const title = d.title || 'StockAnalyzer';
+  const options = {
+    body: d.body || '',
+    icon: '/static/icons/icon-192.png',
+    badge: '/static/icons/icon-192.png',
+    data: { url: d.url || '/' },
+    tag: d.tag || undefined,          // 같은 tag 는 새 알림이 이전 것을 대체 (중복 방지)
+    renotify: !!d.tag,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// ── 알림 클릭: 열린 앱/탭이 있으면 그 창으로 이동, 없으면 새로 열기 ──
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins) {
+      if (new URL(w.url).origin === self.location.origin) {
+        try { await w.focus(); } catch (e) { /* 포커스 불가 환경 */ }
+        if ('navigate' in w) { try { await w.navigate(target); return; } catch (e) { /* 아래에서 새 창 */ } }
+        else return;
+      }
+    }
+    if (clients.openWindow) await clients.openWindow(target);
+  })());
+});
+
