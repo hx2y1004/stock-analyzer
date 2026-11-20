@@ -17,7 +17,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=59" />
+  <link rel="stylesheet" href="/static/css/style.css?v=60" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -38,9 +38,7 @@
         <a href="/trading" class="nav-link active">모의투자</a>
         <a href="/leaderboard" class="nav-link">랭킹</a>
       </nav>
-      <div id="authArea" class="auth-area">
-        <button class="login-btn" onclick="location.href='/auth/google'">로그인</button>
-      </div>
+      {% set login_action = "location.href='/auth/google'" %}{% include "_auth_area.html" %}
     </div>
   </header>
 
@@ -305,6 +303,7 @@
     </div>
   </div>
 
-  <script src="/static/js/trading.js?v=55"></script>
+  {% include "_footer.html" %}
+  <script src="/static/js/trading.js?v=56"></script>
 </body>
 </html>

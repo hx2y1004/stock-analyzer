@@ -632,9 +632,9 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         "indicator": "MACD",
         "state": macd_state, "color": macd_color, "desc": macd_desc,
         "items": [
-            {"label": f"MACD: {macd:.3f}"       if not np.isnan(macd)      else "MACD: —",     "up": macd > macd_sig if not np.isnan(macd) else None},
-            {"label": f"시그널: {macd_sig:.3f}"  if not np.isnan(macd_sig)  else "시그널: —",   "up": macd > macd_sig if not np.isnan(macd) else None},
-            {"label": f"히스토: {macd_hist:.3f}" if not np.isnan(macd_hist) else "히스토그램: —","up": macd_hist > 0   if not np.isnan(macd_hist) else None},
+            {"label": f"MACD: {_fp(macd)}"       if not np.isnan(macd)      else "MACD: —",     "up": macd > macd_sig if not np.isnan(macd) else None},
+            {"label": f"시그널: {_fp(macd_sig)}"  if not np.isnan(macd_sig)  else "시그널: —",   "up": macd > macd_sig if not np.isnan(macd) else None},
+            {"label": f"히스토: {_fp(macd_hist)}" if not np.isnan(macd_hist) else "히스토그램: —","up": macd_hist > 0   if not np.isnan(macd_hist) else None},
         ]
     })
 

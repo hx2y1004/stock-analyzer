@@ -9,12 +9,12 @@
     if (u && u.id && area) {
       const imgStyle = 'width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--border);flex-shrink:0;';
       const img = u.profile_image
-        ? `<img class="profile-img" src="${u.profile_image}" style="${imgStyle}" onerror="this.style.display='none'"/>`
+        ? `<img class="profile-img" src="${_escName(u.profile_image)}" style="${imgStyle}" onerror="this.style.display='none'"/>`
         : `<div class="profile-img" style="${imgStyle};display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
       area.innerHTML = `
         <div class="profile-area">
           ${img}
-          <span class="profile-name">${u.name || '사용자'}</span>
+          <span class="profile-name">${_escName(u.name || '사용자')}</span>
         </div>
         <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
     }
@@ -94,3 +94,8 @@ async function loadLeaderboard(metric, btn) {
 
 // 초기 로드
 loadLeaderboard('total', document.querySelector('.lb-tab[data-metric="total"]'));
+
+// 외부(OAuth) 이름을 HTML 에 넣기 전 이스케이프
+function _escName(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}

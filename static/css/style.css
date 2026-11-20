@@ -4735,3 +4735,22 @@ button, input, select, textarea { font-family: inherit; }
 .error-retry-btn:hover { background: rgba(248, 81, 73, 0.12); }
 /* 오류 상자: 좁은 화면에서 좌우 여백 (다른 카드와 정렬) */
 @media (max-width: 1248px) { .error-box { margin-left: 16px; margin-right: 16px; } }
+
+/* 보조지표 범례 */
+#rsiChart, #macdChart { position: relative; }
+.chart-legend {
+  position: absolute; top: 4px; left: 8px; z-index: 3; pointer-events: none;
+  font-size: 11px; color: var(--text2); background: rgba(22, 27, 34, 0.75);
+  padding: 1px 6px; border-radius: 6px; white-space: nowrap;
+}
+.chart-legend b { color: var(--text); font-weight: 600; }
+
+/* 공통 푸터 */
+.site-footer { border-top: 1px solid var(--border-soft, var(--border)); margin-top: 40px; padding: 24px 16px 40px; }
+.site-footer-inner { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; }
+.site-footer p { font-size: 12px; line-height: 1.6; color: var(--text2); }
+.site-footer strong { color: var(--text); font-weight: 600; margin-right: 6px; }
+
+/* 빠른 매수: 입력창이 남는 폭을 채우게 (버튼과 사이 빈 여백 제거) */
+.quick-buy-card .qb-search-wrap { flex: 1 1 auto !important; }
+.quick-buy-card .qb-search-wrap .add-input { width: 100%; }
