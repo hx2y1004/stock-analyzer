@@ -3289,6 +3289,73 @@ def _analyze_response(base_body, position_data):
     return app.response_class(response=body, status=200, mimetype="application/json")
 
 
+# ── 느린 부가 섹션 (뉴스·애널리스트·AI 기업 소개·AI 급등락 사유) ─────────────────
+_EXTRA_CACHE = {}          # ticker → (ts, payload)
+_EXTRA_TTL = 300
+
+
+@app.route("/api/analyze/extra", methods=["GET"])
+def analyze_extra():
+    """/api/analyze 가 먼저 화면을 그린 뒤 부르는 부가 섹션.
+    analyze 캐시(5분)에 남은 stock_data/info/ai_result 를 재사용해 같은 계산을 반복하지 않는다."""
+    ticker = request.args.get("ticker", "").strip().upper()
+    interval = request.args.get("interval", "1d")
+    if interval not in ("1d", "1wk", "1mo"):
+        interval = "1d"
+    if not ticker:
+        return jsonify({"error": "티커를 입력해주세요"}), 400
+
+    hit = _EXTRA_CACHE.get(ticker)
+    if hit and (time.time() - hit[0]) < _EXTRA_TTL:
+        return jsonify(hit[1])
+
+    cached = _analyze_cache_get((ticker, interval)) or _analyze_cache_get((ticker, "1d"))
+    if not cached:
+        # 캐시가 만료됐으면 본 분석을 먼저 돌려 채운다 (드문 경우)
+        resp = analyze()
+        if getattr(resp, "status_code", 200) != 200:
+            return resp
+        cached = _analyze_cache_get((ticker, interval))
+        if not cached:
+            return jsonify({"error": "분석 데이터를 찾을 수 없습니다"}), 404
+    ctx = cached[2]
+    stock_data = dict(ctx.get("stock_data") or {})
+    info = ctx.get("info") or {}
+    ai_result = ctx.get("ai_result") or {}
+    name = stock_data.get("name") or ticker
+    is_kr = ticker.endswith((".KS", ".KQ"))
+    stock = yf.Ticker(ticker)
+
+    out = {"news": [], "analysts": None, "move_reason": None, "company_overview": None}
+    try:
+        out["news"] = fetch_kr_news(ticker.split(".")[0]) if is_kr else fetch_news(stock)
+    except Exception as e:
+        app.logger.warning(f"[extra] news {ticker}: {e}")
+    try:
+        out["analysts"] = fetch_kr_analysts(ticker.split(".")[0]) if is_kr else fetch_analysts(stock, info)
+    except Exception as e:
+        app.logger.warning(f"[extra] analysts {ticker}: {e}")
+    try:
+        out["company_overview"] = fetch_company_overview(
+            ticker, name, info, stock_data.get("revenue_quarters", []), stock_data.get("currency", "USD"))
+    except Exception as e:
+        app.logger.warning(f"[extra] overview {ticker}: {e}")
+    try:
+        out["move_reason"] = analyze_move_reason(
+            ticker, name, stock_data.get("price_change_pct"), out["news"],
+            stock_data=stock_data, ai_result=ai_result)
+    except Exception as e:
+        app.logger.warning(f"[extra] move_reason {ticker}: {e}")
+
+    out = json.loads(json.dumps(out, cls=NumpyEncoder, ensure_ascii=False))
+    with _ANALYZE_LOCK:
+        _EXTRA_CACHE[ticker] = (time.time(), out)
+        if len(_EXTRA_CACHE) > 200:   # 오래된 것 정리
+            for k, _ in sorted(list(_EXTRA_CACHE.items()), key=lambda kv: kv[1][0])[:50]:
+                _EXTRA_CACHE.pop(k, None)
+    return jsonify(out)
+
+
 @app.route("/api/analyze", methods=["GET"])
 def analyze():
     ticker = request.args.get("ticker", "").strip().upper()
@@ -3896,8 +3963,6 @@ def analyze():
             stock_data["dcf"] = None
 
         is_kr_stock  = ticker.endswith('.KS') or ticker.endswith('.KQ')
-        # 한국 종목은 네이버 뉴스(한글), 그 외는 yfinance
-        news_data    = fetch_kr_news(ticker.split('.')[0]) if is_kr_stock else fetch_news(stock)
 
         # ── 시장 컨텍스트 + 다가오는 이벤트 ──────────────────────────────
         try:
@@ -3909,24 +3974,9 @@ def analyze():
         except Exception as e:
             app.logger.warning(f"upcoming_events: {e}")
 
-        # 한국 주식(.KS/.KQ)이면 네이버 금융, 아니면 yfinance 애널리스트 데이터
-        if is_kr_stock:
-            kr_code      = ticker.split('.')[0]
-            analyst_data = fetch_kr_analysts(kr_code)
-        else:
-            analyst_data = fetch_analysts(stock, info)
-        company_overview = fetch_company_overview(
-            ticker, stock_data["name"], info,
-            stock_data.get("revenue_quarters", []),
-            stock_data.get("currency", "USD"),
-        )
-        if company_overview:
-            stock_data["company_overview"] = company_overview
-        move_reason  = analyze_move_reason(
-            ticker, stock_data["name"],
-            stock_data.get("price_change_pct"), news_data,
-            stock_data=stock_data, ai_result=ai_result,
-        )
+        # 뉴스·애널리스트·AI 기업 소개·AI 급등락 사유는 느려서(특히 AI 호출) 첫 화면을 붙잡지 않도록
+        # /api/analyze/extra 로 분리했다. 화면은 시세·차트·판단을 먼저 그리고 이 섹션들을 나중에 채운다.
+        news_data = analyst_data = move_reason = None
 
         # ── 내 포지션 데이터 (로그인된 경우) ──────────────────────────────
         position_data = _position_for(ticker, stock_data, current_price, ai_result)
@@ -3937,11 +3987,12 @@ def analyze():
                 "stock": stock_data, "analysis": ai_result, "chart": chart_data,
                 "interval": interval, "interval_label": interval_label,
                 "news": news_data, "analysts": analyst_data, "move_reason": move_reason,
+                "extras_pending": True,
             },
             cls=NumpyEncoder, ensure_ascii=False,
         )
         _analyze_cache_put((ticker, interval), base_body,
-                           {"stock_data": {"name": stock_data.get("name")},
+                           {"stock_data": stock_data, "info": info,
                             "current_price": current_price, "ai_result": ai_result})
         return _analyze_response(base_body, position_data)
 

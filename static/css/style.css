@@ -4754,3 +4754,19 @@ button, input, select, textarea { font-family: inherit; }
 /* 빠른 매수: 입력창이 남는 폭을 채우게 (버튼과 사이 빈 여백 제거) */
 .quick-buy-card .qb-search-wrap { flex: 1 1 auto !important; }
 .quick-buy-card .qb-search-wrap .add-input { width: 100%; }
+
+/* 부가 섹션 로딩 스켈레톤 */
+.sk-wrap { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+.sk-line { height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--bg3) 25%, rgba(240,246,252,0.08) 50%, var(--bg3) 75%);
+  background-size: 200% 100%; animation: sk-shimmer 1.2s ease-in-out infinite; }
+.sk-line.short { width: 60%; }
+@keyframes sk-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk-line { animation: none; } }
+.extras-retry-btn { margin-left: 6px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border);
+  background: transparent; color: var(--text); font-size: 12px; cursor: pointer; }
+
+/* 닫기/삭제 아이콘: 글꼴의 ✕ 문자 대신 SVG (환경에 따라 네모로 깨지지 않게) */
+.icon-x { display: block; width: 16px; height: 16px; pointer-events: none; }
+.modal-close, .delete-btn { display: inline-flex; align-items: center; justify-content: center; }
+.ps-refresh-btn { display: inline-flex; align-items: center; justify-content: center; }
+.ps-refresh-btn .icon-x { width: 14px; height: 14px; }

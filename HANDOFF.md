@@ -1,7 +1,77 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-07-25 KST (DCF 밸류에이션 + 홈 시황 대시보드 + 상세분석 탭 재구성)
+> 마지막 업데이트: 2026-11-20 KST (데이터 출처 복구 · 보안 보강 · 로딩 개선 · UI 정리, PR #1~#10)
+
+---
+
+## 🆕 2026-11-19~20 세션 (클라우드 세션, Opus) — PR #1~#10
+
+> 이 세션은 운영 서버에 접속할 수 없는 클라우드 컨테이너에서 진행했다. 운영 로그·`.env`는 확인하지 못했다.
+> 배포 환경은 Railway가 아니라 **Oracle VM**이다 (CLAUDE.md 참고). 아래 "현재 상태(2026-07-25)" 절의 Railway 언급은 옛 정보.
+
+### ⚠️ 운영에서 확인 필요 (로컬 PC 세션에서)
+1. 운영 `.env`에 **`FLASK_SECRET_KEY`** 가 있는지. 없으면 PR #7 이후 프로세스마다 임시 랜덤 키를 써서
+   **재시작/배포 때마다 로그인이 풀린다** (예전에는 공개 기본 키로 서명 → 세션 위조 가능했음).
+2. **`TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS`** 가 있는지. 없으면 운영에서 토스 계좌 불러오기와
+   `/api/debug/toss`가 차단된다 (예전에는 로그인한 누구나 소유자 계좌를 불러올 수 있었음).
+3. 미국 종목 뉴스 제목 번역(`deep_translator` → Google 번역)이 운영에서 되는지. 이 환경에선 차단돼 원문으로만 확인.
+4. AI 호출(기업 소개·급등락 사유) 소요 시간. 이 환경엔 AI 키가 없어 측정 못 함. PR #10으로 첫 화면은 AI를 기다리지 않음.
+
+### 운영 판단 기준 변경 (PR #7)
+- `IS_PRODUCTION = bool(DATABASE_URL or RAILWAY_ENVIRONMENT)` — 예전엔 `RAILWAY_ENVIRONMENT`만 봐서 Oracle에서 보호가 꺼져 있었다.
+- 시크릿 키 없을 때 **기동을 막지 않는다** (막으면 자동 롤백되므로). 대신 임시 랜덤 키.
+
+### 데이터 출처 변경 (외부 서비스가 바뀌어 조용히 빈 값이 되던 것들)
+| 데이터 | 원인 | 현재 |
+|---|---|---|
+| 한국 분기 실적 (`fetch_kr_quarterly_data`) | 네이버 `.../finance/quarterly` 404 | `.../finance/quarter`(단수). 성공 시 폴백 5개 생략 (7s → 0.9s) |
+| 한국 애널리스트 (`fetch_kr_analysts`) | `finance.naver.com/research/*` → `stock.naver.com` 리다이렉트(CSR) | 모바일 JSON API `m.stock.naver.com/api/research/stock/{code}` + `/api/research/company/{id}` |
+| 한국 뉴스 | yfinance `Ticker.news`가 Yahoo `/xhr/ncp` 폐기로 404 | 네이버 `m.stock.naver.com/api/news/stock/{code}` (`fetch_kr_news`) |
+| 미국 뉴스 | 같은 원인 | **yfinance 1.3.0 → 1.8.0** (GraphQL 엔드포인트). 1.3.0과 분석 응답 비교해 동일 확인 |
+- 네이버 모바일 API는 비공식이라 언제든 바뀔 수 있다. 빈 결과는 짧게(2~10분)만 캐시하므로 주소만 고치면 바로 회복.
+- 공통 메모리 캐시 헬퍼 `_ttl_cached()` (빈 결과 짧은 TTL, deepcopy, lock, 개수 상한).
+
+### 로딩 속도 (PR #2, #8, #10)
+- `/api/analyze` 응답의 99%가 전체 기간 차트였다 (AAPL 4.8MB). 차트 실수 소수 4자리(`_cf`), 거래량 정수(`_cv`),
+  32KB 넘는 JSON gzip(`_gzip_large_json`, 표준 라이브러리) → AAPL 전송 0.62MB.
+- 분석 본문 5분 캐시 `_ANALYZE_CACHE` (종목·봉 단위, 직렬화 JSON, 총 40MB 상한). **내 포지션은 `_position_for()`로 요청마다 계산**해 캐시에 사용자 정보가 섞이지 않음.
+- 뉴스·애널리스트·AI 기업 소개·AI 급등락 사유는 **`/api/analyze/extra`** 로 분리 (analyze 캐시의 stock_data/info/ai_result 재사용, 5분 캐시).
+  화면은 스켈레톤 → 채움, 실패 시 재시도 버튼. 본 분석은 90초 타임아웃 + 재시도 버튼.
+- 측정(이 컨테이너, 한국 사이트 TLS가 요청당 ~0.9s라 운영보다 느림): 삼성전자 첫 요청 21.8s → 약 13~15s, 재요청 0.07s.
+
+### 데이터·로직 버그 수정 (PR #1, #4, #7)
+- 배당수익률 100배 오류(945%) — yfinance `dividendYield`는 이미 % 값. `_dividend_yield_fraction()`로 상단 지표와 같은 순서.
+- BB·거래량 "쉬운 설명"을 판단 색이 아니라 실제 상태(`tip_key`)로 선택. 장중 거래량 집계 중 안내.
+- 분기 매출 추세 배지: 발표 전 분기(actual null) 제외.
+- 손절가 문구를 실제 계산식(최근 저점 + ATR)에 맞춤. 판단이 `avoid`일 때 매수 구간·가이드 문구를 참고용으로 표시.
+- 분석 문구 가격: 원화 정수, 그 외 소수 2자리 (`_fp`, 스레드별 자릿수). EPS 7일 하향 열 이름 오타(`downLast7Days`).
+- 한국 종목명은 `stock_db.json` 한글명, 섹터/거래소 한글 표기. 차트 가격축 통화별 포맷.
+
+### 검색·모의투자·포트폴리오 UX
+- 한글 종목명 + Enter → 검색 API로 티커 변환. 서버도 `/stock/<이름>` → `/stock/<티커>` 302.
+- 종목 페이지 검색창엔 종목명 표시, 실제 티커는 `data-ticker` (`_inputTicker()`가 analyze/차트 주기 전환에 사용).
+- 빠른 매수: 정확한 티커/이름이면 바로 매수 모달, Enter, 인라인 오류. 입력을 고치면 이전 선택 해제(다른 종목으로 열리던 버그).
+- 닉네임 "나중에" 7일 기억(localStorage). 배지는 요약 바 + "전체 보기" (모바일 페이지 길이 절반).
+- `/api/portfolio?summary=1` → 원화 환산 요약(총평가·투자금·손익·통화/종목 비중). 파라미터 없으면 기존 목록 그대로. 목록 내부 스크롤 제거.
+
+### UI (PR #3, #9, #10)
+- Pretendard(CDN, 시스템 글꼴 폴백), 숫자 tabular-nums, 카드/탭/목록 정리. **다크 테마·상승 초록/하락 빨강 유지는 사용자 결정**.
+- `style.css` 끝의 "UI 정리 (v55)" 블록이 앞 규칙을 덮는다. **모바일 값은 그 뒤에 다시 선언해야 한다** (헤더 로그아웃 버튼이 밀린 적 있음).
+- 헤더 로그인 영역은 `templates/_auth_area.html`로 서버 렌더(깜빡임 제거), 공통 푸터 `templates/_footer.html`(출처·지연·면책).
+- RSI/MACD 범례, 시간축 `rightOffset`, 등락률 `fmtPct()` 통일, 닫기/삭제/새로고침 아이콘 SVG.
+- 국내 종목 AI 기업 소개 프롬프트는 해외 기업 비유 금지로 분기.
+- 정적 파일 버전: `style.css?v=61`, `main.js?v=61`, `trading.js?v=57`, `leaderboard.js?v=54`.
+
+### 이 세션의 로컬 검증 방법 (재사용 가능)
+- 로그인 흉내: 로컬 SQLite에 테스트 사용자 생성 → `app.test_client().session_transaction()`으로 `_user_id` 넣고
+  나온 `session` 쿠키를 Playwright 컨텍스트에 주입. **로컬 개발 키에서만 동작** (운영 판단이면 위조 차단됨).
+- 클라우드 환경 네트워크 허용 목록에 Yahoo/네이버/jsdelivr 등이 필요하다 (막히면 조용히 빈 데이터가 됨).
+
+### 남은 후보
+- 종목 페이지 차트를 전체 기간 대신 최근 N년만 보내고 필요할 때 더 불러오기 (전송량 추가 감소).
+- 로컬 SQLite에서 `ALTER TABLE ... IF NOT EXISTS` 마이그레이션 로그 노이즈 (기능 영향 없음).
+- 상단 메뉴 "포트폴리오" 바로가기 (모바일 헤더 공간 부족으로 보류).
 
 ---
 

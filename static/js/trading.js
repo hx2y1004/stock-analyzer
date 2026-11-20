@@ -194,9 +194,9 @@ function renderAssetHistoryChart(data) {
     });
     _ahSeriesMe    = _ahChart.addLineSeries({ color: '#22c55e', lineWidth: 2, title: '',   // 이름은 위 요약줄에 같은 색으로 표시 (축 라벨 겹침 방지)
                                               priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
-    _ahSeriesKospi = _ahChart.addLineSeries({ color: '#3b82f6', lineWidth: 1, title: '', lastValueVisible: false,
+    _ahSeriesKospi = _ahChart.addLineSeries({ color: '#3b82f6', lineWidth: 1, title: '', lastValueVisible: false, priceLineVisible: false,
                                               priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
-    _ahSeriesSp    = _ahChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, title: '', lastValueVisible: false,
+    _ahSeriesSp    = _ahChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, title: '', lastValueVisible: false, priceLineVisible: false,
                                               priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
 
     // baseline 0% 가로선 추가

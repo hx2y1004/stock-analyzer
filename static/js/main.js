@@ -386,7 +386,7 @@ function _pfCardHTML(h, rank, compact = false) {
       <span class="pf-meta-item">📌 매입 ${fmtPrice(h.purchase_price, true)}</span>
       <span class="pf-meta-item">📦 ${h.quantity}주</span>
       <button class="pf-edit-btn" onclick="openEditModal(event, ${h.id})" title="매입가/수량 수정">✏️</button>
-      <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제">✕</button>
+      <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제" aria-label="삭제"><svg class="icon-x" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg></button>
     </div>
   </div>`;
 }
@@ -1409,9 +1409,15 @@ async function analyze() {
     renderMarketContext(data.stock.market_context, data.stock.currency === 'KRW');
     renderUpcomingEvents(data.stock.upcoming_events);
     renderZones(data.analysis, data.stock);
-    renderAnalysts(data.analysts, data.stock);
-    renderPriceMoveBanner(data.stock, data.move_reason);
-    renderNews(data.news);
+    if (data.extras_pending) {
+      // 뉴스·애널리스트·AI 해설은 /api/analyze/extra 로 나중에 채운다 (첫 화면을 붙잡지 않게)
+      _showExtrasLoading();
+      loadAnalyzeExtras(data.stock.ticker, data);
+    } else {
+      renderAnalysts(data.analysts, data.stock);
+      renderPriceMoveBanner(data.stock, data.move_reason);
+      renderNews(data.news);
+    }
 
     // 봉 뱃지 업데이트
     document.getElementById('intervalBadge').textContent = data.interval_label || '일봉';
@@ -1423,6 +1429,52 @@ async function analyze() {
     showError('서버 연결 오류: ' + e.message);
   } finally {
     document.getElementById('loading').classList.add('hidden');
+  }
+}
+
+// ── 부가 섹션 비동기 로딩 (뉴스·애널리스트·AI 기업 소개·급등락 사유) ──
+const _SKELETON = '<div class="sk-wrap"><div class="sk-line"></div><div class="sk-line"></div><div class="sk-line short"></div></div>';
+
+function _showExtrasLoading() {
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set('analystConsensus', _SKELETON);
+  set('analystTargets', '');
+  set('newsList', _SKELETON);
+  document.getElementById('priceMoveBanner')?.classList.add('hidden');
+  const title = document.getElementById('analystCardTitle');
+  if (title) title.textContent = '애널리스트 의견';
+}
+
+function _showExtrasError(ticker, data) {
+  const retry = `<button type="button" class="extras-retry-btn" onclick="_retryExtras()">다시 시도</button>`;
+  const msg = (what) => `<p class="no-data">${what} 불러오지 못했어요. ${retry}</p>`;
+  const a = document.getElementById('analystConsensus'); if (a) a.innerHTML = msg('애널리스트 의견을');
+  const n = document.getElementById('newsList'); if (n) n.innerHTML = msg('뉴스를');
+  window._extrasRetry = () => { _showExtrasLoading(); loadAnalyzeExtras(ticker, data); };
+}
+function _retryExtras() { if (window._extrasRetry) window._extrasRetry(); }
+
+async function loadAnalyzeExtras(ticker, data) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const res = await fetch(`/api/analyze/extra?ticker=${encodeURIComponent(ticker)}&interval=${currentInterval}`,
+                            { signal: ctrl.signal });
+    const ex = await res.json();
+    if (currentAnalysisTicker !== ticker) return;      // 그 사이 다른 종목으로 이동
+    if (!res.ok) throw new Error(ex.error || res.status);
+    renderAnalysts(ex.analysts, data.stock);
+    renderNews(ex.news);
+    renderPriceMoveBanner(data.stock, ex.move_reason);
+    if (ex.company_overview) {
+      // AI 기업 소개가 오면 투자 판단 탭의 회사 소개만 다시 그린다
+      data.stock.company_overview = ex.company_overview;
+      renderFundamental(data.analysis.fundamental_details || [], data.stock);
+    }
+  } catch (e) {
+    if (currentAnalysisTicker === ticker) _showExtrasError(ticker, data);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
