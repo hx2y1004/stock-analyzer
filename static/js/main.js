@@ -271,9 +271,12 @@ async function loadPortfolio() {
   const cards = document.getElementById('portfolioCards');
   cards.innerHTML = '<div class="pf-loading">불러오는 중...</div>';
   try {
-    const res  = await fetch('/api/portfolio');
+    const res  = await fetch('/api/portfolio?summary=1');
     const data = await res.json();
-    renderPortfolioCards(data);
+    // 로그인 안 됨 → 서버가 [] 를 준다 / 로그인 → {holdings, summary}
+    const holdings = Array.isArray(data) ? data : (data.holdings || []);
+    renderPortfolioSummary(Array.isArray(data) ? null : data.summary);
+    renderPortfolioCards(holdings);
   } catch (e) {
     cards.innerHTML = '<div class="pf-loading">불러오기 실패</div>';
   }
@@ -407,6 +410,40 @@ function renderPortfolioCards(holdings) {
   // 수익률 내림차순 정렬 → 전체 풀모드로 렌더
   const byReturn = [...holdings].sort((a, b) => (b.return_pct ?? -9999) - (a.return_pct ?? -9999));
   cards.innerHTML = byReturn.map((h, idx) => _pfCardHTML(h, idx + 1, false)).join('');
+}
+
+// 실제 포트폴리오 요약 헤더: 총 평가금액·투자금·손익, 통화/종목 비중
+function renderPortfolioSummary(s) {
+  const el = document.getElementById('pfSummary');
+  if (!el) return;
+  if (!s || !s.count) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const won = (v) => Math.round(v).toLocaleString('ko-KR') + '원';
+  const plCls = s.pl_krw > 0 ? 'up' : s.pl_krw < 0 ? 'down' : '';
+  const sign = s.pl_krw > 0 ? '+' : '';
+  const curLabel = { KRW: '원화', USD: '달러' };
+  const curBar = Object.entries(s.currency_weights || {}).map(([c, p]) =>
+    `<span class="pf-sum-chip">${curLabel[c] || c} ${p}%</span>`).join('');
+  const top = (s.top_weights || []).map(t =>
+    `<div class="pf-sum-w"><span class="pf-sum-w-name">${escapeHtmlMain(t.name)}</span>
+       <span class="pf-sum-w-bar"><span style="width:${Math.min(100, t.pct)}%"></span></span>
+       <span class="pf-sum-w-pct">${t.pct}%</span></div>`).join('');
+  const note = s.priced_count < s.count
+    ? `<div class="pf-sum-note">현재가를 못 가져온 ${s.count - s.priced_count}개 종목은 손익 계산에서 뺐어요.</div>` : '';
+  el.innerHTML = `
+    <div class="pf-sum-main">
+      <div class="pf-sum-label">총 평가금액</div>
+      <div class="pf-sum-value">${won(s.total_value_krw)}</div>
+      <div class="pf-sum-pl ${plCls}">${sign}${won(s.pl_krw)}${s.pl_pct != null ? ` (${sign}${s.pl_pct.toFixed(2)}%)` : ''}</div>
+    </div>
+    <div class="pf-sum-side">
+      <div class="pf-sum-kv"><span>총 투자금</span><strong>${won(s.total_cost_krw)}</strong></div>
+      <div class="pf-sum-kv"><span>종목 수</span><strong>${s.count}개</strong></div>
+      <div class="pf-sum-chips">${curBar}</div>
+    </div>
+    ${top ? `<div class="pf-sum-weights"><div class="pf-sum-sub">비중 상위</div>${top}</div>` : ''}
+    <div class="pf-sum-note">달러 종목은 현재 환율(1달러 ${s.fx_usd_krw.toLocaleString('ko-KR')}원)로 환산했어요. 매입 당시 환율은 반영되지 않아요.</div>
+    ${note}`;
+  el.classList.remove('hidden');
 }
 
 // 레거시 호환: 펼치기/접기 토글 → 더 이상 사용 안 함
@@ -1332,11 +1369,27 @@ async function analyze() {
   document.getElementById('errorBox').classList.add('hidden');
 
   try {
-    const res = await fetch(`/api/analyze?ticker=${encodeURIComponent(ticker)}&period=${period}&interval=${currentInterval}`);
-    const data = await res.json();
+    // 90초 안에 응답이 없으면 끊고 재시도 버튼을 보여준다 (서버 timeout 120초보다 짧게)
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90000);
+    let res, data;
+    try {
+      res = await fetch(`/api/analyze?ticker=${encodeURIComponent(ticker)}&period=${period}&interval=${currentInterval}`,
+                        { signal: ctrl.signal });
+      data = await res.json().catch(() => ({}));
+    } catch (err) {
+      const timedOut = err && err.name === 'AbortError';
+      showError(timedOut ? '분석 응답이 너무 오래 걸려요. 잠시 후 다시 시도해 주세요.'
+                         : '서버에 연결하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.',
+                { retry: analyze });
+      return;
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!res.ok) {
-      showError(data.error || '알 수 없는 오류');
+      // 5xx(일시 오류)만 재시도 버튼, 4xx(없는 종목 등)는 안내만
+      showError(data.error || '알 수 없는 오류', res.status >= 500 ? { retry: analyze } : {});
       return;
     }
 
@@ -1373,9 +1426,18 @@ async function analyze() {
   }
 }
 
-function showError(msg) {
+function showError(msg, opts = {}) {
   const box = document.getElementById('errorBox');
   box.textContent = '⚠️ ' + msg;
+  if (opts.retry) {
+    // 일시적인 오류(시간 초과·서버 오류)는 같은 자리에서 다시 시도할 수 있게
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'error-retry-btn';
+    btn.textContent = '다시 시도';
+    btn.onclick = () => { box.classList.add('hidden'); opts.retry(); };
+    box.appendChild(btn);
+  }
   box.classList.remove('hidden');
   document.getElementById('loading').classList.add('hidden');
 }

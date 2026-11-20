@@ -885,14 +885,43 @@ function renderBadges(data) {
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
   });
 
-  wrap.innerHTML = sortedCats.map(cat => `
-    <div class="badge-cat">
-      <div class="badge-cat-title">${cat}</div>
-      <div class="badge-cat-grid">
-        ${byCat[cat].map(b => _badgeHTML(b)).join('')}
+  // 기본은 요약(진행률 + 획득한 배지 아이콘)만 보여주고, 전체 목록은 펼쳐서 본다.
+  // 35개가 모두 펼쳐져 있으면 아래 AI 코치·거래 내역까지 스크롤이 너무 길어진다.
+  const earned = data.badges.filter(b => b.earned);
+  const pct = data.total_count ? Math.round(data.earned_count / data.total_count * 100) : 0;
+  const icons = earned.slice(0, 10).map(b =>
+    `<span class="badge-mini tier-${b.tier}" title="${String(b.name).replace(/"/g, '&quot;')}">${b.icon}</span>`).join('');
+  const more = earned.length > 10 ? `<span class="badge-mini-more">+${earned.length - 10}</span>` : '';
+  const expanded = _badgesExpanded();
+  wrap.innerHTML = `
+    <div class="badge-summary">
+      <div class="badge-summary-bar"><div class="badge-summary-fill" style="width:${pct}%"></div></div>
+      <div class="badge-summary-row">
+        <div class="badge-summary-icons">${earned.length ? icons + more : '<span class="badge-summary-empty">아직 획득한 배지가 없어요. 첫 매수를 해 보세요!</span>'}</div>
+        <button type="button" class="badge-toggle-btn" onclick="toggleBadgesList()" aria-expanded="${expanded}">
+          ${expanded ? '접기 ▴' : `전체 ${data.total_count}개 보기 ▾`}</button>
       </div>
     </div>
-  `).join('');
+    <div id="badgesFull" class="badges-full${expanded ? '' : ' hidden'}">
+      ${sortedCats.map(cat => `
+        <div class="badge-cat">
+          <div class="badge-cat-title">${cat}</div>
+          <div class="badge-cat-grid">
+            ${byCat[cat].map(b => _badgeHTML(b)).join('')}
+          </div>
+        </div>`).join('')}
+    </div>`;
+  window._badgesData = data;
+}
+
+// 펼침 상태는 브라우저에 기억 (저장 실패 시 기본 접힘)
+function _badgesExpanded() {
+  try { return localStorage.getItem('badgesExpanded') === '1'; } catch { return false; }
+}
+function toggleBadgesList() {
+  const next = !_badgesExpanded();
+  try { localStorage.setItem('badgesExpanded', next ? '1' : '0'); } catch {}
+  if (window._badgesData) renderBadges(window._badgesData);
 }
 
 function _badgeHTML(b) {

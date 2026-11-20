@@ -80,6 +80,29 @@ if not _secret:
         _secret = "dev-only-change-in-production"
 app.secret_key = _secret
 app.config["SQLALCHEMY_DATABASE_URI"]        = _db_url
+
+
+@app.after_request
+def _gzip_large_json(resp):
+    """큰 JSON 응답(분석·차트: 수백 KB~수 MB)을 gzip 으로 압축한다. 의존성 없이 표준 라이브러리만 사용.
+    이미 인코딩된 응답, 스트리밍 응답, 작은 응답, gzip 미지원 클라이언트는 건드리지 않는다."""
+    try:
+        if (resp.status_code != 200 or resp.direct_passthrough
+                or resp.mimetype != "application/json"
+                or "Content-Encoding" in resp.headers
+                or "gzip" not in (request.headers.get("Accept-Encoding") or "").lower()):
+            return resp
+        data = resp.get_data()
+        if len(data) < 32 * 1024:
+            return resp
+        import gzip as _gzip
+        resp.set_data(_gzip.compress(data, compresslevel=5))
+        resp.headers["Content-Encoding"] = "gzip"
+        resp.headers["Content-Length"] = str(len(resp.get_data()))
+        resp.headers.add("Vary", "Accept-Encoding")
+    except Exception:
+        pass
+    return resp
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 CORS(app)
 
@@ -254,6 +277,19 @@ def safe_float(val):
         return float(val)
     except Exception:
         return None
+
+
+def _cf(val):
+    """차트용 실수: 소수 넷째 자리로 반올림 (352.45001220703125 → 352.45).
+    분석 응답의 99% 가 차트 배열이라 자릿수만 줄여도 전송량이 절반 가까이 준다."""
+    v = safe_float(val)
+    return None if v is None else round(v, 4)
+
+
+def _cv(val):
+    """차트용 거래량: 정수."""
+    v = safe_float(val)
+    return None if v is None else int(round(v))
 
 
 def _clean_num(s):
@@ -1613,15 +1649,15 @@ def build_chart_data(ticker, interval):
     df.index = df.index.strftime("%Y-%m-%d")
 
     def series(col):
-        return [safe_float(v) for v in df[col]] if col in df.columns else []
+        return [_cf(v) for v in df[col]] if col in df.columns else []
 
     chart_data = {
         "dates":     df.index.tolist(),
-        "open":      [safe_float(v) for v in df["Open"]],
-        "high":      [safe_float(v) for v in df["High"]],
-        "low":       [safe_float(v) for v in df["Low"]],
-        "close":     [safe_float(v) for v in df["Close"]],
-        "volume":    [safe_float(v) for v in df["Volume"]],
+        "open":      [_cf(v) for v in df["Open"]],
+        "high":      [_cf(v) for v in df["High"]],
+        "low":       [_cf(v) for v in df["Low"]],
+        "close":     [_cf(v) for v in df["Close"]],
+        "volume":    [_cv(v) for v in df["Volume"]],
         "ma5":       series("MA5"),   "ma20": series("MA20"),
         "ma60":      series("MA60"),  "ma120": series("MA120"),
         "bb_upper":  series("BB_upper"), "bb_mid": series("BB_mid"),
@@ -3154,6 +3190,91 @@ def _is_market_open(ticker: str) -> bool:
         return False
 
 
+def _position_for(ticker, stock_data, current_price, ai_result):
+    """분석 응답의 '내 포지션' (로그인 사용자별). 분석 캐시와 분리해 요청마다 계산한다."""
+    position_data = None
+    if current_user.is_authenticated:
+        holding = Holding.query.filter_by(
+            user_id=current_user.id, ticker=ticker
+        ).first()
+        if holding:
+            # ticker 기준 정확한 통화
+            correct_currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else \
+                               holding.currency or "USD"
+            # 이름이 티커로 저장된 경우 stock_data 또는 STOCK_DB에서 교정
+            correct_name = holding.name
+            if (not correct_name) or correct_name == ticker:
+                correct_name = stock_data.get("name") or correct_name
+                if (not correct_name) or correct_name == ticker:
+                    for s in STOCK_DB:
+                        if s.get("symbol") == ticker:
+                            correct_name = s.get("name") or correct_name
+                            break
+
+            # 변경 사항 silent 마이그레이션
+            changed = False
+            if holding.currency != correct_currency:
+                holding.currency = correct_currency
+                changed = True
+            if correct_name and holding.name != correct_name:
+                holding.name = correct_name
+                changed = True
+            if changed:
+                try:
+                    db.session.commit()
+                    app.logger.info(f"[holding] {ticker} migrated → {correct_name}/{correct_currency}")
+                except Exception:
+                    db.session.rollback()
+
+            position_data = {
+                **holding.to_dict(),
+                "name":             correct_name,
+                "currency":         correct_currency,
+                "current_price":    current_price,
+                "current_value":    round(current_price * holding.quantity, 2) if current_price else None,
+                "purchase_value":   round(holding.purchase_price * holding.quantity, 2),
+                "recommendation":   _position_recommendation(
+                    current_price, holding.purchase_price, ai_result.get("score", 0),
+                    ai_result=ai_result,
+                ),
+            }
+    return position_data
+
+
+# ── 분석 응답 캐시 (종목·봉 단위, 5분) ─────────────────────────────────────
+# 같은 종목을 여러 사람이 보거나 새로고침할 때 15~20초 걸리는 분석을 반복하지 않는다.
+# 본문은 직렬화된 JSON 문자열로 보관하고(파이썬 객체보다 작음), 전체 크기를 제한한다.
+# 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
+_ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
+_ANALYZE_TTL = 300
+_ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
+_ANALYZE_LOCK = threading.Lock()
+
+
+def _analyze_cache_get(key):
+    hit = _ANALYZE_CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _ANALYZE_TTL:
+        return hit
+    return None
+
+
+def _analyze_cache_put(key, body, ctx):
+    with _ANALYZE_LOCK:
+        _ANALYZE_CACHE[key] = (time.time(), body, ctx)
+        # 오래된 것부터 지워 전체 크기를 제한 (운영 메모리 1GB)
+        total = sum(len(v[1]) for v in _ANALYZE_CACHE.values())
+        for k, v in sorted(_ANALYZE_CACHE.items(), key=lambda kv: kv[1][0]):
+            if total <= _ANALYZE_CACHE_MAX_BYTES or k == key:
+                continue
+            total -= len(v[1])
+            _ANALYZE_CACHE.pop(k, None)
+
+
+def _analyze_response(base_body, position_data):
+    body = base_body[:-1] + ', "position": ' + json.dumps(position_data, cls=NumpyEncoder, ensure_ascii=False) + "}"
+    return app.response_class(response=body, status=200, mimetype="application/json")
+
+
 @app.route("/api/analyze", methods=["GET"])
 def analyze():
     ticker = request.args.get("ticker", "").strip().upper()
@@ -3181,6 +3302,16 @@ def analyze():
 
     if not ticker:
         return jsonify({"error": "티커를 입력해주세요"}), 400
+
+    # 5분 안에 같은 종목·봉을 분석했으면 그 결과를 쓰고, 내 포지션만 새로 붙인다
+    cached = _analyze_cache_get((ticker, interval))
+    if cached:
+        ctx = cached[2]
+        try:
+            pos = _position_for(ticker, ctx["stock_data"], ctx["current_price"], ctx["ai_result"])
+        except Exception:
+            pos = None
+        return _analyze_response(cached[1], pos)
 
     try:
         stock = yf.Ticker(ticker)
@@ -3270,15 +3401,15 @@ def analyze():
         chart_df.index = chart_df.index.strftime("%Y-%m-%d")
 
         def series(col):
-            return [safe_float(v) for v in chart_df[col]] if col in chart_df.columns else []
+            return [_cf(v) for v in chart_df[col]] if col in chart_df.columns else []
 
         chart_data = {
             "dates": chart_df.index.tolist(),
-            "open": [safe_float(v) for v in chart_df["Open"]],
-            "high": [safe_float(v) for v in chart_df["High"]],
-            "low": [safe_float(v) for v in chart_df["Low"]],
-            "close": [safe_float(v) for v in chart_df["Close"]],
-            "volume": [safe_float(v) for v in chart_df["Volume"]],
+            "open": [_cf(v) for v in chart_df["Open"]],
+            "high": [_cf(v) for v in chart_df["High"]],
+            "low": [_cf(v) for v in chart_df["Low"]],
+            "close": [_cf(v) for v in chart_df["Close"]],
+            "volume": [_cv(v) for v in chart_df["Volume"]],
             "ma5": series("MA5"),
             "ma20": series("MA20"),
             "ma60": series("MA60"),
@@ -3784,67 +3915,21 @@ def analyze():
         )
 
         # ── 내 포지션 데이터 (로그인된 경우) ──────────────────────────────
-        position_data = None
-        if current_user.is_authenticated:
-            holding = Holding.query.filter_by(
-                user_id=current_user.id, ticker=ticker
-            ).first()
-            if holding:
-                # ticker 기준 정확한 통화
-                correct_currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else \
-                                   holding.currency or "USD"
-                # 이름이 티커로 저장된 경우 stock_data 또는 STOCK_DB에서 교정
-                correct_name = holding.name
-                if (not correct_name) or correct_name == ticker:
-                    correct_name = stock_data.get("name") or correct_name
-                    if (not correct_name) or correct_name == ticker:
-                        for s in STOCK_DB:
-                            if s.get("symbol") == ticker:
-                                correct_name = s.get("name") or correct_name
-                                break
+        position_data = _position_for(ticker, stock_data, current_price, ai_result)
 
-                # 변경 사항 silent 마이그레이션
-                changed = False
-                if holding.currency != correct_currency:
-                    holding.currency = correct_currency
-                    changed = True
-                if correct_name and holding.name != correct_name:
-                    holding.name = correct_name
-                    changed = True
-                if changed:
-                    try:
-                        db.session.commit()
-                        app.logger.info(f"[holding] {ticker} migrated → {correct_name}/{correct_currency}")
-                    except Exception:
-                        db.session.rollback()
-
-                position_data = {
-                    **holding.to_dict(),
-                    "name":             correct_name,
-                    "currency":         correct_currency,
-                    "current_price":    current_price,
-                    "current_value":    round(current_price * holding.quantity, 2) if current_price else None,
-                    "purchase_value":   round(holding.purchase_price * holding.quantity, 2),
-                    "recommendation":   _position_recommendation(
-                        current_price, holding.purchase_price, ai_result.get("score", 0),
-                        ai_result=ai_result,
-                    ),
-                }
-
-        return app.response_class(
-            response=json.dumps(
-                {
-                    "stock": stock_data, "analysis": ai_result, "chart": chart_data,
-                    "interval": interval, "interval_label": interval_label,
-                    "news": news_data, "analysts": analyst_data, "move_reason": move_reason,
-                    "position": position_data,
-                },
-                cls=NumpyEncoder,
-                ensure_ascii=False,
-            ),
-            status=200,
-            mimetype="application/json",
+        # 사용자와 무관한 본문은 캐시해 두고, 포지션만 요청마다 붙인다
+        base_body = json.dumps(
+            {
+                "stock": stock_data, "analysis": ai_result, "chart": chart_data,
+                "interval": interval, "interval_label": interval_label,
+                "news": news_data, "analysts": analyst_data, "move_reason": move_reason,
+            },
+            cls=NumpyEncoder, ensure_ascii=False,
         )
+        _analyze_cache_put((ticker, interval), base_body,
+                           {"stock_data": {"name": stock_data.get("name")},
+                            "current_price": current_price, "ai_result": ai_result})
+        return _analyze_response(base_body, position_data)
 
     except Exception as e:
         import traceback
@@ -3980,8 +4065,9 @@ def get_portfolio():
 
     holdings = Holding.query.filter_by(user_id=current_user.id)\
                             .order_by(Holding.created_at.desc()).all()
+    want_summary = request.args.get("summary") == "1"
     if not holdings:
-        return jsonify([])
+        return jsonify({"holdings": [], "summary": None} if want_summary else [])
 
     # 현재가 일괄 조회 (fast_info 병렬)
     tickers = list({h.ticker for h in holdings})
@@ -4037,7 +4123,51 @@ def get_portfolio():
         else:
             d["return_pct"] = d["return_amount"] = None
         result.append(d)
+    if want_summary:
+        return jsonify({"holdings": result, "summary": _portfolio_summary(result)})
     return jsonify(result)
+
+
+def _portfolio_summary(rows):
+    """실제 포트폴리오 요약 (원화 환산). 달러 종목은 현재 환율로 환산한다.
+
+    매입 당시 환율은 저장돼 있지 않으므로 투자금도 현재 환율로 환산한다 → 환차손익은 반영되지 않음.
+    현재가를 못 가져온 종목은 평가금액을 투자금과 같다고 보고, 손익 계산에서는 제외한다.
+    """
+    fx = _get_usd_krw_rate()
+    total_value = total_cost = pl_value = pl_cost = 0.0
+    by_cur, by_stock = {}, []
+    priced = 0
+    for r in rows:
+        qty  = float(r.get("quantity") or 0)
+        cost = float(r.get("purchase_price") or 0) * qty
+        cp   = r.get("current_price")
+        value = float(cp) * qty if cp else cost
+        cur = r.get("currency") or "USD"
+        rate = 1.0 if cur == "KRW" else fx
+        v_krw, c_krw = value * rate, cost * rate
+        total_value += v_krw
+        total_cost  += c_krw
+        if cp:
+            priced += 1
+            pl_value += v_krw
+            pl_cost  += c_krw
+        by_cur[cur] = by_cur.get(cur, 0) + v_krw
+        by_stock.append({"ticker": r.get("ticker"), "name": r.get("name") or r.get("ticker"), "value_krw": v_krw})
+    pl = pl_value - pl_cost
+    weights = lambda v: round(v / total_value * 100, 1) if total_value > 0 else 0
+    by_stock.sort(key=lambda x: -x["value_krw"])
+    return {
+        "total_value_krw": round(total_value),
+        "total_cost_krw":  round(total_cost),
+        "pl_krw":          round(pl),
+        "pl_pct":          round(pl / pl_cost * 100, 2) if pl_cost > 0 else None,
+        "fx_usd_krw":      round(fx, 2),
+        "currency_weights": {c: weights(v) for c, v in sorted(by_cur.items(), key=lambda x: -x[1])},
+        "top_weights": [{"ticker": s["ticker"], "name": s["name"], "pct": weights(s["value_krw"])} for s in by_stock[:5]],
+        "count": len(rows),
+        "priced_count": priced,
+    }
 
 
 # ── 포트폴리오 추가 ───────────────────────────────────────────────────────────
