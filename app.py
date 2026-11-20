@@ -2894,12 +2894,85 @@ def _get_risk_free_rate(currency):
 _OVERVIEW_CACHE = {}              # ticker → (timestamp, sections)
 _OVERVIEW_TTL   = 60 * 60 * 6     # 6시간 캐시
 
-# Groq 모델 fallback 후보
-_GROQ_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-70b-versatile",
-    "llama-3.1-8b-instant",
-]
+# ── AI 모델 선택 ──────────────────────────────────────────────────────────────
+# 모델 이름을 코드에 고정하면 제공사가 모델을 종료할 때 AI 기능이 조용히 전부 멈춘다
+# (2026-08 Groq Llama 3.x 종료, Gemini 2.5 도 종료 일정). 그래서
+#   1) 환경변수 GEMINI_MODELS / GROQ_MODELS (콤마 구분) 가 있으면 그대로 쓰고
+#   2) 없으면 각 제공사의 모델 목록 API 로 "지금 쓸 수 있는" 모델을 골라 6시간 캐시하고
+#   3) 목록 조회도 실패하면 아래 기본 목록을 쓴다.
+_GEMINI_FALLBACK_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest",
+                           "gemini-2.5-flash-lite", "gemini-2.5-flash"]
+_GROQ_FALLBACK_MODELS   = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+_AI_MODEL_CACHE = {}          # provider → (ts, [models], source)
+_AI_MODEL_TTL = 6 * 3600
+_AI_LAST_ERROR = {}           # provider → (ts, message)  (진단용, 키 값은 넣지 않음)
+
+
+def _ai_note_error(provider, msg):
+    _AI_LAST_ERROR[provider] = (time.time(), str(msg)[:300])
+
+
+def _pick_gemini_models(names):
+    """정식 Flash 계열(gemini-<버전>-flash[-lite])만, 버전 높은 순 · flash 가 lite 보다 앞."""
+    picked = []
+    for n in names:
+        m = re.fullmatch(r"gemini-(\d+(?:\.\d+)?)-flash(-lite)?", n)
+        if m:
+            picked.append((-float(m.group(1)), 1 if m.group(2) else 0, n))
+    picked.sort()
+    out = [n for _, _, n in picked][:3]
+    # 별칭(-latest)이 있으면 마지막 보험으로
+    out += [n for n in ("gemini-flash-latest", "gemini-flash-lite-latest") if n in names and n not in out]
+    return out
+
+
+def _pick_groq_models(ids):
+    """대화용 모델만, 큰 모델 우선."""
+    ids = [i for i in ids if not re.search(r"whisper|guard|tts|playai|compound|prompt|embed|vision|orpheus", i, re.I)]
+    order = [r"gpt-oss-120b", r"qwen", r"llama.*70b", r"llama-4", r"gpt-oss-20b", r"llama.*(8b|instant)"]
+    out = []
+    for pat in order:
+        for i in ids:
+            if re.search(pat, i, re.I) and i not in out:
+                out.append(i)
+    return out[:3]
+
+
+def _ai_models(provider, api_key):
+    env = os.environ.get("GEMINI_MODELS" if provider == "gemini" else "GROQ_MODELS", "").strip()
+    if env:
+        return [m.strip() for m in env.split(",") if m.strip()]
+    hit = _AI_MODEL_CACHE.get(provider)
+    if hit and (time.time() - hit[0]) < _AI_MODEL_TTL:
+        return hit[1]
+    models, source = [], "fallback"
+    try:
+        if provider == "gemini":
+            r = requests.get("https://generativelanguage.googleapis.com/v1beta/models",
+                             params={"key": api_key, "pageSize": 200}, timeout=10)
+            if r.status_code == 200:
+                names = [m.get("name", "").split("/", 1)[-1] for m in r.json().get("models", [])
+                         if "generateContent" in (m.get("supportedGenerationMethods") or [])]
+                models = _pick_gemini_models(names)
+            else:
+                _ai_note_error(provider, f"models list HTTP {r.status_code}: {r.text[:150]}")
+        else:
+            r = requests.get("https://api.groq.com/openai/v1/models",
+                             headers={"Authorization": f"Bearer {api_key}"}, timeout=10)
+            if r.status_code == 200:
+                ids = [m.get("id", "") for m in r.json().get("data", []) if m.get("active", True)]
+                models = _pick_groq_models(ids)
+            else:
+                _ai_note_error(provider, f"models list HTTP {r.status_code}: {r.text[:150]}")
+        if models:
+            source = "discovered"
+    except Exception as e:
+        _ai_note_error(provider, f"models list {type(e).__name__}: {e}")
+    if not models:
+        models = list(_GEMINI_FALLBACK_MODELS if provider == "gemini" else _GROQ_FALLBACK_MODELS)
+    _AI_MODEL_CACHE[provider] = (time.time(), models, source)
+    app.logger.info(f"[ai] {provider} models ({source}): {models}")
+    return models
 
 
 # 한자 정규식 (CJK 통합 한자 + 확장 A + 호환 한자)
@@ -2949,23 +3022,30 @@ def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
 
     Returns: 텍스트 또는 None
     """
-    for model_name in _GROQ_MODELS:
+    for model_name in _ai_models("groq", api_key):
+        is_reasoning = "gpt-oss" in model_name
         for attempt in range(2):
             try:
+                body = {
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user",   "content": user_msg},
+                    ],
+                    "temperature": temperature,
+                    # 추론 모델은 생각 토큰도 출력 한도에 포함되므로 넉넉히
+                    "max_tokens": max_tokens * 3 if is_reasoning else max_tokens,
+                }
+                if is_reasoning and attempt == 0:
+                    body["reasoning_effort"] = "low"
                 resp = requests.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                    json={
-                        "model": model_name,
-                        "messages": [
-                            {"role": "system", "content": system_msg},
-                            {"role": "user",   "content": user_msg},
-                        ],
-                        "temperature": temperature,
-                        "max_tokens": max_tokens,
-                    },
+                    json=body,
                     timeout=timeout,
                 )
+                if resp.status_code == 400 and is_reasoning and attempt == 0 and "reasoning" in resp.text.lower():
+                    continue   # reasoning_effort 를 모르는 모델이면 빼고 한 번 더
 
                 if resp.status_code == 429:
                     wait = 1.5 * (attempt + 1)
@@ -2978,8 +3058,9 @@ def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
                     time.sleep(wait)
                     continue
                 if resp.status_code >= 400:
-                    body = resp.text[:300] if resp.text else "(empty)"
-                    app.logger.error(f"[groq:{label}] {model_name} HTTP {resp.status_code}: {body}")
+                    err_body = resp.text[:300] if resp.text else "(empty)"
+                    app.logger.error(f"[groq:{label}] {model_name} HTTP {resp.status_code}: {err_body}")
+                    _ai_note_error("groq", f"{model_name} HTTP {resp.status_code}: {err_body[:150]}")
                     break   # 이 모델 안 됨, 다음 모델 시도
 
                 data = resp.json()
@@ -3018,7 +3099,6 @@ def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
     return None
 
 
-_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
 
 def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
@@ -3027,24 +3107,30 @@ def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
 
     Returns: 텍스트 또는 None
     """
-    for model_name in _GEMINI_MODELS:
-        for attempt in range(2):
+    for model_name in _ai_models("gemini", api_key):
+        no_thinking_cfg = False
+        for attempt in range(3):
             try:
+                gen_cfg = {
+                    "temperature": temperature,
+                    "maxOutputTokens": max(max_tokens, 1024),
+                }
+                if not no_thinking_cfg:
+                    # thinking 토큰이 출력 한도를 잡아먹지 않도록 비활성화 (지원하지 않는 모델이면 아래에서 빼고 재시도)
+                    gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
                 resp = requests.post(
                     f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent",
                     params={"key": api_key},
                     json={
                         "system_instruction": {"parts": [{"text": system_msg}]},
                         "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
-                        "generationConfig": {
-                            "temperature": temperature,
-                            "maxOutputTokens": max(max_tokens, 1024),
-                            # thinking 토큰이 출력 한도를 잡아먹지 않도록 비활성화
-                            "thinkingConfig": {"thinkingBudget": 0},
-                        },
+                        "generationConfig": gen_cfg,
                     },
                     timeout=timeout,
                 )
+                if resp.status_code == 400 and not no_thinking_cfg and "thinking" in resp.text.lower():
+                    no_thinking_cfg = True
+                    continue
                 if resp.status_code == 429:
                     app.logger.warning(f"[gemini:{label}] {model_name} 429 (무료 한도), "
                                        f"attempt {attempt+1}")
@@ -3053,6 +3139,7 @@ def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
                 if resp.status_code >= 400:
                     app.logger.error(f"[gemini:{label}] {model_name} HTTP "
                                      f"{resp.status_code}: {resp.text[:200]}")
+                    _ai_note_error("gemini", f"{model_name} HTTP {resp.status_code}: {resp.text[:150]}")
                     break
                 data = resp.json()
                 cands = data.get("candidates") or []
@@ -5696,6 +5783,32 @@ def _is_toss_owner() -> bool:
         return False
     my_email = (current_user.email or "").strip().lower()
     return bool(my_email and my_email in owner_emails) or (str(current_user.id) in owner_ids)
+
+
+@app.route("/api/debug/ai")
+def debug_ai():
+    """AI 진단: 키 설정 여부(값은 숨김), 선택된 모델, 최근 오류. 소유자 전용 (외부인에겐 404).
+    ?refresh=1 이면 모델 목록을 다시 조회한다."""
+    if not _is_toss_owner():
+        return jsonify({"error": "Not Found"}), 404
+    if request.args.get("refresh") == "1":
+        _AI_MODEL_CACHE.clear()
+    out = {}
+    for provider, env in (("gemini", "GEMINI_API_KEY"), ("groq", "GROQ_API_KEY")):
+        key = os.environ.get(env, "").strip()
+        info = {"key_set": bool(key)}
+        if key:
+            info["models"] = _ai_models(provider, key)
+            hit = _AI_MODEL_CACHE.get(provider)
+            info["source"] = hit[2] if hit else ("env" if os.environ.get(provider.upper() + "_MODELS") else None)
+        err = _AI_LAST_ERROR.get(provider)
+        if err:
+            info["last_error"] = {"at": datetime.utcfromtimestamp(err[0]).isoformat() + "Z", "message": err[1]}
+        out[provider] = info
+    test = request.args.get("test") == "1"
+    if test:
+        out["test_reply"] = _ai_chat("짧게 답하세요.", "한국어로 '정상'이라고만 답하세요.", max_tokens=20, label="debug")
+    return jsonify(out)
 
 
 @app.route("/api/debug/toss")
