@@ -6081,6 +6081,7 @@ screener.init({
     "bot_lock": lambda: bot_engine._RUN_LOCK.locked(),
     "name_of": lambda t: _stock_name(t, "KR" if t.endswith((".KS", ".KQ")) else "US"),
     "kr_integration": fetch_naver_integration, "kr_per_basis": kr_per_basis,
+    "sector_snapshot": lambda m: sector_map.get(m),
 })
 bot_engine.D["on_features"] = screener.upsert_technicals          # 장 마감 배치 → 스크리너 기술 지표
 sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_LOCK,
