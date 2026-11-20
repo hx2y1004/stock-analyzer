@@ -1028,6 +1028,9 @@ def intraday_check(market, quotes=None):
             continue
         status, px = _bar_exit(sig, ex, o, h, l, day == sig.filled_date)
         if status:
+            # 장중 청산은 장 마감 재계산을 거치지 않으므로 보유 거래일을 여기서 맞춘다 (공휴일은 고려하지 않음)
+            if sig.filled_date and day > sig.filled_date:
+                sig.holding_days = max(sig.holding_days or 0, int(np.busday_count(sig.filled_date, day)))
             _close(sig, status, px, day, fee)
             closed += 1
     db.session.commit()

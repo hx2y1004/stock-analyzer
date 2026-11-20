@@ -6480,9 +6480,68 @@ def ai_bots_detail(key):
         d["has_ai"] = bool(s_.assessment_id)
         log.append(d)
     return jsonify({"key": st.key, "name": st.name, "emoji": st.emoji, "kind": st.kind, "use_ai": st.use_ai,
+                    "signals_total": AiSignal.query.filter_by(strategy_key=key).count(),
+                    "trades_total": Transaction.query.filter_by(user_id=u.id).count() if u else 0,
                     "color": BOT_COLORS.get(st.key), "summary": _bot_summary(st, p),
                     "account": _bot_account(u, fx) if u else None, "stats": bot_trader.stats(key),
                     "positions": positions, "signals": log, "disclaimer": BOT_DISCLAIMER})
+
+
+
+_BOT_SIG_RE = re.compile(r"신호 #(\d+)")
+
+
+@app.route("/api/ai-bots/<key>/trades")
+def ai_bots_trades(key):
+    """봇 계좌의 실제 체결 내역 (모의투자 거래 내역 테이블 재사용). 최신순.
+    ?side=all|buy|sell &page=1 &per=20 (최대 100)"""
+    BotStrategy.query.filter_by(key=key).first_or_404()
+    u = bot_trader.bot_users().get(key)
+    side = (request.args.get("side") or "all").lower()
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        per = max(1, min(100, int(request.args.get("per", 20))))
+    except ValueError:
+        page, per = 1, 20
+    if not u:
+        return jsonify({"items": [], "page": page, "has_more": False, "counts": {"all": 0, "buy": 0, "sell": 0}})
+    base = Transaction.query.filter_by(user_id=u.id)
+    counts = {"all": base.count(), "buy": base.filter_by(type="buy").count(), "sell": base.filter_by(type="sell").count()}
+    q = base.filter_by(type=side) if side in ("buy", "sell") else base
+    rows = q.order_by(Transaction.timestamp.desc(), Transaction.id.desc()).offset((page - 1) * per).limit(per + 1).all()
+    has_more = len(rows) > per
+    rows = rows[:per]
+    # 거래 메모의 "신호 #id" 로 신호·포지션을 찾아 사유와 수수료 반영 손익을 붙인다
+    sig_ids = {int(m.group(1)) for r in rows for m in [_BOT_SIG_RE.search(r.note or "")] if m}
+    sigs = {x.id: x for x in AiSignal.query.filter(AiSignal.id.in_(sig_ids)).all()} if sig_ids else {}
+    poss = {x.signal_id: x for x in BotPosition.query.filter(BotPosition.signal_id.in_(sig_ids)).all()} if sig_ids else {}
+    items = []
+    for r in rows:
+        m = _BOT_SIG_RE.search(r.note or "")
+        sid = int(m.group(1)) if m else None
+        sig, pos = sigs.get(sid), poss.get(sid)
+        fee_rate = (r.fee_krw / r.amount_krw * 100) if r.amount_krw else None
+        it = {
+            "id": r.id, "time": r.timestamp.isoformat() + "Z" if r.timestamp else None, "side": r.type,
+            "ticker": r.ticker, "name": r.name, "currency": r.currency, "quantity": r.quantity, "price": r.price,
+            "exchange_rate": r.exchange_rate, "amount_krw": round(r.amount_krw or 0), "fee_krw": round(r.fee_krw or 0),
+            "fee_pct": round(fee_rate, 3) if fee_rate is not None else None,
+            "signal_id": sid, "has_ai": bool(sig and sig.assessment_id),
+        }
+        if r.type == "sell":
+            if pos and pos.status == "CLOSED" and pos.realized_pnl_krw is not None:
+                # 매수·매도 수수료까지 반영한 원화 손익 (봇 성적표와 같은 기준)
+                it["realized_pnl_krw"], it["pnl_pct"], it["pnl_basis"] = round(pos.realized_pnl_krw), pos.pnl_pct, "net"
+            else:
+                cost = (r.amount_krw or 0) - (r.realized_pnl_krw or 0)
+                it["realized_pnl_krw"] = round(r.realized_pnl_krw or 0)
+                it["pnl_pct"] = round((r.realized_pnl_krw or 0) / cost * 100, 2) if cost else None
+                it["pnl_basis"] = "gross"
+            it["exit_status"] = sig.status if sig else None
+            it["exit_reason"] = sig.status_reason if sig else None
+            it["holding_days"] = sig.holding_days if sig else None
+        items.append(it)
+    return jsonify({"items": items, "page": page, "per": per, "has_more": has_more, "side": side, "counts": counts})
 
 
 if __name__ == "__main__":
