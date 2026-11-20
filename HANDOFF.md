@@ -18,7 +18,7 @@
    `DATABASE_URL`, `BASE_URL`, Google·카카오 로그인 키, `TOSS_CLIENT_ID`, `DART_API_KEY`, Gemini·Groq 키 모두 설정됨.
    `AI_BACKUP_API_KEY` 만 없음(선택). `warnings` 없음. Gemini 는 `gemini-3.5-flash-lite` 부터 자동 선택, 봇 스케줄러 켜짐, AI 하루 예산 60.
    로컬 PC `.env` 에는 Groq 키만 확인함(로컬 실행용).
-   운영 서버 SSH 개인 키 파일은 사용자 PC에서 찾지 못함 → 서버 로그·설정 작업이 필요해지면 Oracle 콘솔에서 새 키를 등록해야 한다.
+   운영 서버 SSH 개인 키 파일: 사용자 PC 의 로컬 저장소 폴더에 있음(`ssh-key-*.key`, git 제외). 2026-11-21 접속 확인. 서비스 이름 `stock-analyzer`, 환경변수는 앱 폴더 밖의 systemd EnvironmentFile 에서 읽음
 1. ~~운영 `.env`에 `FLASK_SECRET_KEY` 가 있는지~~ → **확인 완료(2026-11-20, 설정됨)**. 없으면 PR #7 이후 프로세스마다 임시 랜덤 키를 써서
    재시작/배포 때마다 로그인이 풀린다.
 2. ~~`TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS` 가 있는지~~ → **확인 완료(2026-11-20, 둘 다 설정됨, 소유자 계정으로 진단 화면 접근 확인)**.
@@ -66,6 +66,8 @@
   페이로드: 신규 `[봇] 매수 신호 · 티커` / `신뢰도 · 진입/목표/손절 — 근거`, url `/stock/<티커>`. 청산·취소는 url `/ai-bots#<전략키>`
 - API: `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`·`unsubscribe`·`test`. 소유자 진단 `/api/debug/ai` 의 `config.push`
 - 서비스워커 `sa-v56`: `push`(icon·badge·tag) · `notificationclick`(열린 창 포커스 후 이동, 없으면 새 창)
+  - (PR #26) 안드로이드 상단바 아이콘이 흰 사각형으로 보이던 문제: 상단바는 배지 이미지의 알파(모양)만 쓴다 → 투명 배경 + 흰 모양 `static/icons/badge-96.png`(`scripts/generate_icons.py` 의 `draw_badge`)로 교체, `sa-v57`
+- 2026-11-21 운영 적용 완료: 서버 환경변수 파일(서비스가 읽는 EnvironmentFile, 앱 폴더 밖)에 VAPID 3개 추가 → `/api/debug/ai` 에서 push.enabled=true, 안드로이드 테스트 푸시 수신 확인
 - 알림 설정 모달에 '모바일/브라우저 푸시' 영역: 켜짐/꺼짐/차단됨/미지원/서버 미설정, 켜기·끄기, 테스트 푸시. iPhone 은 홈 화면에 추가한 앱에서만
 - 운영에서 켜려면: 서버에서 `.env.example` 의 한 줄 명령으로 키 생성 → `.env` 에 `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`·`VAPID_SUBJECT` → 재시작
 - 이 환경에서 확인 못 한 것: 실제 FCM/Mozilla/Apple 푸시 서버로의 전달(헤드리스 크롬은 푸시 서비스가 없음). 암호화·VAPID 서명·만료 처리는 HTTP 만 가짜로 두고 확인
