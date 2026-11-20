@@ -15,6 +15,16 @@
     return data;
   }
 
+  // 일부 기기 글꼴에 없는 ✕ 문자가 ☒ 처럼 깨져 보여 SVG 로 그린다
+  const ICON_X = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
+    '<path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>';
+
+  function fmtPx(v, cur) {
+    if (v == null) return '—';
+    return cur === 'KRW' ? Math.round(v).toLocaleString('ko-KR') + '원'
+      : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   function ago(iso) {
     if (!iso) return '';
     const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -140,11 +150,16 @@
       document.body.appendChild(modal);
     }
     modal.innerHTML = `<div class="modal-box sub-modal" role="dialog" aria-modal="true" aria-labelledby="subTitle">
-      <button class="modal-close" aria-label="닫기" data-act="close">✕</button>
+      <button class="modal-close" aria-label="닫기" data-act="close">${ICON_X}</button>
       <h2 id="subTitle" class="modal-title">AI 봇 신호 알림</h2>
       <div class="sub-body"><div class="notify-empty">불러오는 중...</div></div></div>`;
     modal.classList.remove('hidden');
-    modal.querySelector('[data-act="close"]').onclick = () => modal.classList.add('hidden');
+    const closeModal = () => modal.classList.add('hidden');
+    modal.querySelector('[data-act="close"]').onclick = closeModal;
+    if (!modal._escBound) {
+      modal._escBound = true;
+      document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(); });
+    }
     const box = modal.querySelector('.sub-body');
     let d;
     try { d = await api('/api/signal-subscription'); }
@@ -178,8 +193,12 @@
         <div class="sub-hint">AI 봇은 AI 확신도와 정량 점수를 합친 값, 기준선 봇은 정량 점수입니다.</div>
       </div>
       <div class="sub-msg" id="subMsg" role="status"></div>
-      <button type="button" class="sub-save" id="subSave">저장</button>
+      <div class="sub-actions">
+        <button type="button" class="sub-cancel" data-act="close2">닫기</button>
+        <button type="button" class="sub-save" id="subSave">저장</button>
+      </div>
       <p class="sub-disclaimer">장 마감 후 하루 한 번 만들어지는 가상 신호입니다. 알고리즘 검증용 모의 데이터이며 실제 투자 권유가 아닙니다.</p>`;
+    box.querySelector('[data-act="close2"]').onclick = closeModal;
     const conf = box.querySelector('#subConf');
     conf.oninput = () => { box.querySelector('#subConfVal').textContent = conf.value; };
     box.querySelector('#subSave').onclick = async () => {
@@ -245,6 +264,19 @@
         paint();
       };
     },
+    /** 카드에 현재가·전일 대비 등락률 채우기 (상승 초록 / 하락 빨강, 사이트 색 규칙) */
+    async fillQuotes(el) {
+      let q = {};
+      try { q = (await api('/api/watchlist/quotes')).quotes || {}; } catch (e) {}
+      el.querySelectorAll('.watch-quote').forEach((box) => {
+        const d = q[box.dataset.q] || {};
+        box.querySelector('.watch-px').textContent = fmtPx(d.price, d.currency);
+        const c = box.querySelector('.watch-chg');
+        if (d.change_pct == null) { c.textContent = ''; return; }
+        c.textContent = `${d.change_pct > 0 ? '+' : ''}${d.change_pct.toFixed(2)}%`;
+        c.className = 'watch-chg ' + (d.change_pct > 0 ? 'up' : d.change_pct < 0 ? 'down' : 'flat');
+      });
+    },
     /** 메인 '관심종목' 탭 목록 */
     async renderList(el, onOpen) {
       if (!el) return;
@@ -261,8 +293,10 @@
           <button type="button" class="watch-open" data-t="${esc(i.ticker)}">
             <span class="watch-name">${esc(i.name)}</span><span class="watch-tk">${esc(i.ticker)}</span>
           </button>
-          <button type="button" class="watch-del" data-t="${esc(i.ticker)}" aria-label="${esc(i.name)} 관심종목에서 빼기">✕</button>
+          <span class="watch-quote" data-q="${esc(i.ticker)}"><span class="watch-px">…</span><span class="watch-chg"></span></span>
+          <button type="button" class="watch-del" data-t="${esc(i.ticker)}" aria-label="${esc(i.name)} 관심종목에서 빼기">${ICON_X}</button>
         </div>`).join('');
+      this.fillQuotes(el);
       el.querySelectorAll('.watch-open').forEach((b) => { b.onclick = () => onOpen && onOpen(b.dataset.t); });
       el.querySelectorAll('.watch-del').forEach((b) => {
         b.onclick = async () => {
