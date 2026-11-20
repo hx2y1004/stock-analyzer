@@ -54,9 +54,9 @@ def _mem_put(key, payload, model, exp_ts):
             _MEM.popitem(last=False)
 
 
-def get(key):
-    """(payload, model) 또는 None."""
-    hit = _mem_get(key)
+def get(key, use_mem=True):
+    """(payload, model) 또는 None. use_mem=False 면 큰 값이라 메모리 LRU 에 올리지 않는다."""
+    hit = _mem_get(key) if use_mem else None
     if hit:
         return hit
     if _app is None:
@@ -71,7 +71,8 @@ def get(key):
             payload = json.loads(row.payload_json)
             # expires_at 은 UTC naive → epoch 초
             exp_ts = (row.expires_at - datetime(1970, 1, 1)).total_seconds() if row.expires_at else None
-            _mem_put(key, payload, row.model_used, exp_ts)
+            if use_mem:
+                _mem_put(key, payload, row.model_used, exp_ts)
             return payload, row.model_used
     except Exception as e:
         if _log:
@@ -79,11 +80,14 @@ def get(key):
         return None
 
 
-def put(key, ticker, cache_type, payload, model=None, ttl_seconds=None):
-    """ttl_seconds=None 이면 만료 없음."""
+def put(key, ticker, cache_type, payload, model=None, ttl_seconds=None, use_mem=True,
+        purge_expired_same_type=False):
+    """ttl_seconds=None 이면 만료 없음.
+    purge_expired_same_type: 같은 종류의 만료된 행을 바로 지운다 (큰 값을 짧게 두는 종류에서 DB 크기 억제)."""
     global _puts_since_cleanup
     exp_ts = time.time() + ttl_seconds if ttl_seconds else None
-    _mem_put(key, payload, model, exp_ts)
+    if use_mem:
+        _mem_put(key, payload, model, exp_ts)
     if _app is None:
         return
     try:
@@ -108,6 +112,10 @@ def put(key, ticker, cache_type, payload, model=None, ttl_seconds=None):
                 if row:
                     row.payload_json, row.model_used, row.created_at, row.expires_at = body, model, now, exp
                     _db.session.commit()
+            if purge_expired_same_type:
+                _Model.query.filter(_Model.cache_type == cache_type, _Model.expires_at.isnot(None),
+                                    _Model.expires_at < now).delete(synchronize_session=False)
+                _db.session.commit()
             _puts_since_cleanup += 1
             if _puts_since_cleanup >= 200:          # 가끔 만료된 행 정리
                 _puts_since_cleanup = 0

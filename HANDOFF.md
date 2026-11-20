@@ -43,6 +43,11 @@
 - **로그**: `[AI] ticker=… task=… cache_hit=true|false provider=… model=… latency_ms=… status=ok|429_rpm|429_rpd|error`
   → 한도가 분당인지 일일인지 로그로 바로 구분.
 - 로컬 테스트 시 주의: 가짜 AI로 시험하면 로컬 `instance/portfolio.db`의 `ai_cache`에 남는다 → 시험 후 비울 것.
+- **PR #16 (국내 종목 부가 섹션 전체 실패)**: 부가 섹션이 분석 맥락을 프로세스 메모리에서만 찾고, 없으면 분석 전체를 동기로
+  다시 돌렸다 → 다른 프로세스/재시작 후엔 느린 국내 종목에서 60초 초과로 뉴스·애널리스트까지 실패.
+  지금은 맥락(`analysis_ctx`, 1시간)과 압축 분석 본문(`analysis_body`, 5분, 메모리 LRU 미사용·만료 즉시 삭제)을 DB에도 저장,
+  뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
+  응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
 ### 운영 판단 기준 변경 (PR #7)
 - `IS_PRODUCTION = bool(DATABASE_URL or RAILWAY_ENVIRONMENT)` — 예전엔 `RAILWAY_ENVIRONMENT`만 봐서 Oracle에서 보호가 꺼져 있었다.

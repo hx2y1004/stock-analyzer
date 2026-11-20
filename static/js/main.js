@@ -1489,7 +1489,8 @@ async function loadAnalyzeExtras(ticker, data, refill = 0) {
     if (!res.ok) throw new Error(ex.error || res.status);
     renderAnalysts(ex.analysts, data.stock);
     renderNews(ex.news);
-    _renderAiStatus(ex.ai_status);
+    // AI 결과를 아직 기다리는 중(ai_pending)이면 실패 배너를 띄우지 않는다 → 다 받은 뒤에만 판단
+    _renderAiStatus(ex.ai_pending ? null : ex.ai_status);
     if (ex.valuation_comment) renderDcfComment(ex.valuation_comment);
     renderPriceMoveBanner(data.stock, ex.move_reason);
     if (ex.company_overview) {
