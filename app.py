@@ -2517,6 +2517,59 @@ def fetch_upcoming_events(stock, info: dict, ticker: str = "") -> list:
     return events[:7]   # 너무 많으면 잘림 (가까운 7개만)
 
 
+_KR_NEWS_CACHE = {}
+_KR_NEWS_TTL = 600        # 10분
+
+
+def fetch_kr_news(krx_code, limit=8):
+    """한국 종목 뉴스: 네이버 모바일 API (한글 기사라 번역 불필요). 10분 캐시.
+
+    yfinance 1.3.0 의 stock.news 는 Yahoo 가 /xhr/ncp 를 폐기해 404 로 항상 빈 목록이다.
+    """
+    return _ttl_cached(
+        _KR_NEWS_CACHE, krx_code, _KR_NEWS_TTL, 120,
+        is_empty=lambda v: not v,
+        fetch=lambda: _fetch_kr_news_uncached(krx_code, limit),
+    )
+
+
+def _fetch_kr_news_uncached(krx_code, limit=8):
+    import html as _html
+    try:
+        r = requests.get(
+            f"https://m.stock.naver.com/api/news/stock/{krx_code}?pageSize={limit}&page=1",
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://m.stock.naver.com/"},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            app.logger.warning(f"[kr_news] {krx_code} → {r.status_code}")
+            return []
+        out = []
+        for group in r.json() or []:
+            # 같은 사건의 기사 묶음 → 대표 기사 1건만
+            items = (group or {}).get("items") or []
+            if not items:
+                continue
+            it = items[0]
+            title = _html.unescape(re.sub(r"<[^>]+>", "", it.get("titleFull") or it.get("title") or "")).strip()
+            if not title:
+                continue
+            desc = _html.unescape(re.sub(r"<[^>]+>", "", it.get("body") or "")).strip()[:200]
+            dt = str(it.get("datetime") or "")          # YYYYMMDDHHMM
+            pub = f"{dt[0:4]}-{dt[4:6]}-{dt[6:8]} {dt[8:10]}:{dt[10:12]}" if len(dt) >= 12 else ""
+            url = it.get("mobileNewsUrl") or (
+                f"https://n.news.naver.com/mnews/article/{it.get('officeId')}/{it.get('articleId')}"
+                if it.get("officeId") and it.get("articleId") else "")
+            out.append({"title": title, "title_orig": title, "desc": desc, "pub": pub,
+                        "url": url, "provider": it.get("officeName") or ""})
+            if len(out) >= limit:
+                break
+        return out
+    except Exception as e:
+        app.logger.warning(f"[kr_news] {krx_code}: {e}")
+        return []
+
+
 def fetch_news(stock):
     try:
         news_list = stock.news or []
@@ -3678,10 +3731,11 @@ def analyze():
             app.logger.warning(f"[dcf] {ticker}: {e}")
             stock_data["dcf"] = None
 
-        news_data    = fetch_news(stock)
+        is_kr_stock  = ticker.endswith('.KS') or ticker.endswith('.KQ')
+        # 한국 종목은 네이버 뉴스(한글), 그 외는 yfinance
+        news_data    = fetch_kr_news(ticker.split('.')[0]) if is_kr_stock else fetch_news(stock)
 
         # ── 시장 컨텍스트 + 다가오는 이벤트 ──────────────────────────────
-        is_kr_stock  = ticker.endswith('.KS') or ticker.endswith('.KQ')
         try:
             stock_data["market_context"]  = fetch_market_context(is_kr_stock)
         except Exception as e:
