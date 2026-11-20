@@ -1454,7 +1454,7 @@ function _showExtrasError(ticker, data) {
 }
 function _retryExtras() { if (window._extrasRetry) window._extrasRetry(); }
 
-async function loadAnalyzeExtras(ticker, data) {
+async function loadAnalyzeExtras(ticker, data, refill = 0) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
@@ -1471,8 +1471,13 @@ async function loadAnalyzeExtras(ticker, data) {
       data.stock.company_overview = ex.company_overview;
       renderFundamental(data.analysis.fundamental_details || [], data.stock);
     }
+    // 서버 시간 예산(10초) 안에 AI 가 다 못 끝냈으면, 서버가 백그라운드로 마저 만든 결과를 받아 채운다 (최대 2번)
+    if (ex.partial && refill < 2) {
+      setTimeout(() => { if (currentAnalysisTicker === ticker) loadAnalyzeExtras(ticker, data, refill + 1); }, 15000);
+    }
   } catch (e) {
-    if (currentAnalysisTicker === ticker) _showExtrasError(ticker, data);
+    // 보충 요청 실패는 조용히 무시 (이미 1차 결과가 화면에 있음)
+    if (!refill && currentAnalysisTicker === ticker) _showExtrasError(ticker, data);
   } finally {
     clearTimeout(timer);
   }

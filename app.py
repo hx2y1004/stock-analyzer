@@ -2634,6 +2634,12 @@ def _fetch_kr_news_uncached(krx_code, limit=8):
 
 _NEWS_TR_CACHE = {}        # 원문 제목 → (번역 제목, 번역 요약)
 
+# 느린 외부 호출(AI 등)을 시간 예산 안에서만 기다리기 위한 공용 실행기.
+# 예산을 넘긴 작업은 버리지 않고 끝까지 돌아 각자의 캐시를 채운다 → 다음 조회에서 바로 쓰인다.
+from concurrent.futures import ThreadPoolExecutor as _BgTPE, wait as _fut_wait
+_BG_EXEC = _BgTPE(max_workers=6, thread_name_prefix="bg-extra")
+_AI_TR_INFLIGHT = set()     # 번역 중인 기사 묶음 (중복 요청 방지)
+
 
 def _translate_news_items(raw):
     """뉴스 제목·요약을 한글로. AI(Gemini/Groq) 한 번 호출로 일괄 번역하고, 실패하면 Google 번역, 그것도 안 되면 원문.
@@ -2642,7 +2648,25 @@ def _translate_news_items(raw):
     Google 봇 확인 페이지로 막혀 조용히 원문만 돌려주는 일이 많았다.
     """
     pending = [r for r in raw if r["title"] not in _NEWS_TR_CACHE and not _has_korean_text(r["title"])]
-    if pending and (os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip()):
+    has_ai = bool(os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip())
+    batch_key = tuple(r["title"] for r in pending)
+    if pending and has_ai and batch_key not in _AI_TR_INFLIGHT:
+        # AI 번역은 백그라운드에서 돌리고 3초까지만 기다린다. 늦으면 이번엔 원문, 끝나면 캐시에 남아 다음 조회부터 한글.
+        _AI_TR_INFLIGHT.add(batch_key)
+        fut = _BG_EXEC.submit(_ai_translate_into_cache, pending, batch_key)
+        try:
+            fut.result(timeout=3)
+        except Exception:
+            pass
+        # AI 가 백그라운드에서 마저 번역하므로 (서버 IP 에선 거의 막혀 있는) Google 번역은 시도하지 않는다
+        return _news_tr_lookup(raw)
+    if not has_ai:
+        _finish_news_translation(raw)
+    return _news_tr_lookup(raw)
+
+
+def _ai_translate_into_cache(pending, batch_key):
+    try:
         payload = [{"t": r["title"], "d": r["desc"]} for r in pending]
         text = _ai_chat(
             system_msg=("당신은 경제 뉴스 번역가입니다. 영어 금융 뉴스를 자연스러운 한국어로 번역합니다. "
@@ -2664,7 +2688,12 @@ def _translate_news_items(raw):
                 app.logger.warning(f"[news_translate] AI 응답 개수 불일치: {len(out) if isinstance(out, list) else '?'} / {len(pending)}")
         except Exception as e:
             app.logger.warning(f"[news_translate] AI 응답 파싱 실패: {e}")
-    # AI 로 못 한 것은 Google 번역 시도 (실패하면 원문)
+    finally:
+        _AI_TR_INFLIGHT.discard(batch_key)
+
+
+def _finish_news_translation(raw):
+    """AI 로 아직 번역 못 한 것은 Google 번역 시도 (실패하면 원문)."""
     rest = [r for r in raw if r["title"] not in _NEWS_TR_CACHE and not _has_korean_text(r["title"])]
     # 최근 10분 안에 Google 번역이 막혔으면 다시 시도하지 않는다 (요청마다 수 초 낭비 방지)
     google_blocked = (time.time() - globals().get("_TR_LAST_WARN", 0.0)) < 600
@@ -2677,6 +2706,9 @@ def _translate_news_items(raw):
     if len(_NEWS_TR_CACHE) > 1000:
         for k in list(_NEWS_TR_CACHE)[:300]:
             _NEWS_TR_CACHE.pop(k, None)
+
+
+def _news_tr_lookup(raw):
     titles, descs = [], []
     for r in raw:
         t, d = _NEWS_TR_CACHE.get(r["title"], (r["title"], r["desc"]))
@@ -3102,7 +3134,7 @@ def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
 
 
 def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
-                 label="generic", timeout=40):
+                 label="generic", timeout=25):
     """Gemini generateContent 공용 호출 (모델 fallback + 429 재시도).
 
     Returns: 텍스트 또는 None
@@ -3440,6 +3472,7 @@ def _analyze_response(base_body, position_data):
 
 # ── 느린 부가 섹션 (뉴스·애널리스트·AI 기업 소개·AI 급등락 사유) ─────────────────
 _EXTRA_CACHE = {}          # ticker → (ts, payload)
+_MOVE_REASON_CACHE = {}    # ticker → (ts, text)  급등락 사유 (AI, 10분)
 _EXTRA_TTL = 300
 
 
@@ -3476,29 +3509,55 @@ def analyze_extra():
     stock = yf.Ticker(ticker)
 
     out = {"news": [], "analysts": None, "move_reason": None, "company_overview": None}
-    try:
-        out["news"] = fetch_kr_news(ticker.split(".")[0]) if is_kr else fetch_news(stock)
-    except Exception as e:
-        app.logger.warning(f"[extra] news {ticker}: {e}")
-    try:
-        out["analysts"] = fetch_kr_analysts(ticker.split(".")[0]) if is_kr else fetch_analysts(stock, info)
-    except Exception as e:
-        app.logger.warning(f"[extra] analysts {ticker}: {e}")
-    try:
-        out["company_overview"] = fetch_company_overview(
-            ticker, name, info, stock_data.get("revenue_quarters", []), stock_data.get("currency", "USD"))
-    except Exception as e:
-        app.logger.warning(f"[extra] overview {ticker}: {e}")
-    try:
-        out["move_reason"] = analyze_move_reason(
-            ticker, name, stock_data.get("price_change_pct"), out["news"],
-            stock_data=stock_data, ai_result=ai_result)
-    except Exception as e:
-        app.logger.warning(f"[extra] move_reason {ticker}: {e}")
 
+    # 네 가지를 동시에 돌리고 10초 시간 예산 안에 끝난 것만 돌려준다 (뉴스·애널리스트는 보통 수 초).
+    # 늦은 AI 작업도 백그라운드에서 끝까지 돌아 캐시를 채우므로 다음 요청에서는 바로 나온다.
+    def _news():
+        return fetch_kr_news(ticker.split(".")[0]) if is_kr else fetch_news(stock)
+
+    def _analysts():
+        return fetch_kr_analysts(ticker.split(".")[0]) if is_kr else fetch_analysts(stock, info)
+
+    def _overview():
+        return fetch_company_overview(ticker, name, info, stock_data.get("revenue_quarters", []),
+                                      stock_data.get("currency", "USD"))
+
+    def _move(news_items):
+        hit = _MOVE_REASON_CACHE.get(ticker)
+        if hit and (time.time() - hit[0]) < 600:
+            return hit[1]
+        text = analyze_move_reason(ticker, name, stock_data.get("price_change_pct"), news_items,
+                                   stock_data=stock_data, ai_result=ai_result)
+        _MOVE_REASON_CACHE[ticker] = (time.time(), text)
+        return text
+
+    deadline = time.time() + 10
+    f_news, f_an, f_ov = _BG_EXEC.submit(_news), _BG_EXEC.submit(_analysts), _BG_EXEC.submit(_overview)
+
+    def _take(fut, key, default):
+        try:
+            out[key] = fut.result(timeout=max(0.1, deadline - time.time()))
+            return True
+        except Exception as e:
+            if not fut.done():
+                return False            # 시간 초과 — 백그라운드에서 계속 돈다
+            app.logger.warning(f"[extra] {key} {ticker}: {e}")
+            out[key] = default
+            return True
+
+    done_news = _take(f_news, "news", [])
+    # 급등락 사유는 뉴스 제목을 쓰므로 뉴스 뒤에 시작
+    f_mv = _BG_EXEC.submit(_move, out["news"] or [])
+    done_an = _take(f_an, "analysts", None)
+    # 뉴스·애널리스트가 준비되면 AI 결과는 3초만 더 기다린다 (나머지는 화면이 나중에 다시 받아 채움)
+    deadline = min(deadline, time.time() + 3)
+    done = [done_news, done_an, _take(f_ov, "company_overview", None), _take(f_mv, "move_reason", None)]
+    partial = not all(done)
+    out["partial"] = partial
     out = json.loads(json.dumps(out, cls=NumpyEncoder, ensure_ascii=False))
     with _ANALYZE_LOCK:
-        _EXTRA_CACHE[ticker] = (time.time(), out)
+        # 부분 결과는 짧게(20초)만 캐시 → 화면이 다시 요청하면 그 사이 끝난 AI 결과로 채워진다
+        _EXTRA_CACHE[ticker] = (time.time() - (_EXTRA_TTL - 20 if partial else 0), out)
         if len(_EXTRA_CACHE) > 200:   # 오래된 것 정리
             for k, _ in sorted(list(_EXTRA_CACHE.items()), key=lambda kv: kv[1][0])[:50]:
                 _EXTRA_CACHE.pop(k, None)
