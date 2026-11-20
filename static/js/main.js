@@ -1490,6 +1490,7 @@ async function loadAnalyzeExtras(ticker, data, refill = 0) {
     renderAnalysts(ex.analysts, data.stock);
     renderNews(ex.news);
     _renderAiStatus(ex.ai_status);
+    if (ex.valuation_comment) renderDcfComment(ex.valuation_comment);
     renderPriceMoveBanner(data.stock, ex.move_reason);
     if (ex.company_overview) {
       // AI 기업 소개가 오면 투자 판단 탭의 회사 소개만 다시 그린다
@@ -1884,8 +1885,8 @@ function renderDcf(stock) {
 
   card.classList.remove('hidden');
 
-  // 6) AI 해설 (비동기 — 페이지 로딩 막지 않음)
-  loadDcfComment(stock.ticker);
+  // 6) AI 해설은 종목 인사이트(통합 1회 호출)와 함께 /api/analyze/extra 로 온다 → loadAnalyzeExtras 에서 채움
+  renderDcfComment(null);
 }
 
 // 등락률 표기 통일: 부호 + 소수 둘째 자리 (+2.80%, -1.61%)
@@ -1899,6 +1900,15 @@ function escapeHtmlMain(s) {
   return String(s).replace(/[&<>"']/g, c => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
+}
+
+function renderDcfComment(text) {
+  const el = document.getElementById('dcfComment');
+  if (!el) return;
+  if (!text) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="dcf-comment-label">🤖 AI 해설</div>` +
+                 `<p>${escapeHtmlMain(text).replace(/\n/g, '<br>')}</p>`;
+  el.classList.remove('hidden');
 }
 
 async function loadDcfComment(ticker) {

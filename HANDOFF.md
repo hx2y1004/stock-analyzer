@@ -31,6 +31,19 @@
    화면이 15초 뒤 최대 2번 다시 받아 채움. 부분 결과는 20초만 캐시. 급등락 사유 10분 캐시 `_MOVE_REASON_CACHE`. Gemini 호출 timeout 40→25초.
 4. AI 호출(기업 소개·급등락 사유) 소요 시간. 이 환경엔 AI 키가 없어 측정 못 함. PR #10으로 첫 화면은 AI를 기다리지 않음.
 
+### AI 호출 구조 (PR #15) — 무료 한도 초과 대응
+- **AI 호출 지점**: 기업 소개(`company_profile`), 종목 인사이트(`daily_insight` = 급등락 사유 + 밸류에이션 해설 + 미번역 뉴스), 매매 코치·포트폴리오 점검(사용자가 누를 때만).
+- **종목 페이지 = AI 최대 2회**: 기업 소개(DB 30일) + `get_stock_insight()` 1회 JSON 호출(DB 4시간, 등락률이 2%p 이상 바뀌면 갱신).
+  뉴스 번역은 기사 URL 해시 기준 **영구** 캐시(`news_translation:<id>`), 한국 종목 뉴스는 번역 안 함.
+  밸류에이션 해설은 인사이트에 포함 — `/api/dcf/comment`는 캐시만 읽는다.
+- **캐시**: `ai_cache` 테이블(models.`AiCache`, `db.create_all`이 생성) + 메모리 LRU 2단(`ai_cache.py`). 재시작·배포 후에도 유지.
+  같은 키의 AI 호출은 `ai_cache.single_flight()`로 1번만(동시 접속·새로고침 연타).
+- **공급자 체인**: Gemini → Groq → (선택) `AI_BACKUP_*` OpenAI 호환. 429 는 재시도하지 않고 모델별 쿨다운
+  (`429_rpm` 20~300초 / `429_rpd` Gemini 는 태평양 자정, 그 외 1시간), 404 모델은 6시간 건너뜀.
+- **로그**: `[AI] ticker=… task=… cache_hit=true|false provider=… model=… latency_ms=… status=ok|429_rpm|429_rpd|error`
+  → 한도가 분당인지 일일인지 로그로 바로 구분.
+- 로컬 테스트 시 주의: 가짜 AI로 시험하면 로컬 `instance/portfolio.db`의 `ai_cache`에 남는다 → 시험 후 비울 것.
+
 ### 운영 판단 기준 변경 (PR #7)
 - `IS_PRODUCTION = bool(DATABASE_URL or RAILWAY_ENVIRONMENT)` — 예전엔 `RAILWAY_ENVIRONMENT`만 봐서 Oracle에서 보호가 꺼져 있었다.
 - 시크릿 키 없을 때 **기동을 막지 않는다** (막으면 자동 롤백되므로). 대신 임시 랜덤 키.
