@@ -5029,10 +5029,14 @@ button, input, select, textarea { font-family: inherit; }
 }
 
 /* ── /ai-bots 상세 탭 · 매매 이력 ─────────────────────────────────── */
-.ab-tabs { display: flex; gap: 4px; margin: 18px 0 12px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+/* 밑줄을 -1px 겹치던 방식이 가로 스크롤 컨테이너에서 1px 세로 넘침 → 세로 스크롤바가 생겼다.
+   구분선은 안쪽 그림자로 그리고, 세로 넘침과 스크롤바는 숨긴다 (좁은 화면 가로 스크롤은 유지) */
+.ab-tabs { display: flex; gap: 4px; margin: 18px 0 12px; box-shadow: inset 0 -1px 0 var(--border);
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -ms-overflow-style: none; }
+.ab-tabs::-webkit-scrollbar { display: none; }
 .ab-tab { display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; border: none; background: transparent;
   color: var(--text2); font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent;
-  margin-bottom: -1px; white-space: nowrap; }
+  white-space: nowrap; flex: 0 0 auto; }
 .ab-tab:hover { color: var(--text); }
 .ab-tab.active { color: var(--text); border-bottom-color: var(--bot, var(--accent)); }
 .ab-tab:focus-visible, .ab-fbtn:focus-visible, .ab-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -5064,3 +5068,8 @@ button, input, select, textarea { font-family: inherit; }
   background: transparent; color: var(--text); font-size: 13px; cursor: pointer; }
 .ab-more:hover { background: var(--bg3); }
 .ab-trade-note { margin-top: 10px; }
+
+/* 매매 이력: 필터 전환 중 높이 흔들림 방지 — 로딩·빈 상태 박스 높이를 같게, 다시 불러올 때는 기존 내용을 흐리게 유지 */
+#abTrades { min-height: 96px; transition: opacity .15s; }
+#abTrades.is-loading { opacity: .5; pointer-events: none; }
+#abTrades .ab-empty { min-height: 72px; display: flex; align-items: center; margin: 0; }

@@ -303,13 +303,30 @@
   async function loadTrades(T) {
     const box = $('#abTrades');
     if (!box) return;
-    if (T.page === 1) box.innerHTML = '<div class="ab-muted">불러오는 중...</div>';
+    const req = (T.req = (T.req || 0) + 1);          // 필터를 빠르게 바꿔도 마지막 요청 결과만 그린다
+    if (T.page === 1) {
+      if (box.querySelector('.ab-trades, .ab-empty:not(.ab-loading)')) {
+        // 필터 전환: 기존 내용을 흐리게 남기고 높이를 고정 → 영역이 줄었다 늘어나지 않음
+        box.style.minHeight = box.offsetHeight + 'px';
+        box.classList.add('is-loading');
+        box.setAttribute('aria-busy', 'true');
+      } else {
+        box.innerHTML = '<p class="ab-empty ab-loading">불러오는 중...</p>';
+      }
+    }
     let d;
     try {
       const r = await fetch(`/api/ai-bots/${encodeURIComponent(T.key)}/trades?side=${T.side}&page=${T.page}&per=20`);
       if (!r.ok) throw new Error();
       d = await r.json();
-    } catch (e) { box.innerHTML = '<p class="ab-empty">매매 이력을 불러오지 못했습니다.</p>'; return; }
+    } catch (e) {
+      if (req !== T.req) return;
+      box.classList.remove('is-loading'); box.style.minHeight = ''; box.removeAttribute('aria-busy');
+      box.innerHTML = '<p class="ab-empty">매매 이력을 불러오지 못했습니다.</p>';
+      return;
+    }
+    if (req !== T.req) return;
+    box.classList.remove('is-loading'); box.style.minHeight = ''; box.removeAttribute('aria-busy');
     const cnt = $('#abTradeCount');
     if (cnt) cnt.textContent = d.counts.all;
     T.items = T.items.concat(d.items);
