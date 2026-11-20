@@ -1295,8 +1295,28 @@ async function setChartInterval(interval) {
   }
 }
 
+// 한글 등 종목명이 입력되면 검색 API 로 티커를 찾는다 (정확히 같은 이름 우선, 없으면 첫 결과)
+async function _resolveName(q) {
+  const pick = (items) => {
+    if (!items || !items.length) return null;
+    const exact = items.find(it => (it.name || '').replace(/\s/g, '') === q.replace(/\s/g, ''));
+    return (exact || items[0]).symbol;
+  };
+  const fromAC = pick(typeof acItems !== 'undefined' ? acItems : null);
+  if (fromAC) return fromAC;
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    return pick(await r.json());
+  } catch { return null; }
+}
+
 async function analyze() {
-  const ticker = _inputTicker();
+  let ticker = _inputTicker();
+  if (ticker && /[^\x00-\x7F]/.test(ticker)) {          // 티커가 아닌 이름(한글 등)
+    const sym = await _resolveName(ticker);
+    if (!sym) { showError(`'${ticker}'에 해당하는 종목을 찾지 못했어요. 자동완성 목록에서 골라 주세요.`); return; }
+    ticker = sym;
+  }
   const period = 'max';
   if (!ticker) return;
 
@@ -1679,7 +1699,8 @@ function renderDcf(stock) {
     const up = (d.analyst_target / d.current_price - 1) * 100;
     tEl.className = 'dcf-ref-val ' + (up > 0 ? 'dcf-up' : up < 0 ? 'dcf-down' : '');
     tSub.textContent = `${up > 0 ? '+' : ''}${up.toFixed(1)}%` +
-      (d.analyst_count ? ` · ${d.analyst_count}명` : '');
+      (d.analyst_count ? ` · ${d.analyst_count}명` : '') +
+      ' · 글로벌 집계';
   } else {
     tEl.textContent = '—'; tEl.className = 'dcf-ref-val'; tSub.textContent = '';
   }
@@ -1811,8 +1832,11 @@ const INDICATOR_TIPS = {
     neutral: '↔️ 이동평균선들이 뒤섞여 있어요. 방향이 불분명해 추세가 확실해질 때까지 기다리는 것도 방법이에요.'
   },
   '볼린저밴드 (BB)': {
-    bullish: '📈 주가가 밴드 아래쪽에 가까워요. 평소보다 많이 떨어진 상태로 반등 가능성을 의미해요.',
-    bearish: '⚠️ 주가가 밴드 위쪽에 가까워요. 단기 과열 상태로 조정(하락)이 올 수 있어요.',
+    // tip_key(서버가 실제 위치로 지정)가 우선, 없으면 색으로 고른다
+    upper_break: '⚠️ 주가가 밴드 위쪽 끝을 넘었어요. 단기 과열 상태로 조정(하락)이 올 수 있어요.',
+    lower_break: '📈 주가가 밴드 아래쪽 끝을 벗어났어요. 많이 떨어진 상태라 반등이 나올 수 있지만, 하락 추세가 강하면 더 내려갈 수도 있어요.',
+    above_mid:   '↗️ 주가가 밴드 중심선 위에 있어요. 오르는 힘이 조금 더 강한 상태예요.',
+    below_mid:   '↘️ 주가가 밴드 중심선 아래에 있어요. 내리는 힘이 조금 더 강한 상태예요.',
     neutral: '↔️ 주가가 밴드 중간에 있어요. 특별한 과매수·과매도 신호는 없어요.'
   },
   '일목균형표': {
@@ -1836,8 +1860,9 @@ const INDICATOR_TIPS = {
     neutral: '↔️ PER·PBR이 업종 평균 수준이에요. 특별히 싸거나 비싸지 않아요.'
   },
   '수급 & 거래량': {
-    bullish: '📊 거래량이 평소보다 많아요. 많은 투자자들이 적극적으로 매수하고 있다는 신호예요.',
-    bearish: '📊 거래량이 하락 시 많아요. 매도 압력이 강하다는 신호일 수 있어요.',
+    vol_high:   '📊 거래량이 평소보다 크게 늘었어요. 관심이 몰리는 중이에요. 오를 때 많으면 사려는 힘, 내릴 때 많으면 팔려는 힘이 강하다는 뜻이에요.',
+    vol_normal: '📊 거래량이 평소 수준이에요. 특별한 수급 신호는 없어요.',
+    vol_low:    '📊 거래량이 평소보다 적어요. 관심이 줄어든 상태라 지금 움직임의 힘이 약할 수 있어요.',
     neutral: '📊 거래량이 평균 수준이에요. 특별한 수급 신호는 없어요.'
   },
   '시장 위치 & 모멘텀': {
@@ -1870,7 +1895,11 @@ function _buildCards(details) {
   if (!details || !details.length) return '<p class="no-data">분석 데이터가 없습니다.</p>';
   return details.map(d => {
     const tipObj = INDICATOR_TIPS[d.indicator];
-    const tip = tipObj ? (tipObj[d.color] || tipObj['neutral'] || '') : '';
+    let tip = tipObj ? (tipObj[d.tip_key] || tipObj[d.color] || tipObj['neutral'] || '') : '';
+    // 장중에는 당일 거래량이 아직 쌓이는 중이라 하루 전체 평균보다 낮게 나온다
+    if (d.indicator === '수급 & 거래량' && window._lastStock && window._lastStock.is_market_open) {
+      tip += ' (장중이라 오늘 거래량은 아직 집계 중이에요. 장 마감 후 다시 보면 더 정확해요.)';
+    }
     return `
     <div class="detail-item open">
       <div class="detail-header" style="cursor:default">
@@ -2271,9 +2300,12 @@ function renderFundamental(details, stock) {
       const maxEst  = Math.max(...revList.map(q => q.estimate || 0));
       const maxVal  = Math.max(maxAct, maxEst, 1);
 
-      const oldest = revList[0].actual, newest = revList[revList.length - 1].actual;
-      const revTrendLbl = newest > oldest * 1.05 ? '📈 증가' : newest < oldest * 0.95 ? '📉 감소' : '➡️ 보합';
-      const revTrendCls = newest > oldest * 1.05 ? 'rev-trend-up' : newest < oldest * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
+      // 발표 전 분기(실적 null, 추정치만 있음)는 비교에서 제외 — null 이 0 으로 계산돼 '감소'로 오판했었다
+      const revActuals = revList.map(q => q.actual).filter(v => v != null);
+      const oldest = revActuals[0], newest = revActuals[revActuals.length - 1];
+      const hasTrend = revActuals.length >= 2;
+      const revTrendLbl = !hasTrend ? '➡️ 보합' : newest > oldest * 1.05 ? '📈 증가' : newest < oldest * 0.95 ? '📉 감소' : '➡️ 보합';
+      const revTrendCls = !hasTrend ? 'rev-trend-flat' : newest > oldest * 1.05 ? 'rev-trend-up' : newest < oldest * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
 
       const revBars = revList.map(q => {
         const actPct = Math.round((q.actual || 0) / maxVal * 100);
@@ -2380,7 +2412,7 @@ function _getZoneAdvice(zone, analysis) {
 
   const map = {
     '손절 구간':
-      `1개월 최저가 아래로 이탈했어요${sigCtx}. 지지선 붕괴 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.`,
+      `손절선 아래로 내려왔어요${sigCtx}. 최근 저점 지지가 깨진 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.`,
     '눌림목 매수 구간':
       `${isStrong ? '강한 ' : ''}상승 추세 속 일시적 조정 구간이에요${sigCtx}. 추세가 유효하다면 분할 매수 기회가 될 수 있어요.`,
     '상승 추세 (보유)':
@@ -2558,7 +2590,7 @@ function renderZones(analysis, stock) {
       let nba = null;
       if (price <= stop) {
         nba = { action: '신규 매수 비추천', color: 'bearish',
-          reason: `1개월 지지선(${fmt(stop)}) 아래로 이탈했어요. 반등 후 지지선 회복을 확인하고 진입을 고려하세요.` };
+          reason: `손절선(${fmt(stop)}) 아래로 내려왔어요. 반등 후 지지선 회복을 확인하고 진입을 고려하세요.` };
       } else if (trend === 'strong-uptrend' || trend === 'uptrend') {
         if (rangePct <= 0.35)
           nba = { action: '신규 매수 적기 ✓', color: 'bullish',
@@ -2615,7 +2647,7 @@ function renderZones(analysis, stock) {
         </div>
         <div class="guide-card stop-guide">
           <div class="guide-card-title">🛑 손절 기준은?</div>
-          <div class="guide-card-body"><strong>${fmt(stop)}</strong>(최근 1개월 최저가 아래) 로 떨어지면 지지선이 무너진 신호예요. 추가 하락 가능성이 높으니 손실이 커지기 전에 매도하는 게 현명해요.</div>
+          <div class="guide-card-body"><strong>${fmt(stop)}</strong>(최근 저점과 변동폭(ATR)으로 계산한 손절선) 아래로 떨어지면 지지선이 무너진 신호예요. 추가 하락 가능성이 높으니 손실이 커지기 전에 매도하는 게 현명해요.</div>
         </div>
         <div class="guide-card split-guide">
           <div class="guide-card-title">⚖️ 분할 매매란?</div>
@@ -2776,7 +2808,11 @@ function renderAnalysts(analysts, stock) {
 
   // 타이틀 동적 변경
   const titleEl = document.getElementById('analystCardTitle');
-  if (titleEl) titleEl.textContent = '애널리스트 의견';
+  if (titleEl) {
+    const kr = isKRW || /\.(KS|KQ)$/i.test((stock && stock.ticker) || '');
+    titleEl.innerHTML = '애널리스트 의견 <span class="card-title-src">' +
+      (kr ? '국내 증권사 최근 리포트 기준' : 'Yahoo Finance 집계') + '</span>';
+  }
 
   if (!analysts) {
     document.getElementById('analystConsensus').innerHTML = '<p class="no-data">애널리스트 데이터가 없습니다.</p>';
