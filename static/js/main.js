@@ -461,10 +461,15 @@ function switchPfTab(tab) {
   const pfPanel  = document.getElementById('pfTabPortfolio');
   const trPanel  = document.getElementById('pfTabTrends');
   const scPanel  = document.getElementById('pfTabSectors');
+  const wtPanel  = document.getElementById('pfTabWatch');
   pfPanel.classList.add('hidden');
   trPanel.classList.add('hidden');
   if (scPanel) scPanel.classList.add('hidden');
-  if (tab === 'portfolio') {
+  if (wtPanel) wtPanel.classList.add('hidden');
+  if (tab === 'watch') {
+    if (wtPanel) wtPanel.classList.remove('hidden');
+    if (window.SAWatch) SAWatch.renderList(document.getElementById('watchList'), (t) => gotoStock(t));
+  } else if (tab === 'portfolio') {
     pfPanel.classList.remove('hidden');
   } else if (tab === 'sectors') {
     if (scPanel) scPanel.classList.remove('hidden');
@@ -1549,6 +1554,7 @@ const exchangeKo = (e) => (e && EXCHANGE_KO[e]) || e || '';
 function renderStockInfo(stock) {
   document.getElementById('stockName').textContent = stock.name;
   document.getElementById('stockTicker').textContent = stock.ticker;
+  if (document.getElementById('notifyBell') && window.SAWatch) SAWatch.bindStar(document.getElementById('watchStar'), stock.ticker, stock.name);
   document.getElementById('stockSector').textContent = sectorKo(stock.sector);
   document.getElementById('stockExchange').textContent = stock.exchange ? `· ${exchangeKo(stock.exchange)}` : '';
 

@@ -49,6 +49,17 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### AI 매매 신호 봇 Step 2 (PR #18) — 관심종목 · 신호 알림
+- 새 테이블 2개: `watchlist_items`(사용자·종목 유니크, 최대 100개), `notifications`(사용자·신호·종류 유니크라 중복 저장 없음, 60일 지나면 삭제)
+- `notifier.py`: Provider 구조. 지금은 사이트 안 알림(`InAppProvider`)만 있고, 웹 푸시·이메일 등은 `NotifyProvider.send()` 를 구현해 `PROVIDERS` 에 등록한 뒤 `NOTIFY_PROVIDERS` 환경변수로 켠다
+- 발송 규칙: 새 매수 신호는 구독 조건(봇 여러 개, 범위 전체/보유(실제+모의투자)/관심종목, 최소 신뢰도)에 맞는 사용자에게. 청산·취소 알림은 그 신호의 매수 알림을 받은 사용자에게만
+- 봇 배치(`bot_engine.run_market`)가 끝나면 자동 발송. 알림 실패는 배치 결과에 영향 없음
+- API: `/api/watchlist`(GET·POST, DELETE `/<ticker>`), `/api/signal-subscription`(GET·PUT), `/api/notifications`(`?limit=0` 이면 안 읽은 개수만), `/api/notifications/read`(POST `{"ids":[..]}` 또는 `{"all":true}`)
+- 화면: 헤더 종(`templates/_auth_area.html` 의 `.header-right`, 로그인 시 서버가 그림) + 드롭다운 + 알림 설정 모달(`static/js/notify.js`, 모든 페이지 공통). 종목 화면 ☆ 버튼, 메인 '관심종목' 탭. 안 읽은 개수는 화면이 보일 때만 60초마다 갱신
+- 430px 이하에서는 헤더가 넘치지 않게 프로필 아바타를 숨긴다
+- 같은 PR에서 고친 Step 1 문제: `dry_run` 인데 신호 추적 결과가 저장되던 것
+- 주의: app.py 에 이미 `_stock_name(ticker, market)`(섹터맵용)이 있다. 비슷한 이름의 함수를 새로 만들면 덮어써서 다른 기능이 깨진다 (이번에 한 번 겪음)
+
 ### AI 매매 신호 봇 Step 1 (PR #17) — 신호 생성 파이프라인
 - 새 테이블 4개 (`db.create_all()` 이 생성, 기존 테이블 변경 없음): `bot_strategies`, `ai_stock_assessments`, `ai_signals`, `user_signal_subscriptions`(Step 2에서 사용)
 - `bot_engine.py`: 장 마감 후 시장별 하루 1회 배치 (한국 평일 15:45 KST 이후, 미국 평일 16:30 뉴욕시각 이후). 60초마다 확인하는 백그라운드 스레드, `ai_cache` 테이블의 `bot_lock:{시장}:{날짜}` 키로 하루 한 번만 실행
@@ -56,8 +67,9 @@
 - 봇 4개: 공격형 모멘텀 / 균형형 스윙 / 안정형 가치 / 기준선 정량(균형형과 같은 규칙, AI 없음). 파라미터는 `bot_strategies.params_json` (앱 시작 시 없을 때만 기본값을 넣고, 있으면 건드리지 않음)
 - 체결 방식 B: 신호 다음 장 시가로 체결. 시가 ≤ 손절가이거나 갭 상승으로 손익비가 기준 미만이면 `CANCELLED`
 - 청산: 일봉 고가·저가로 손절/목표/트레일링, 같은 봉에서 둘 다 닿으면 손절 우선, 시간 청산, 균형형 추세 붕괴, AI 치명적 악재. 수익률은 매수·매도 수수료 0.15%씩 반영
-- 하루 제한: 신규 매수 공격형·균형형·기준선 3건, 안정형 2건 (두 시장 합산). 하루 손실 한도(-3%/-3%/-2%/-3%)는 "비중 × 오늘 등락" 근사치로 판정 → Step 3에서 봇 계좌가 생기면 실제 자산 변화로 교체
+- 하루 제한: 신규 매수 공격형·균형형·기준선 3건, 안정형 2건 (두 시장 합산, 시장별 배분은 아래 보완 참고). 하루 손실 한도(-3%/-3%/-2%/-3%)는 "비중 × 오늘 등락" 근사치로 판정 → Step 3에서 봇 계좌가 생기면 실제 자산 변화로 교체
 - AI 예산: `AI_DAILY_BUDGET`(기본 60, 한국 날짜 기준). 보유 중인 AI 봇 종목을 먼저 평가하고, 남는 예산으로 후보를 평가. 예산이 없으면 AI 봇은 그 종목을 "AI 평가 없음"으로 기각 (기준선은 영향 없음)
+- 보완(PR #18): AI 호출 사이 최소 4초(`BOT_AI_INTERVAL`) → 60회면 약 4분. 하루 신규 상한은 한국이 '전체-1'까지만 써서 미국 몫 최소 1건 보장 (3건 → 한국 2·미국 1~3, 2건 → 한국 1·미국 1~2, `params.risk.market_max_new`로 변경 가능). 안정형 목표가 근거는 애널리스트 목표가 + DCF(신뢰도 '낮음'은 제외). Yahoo 401로 둘 다 없으면 '상승 여력 확인 불가'로 기각하고, 빠진 값은 근거의 `missing`에 기록
 - 한국 종목 실적 D-3 필터는 출처가 없어 생략 (`/api/bots/signals` 응답 `kr_earnings_filter: "skipped"`)
 - 휴장일이나 장중 수동 실행처럼 오늘 완성된 봉이 없으면 추적만 하고 신규 신호는 만들지 않음
 - API: `/api/bots/signals`(목록), `/api/bots/signals/<id>`(근거·AI 평가 포함), `/api/bots/runs`(배치 요약: 후보 수, 기각 사유, AI 호출 수), `/api/admin/bots/run`(소유자 전용 수동 실행, POST `{"market":"KR"|"US","dry_run":false}`)
