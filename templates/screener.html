@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>스크리너 — StockAnalyzer</title>
+  <meta name="description" content="한국·미국 주요 종목 원클릭 스크리너와 2~3종목 나란히 비교" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0d1117" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=75" />
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+          .catch(err => console.warn('SW register failed:', err));
+      });
+    }
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">📈 StockAnalyzer</div>
+      <nav class="nav">
+        <a href="/" class="nav-link">분석</a>
+        <a href="/trading" class="nav-link">모의투자</a>
+        <a href="/leaderboard" class="nav-link">랭킹</a>
+        <a href="/ai-bots" class="nav-link">AI 봇</a>
+        <a href="/screener" class="nav-link active">스크리너</a>
+      </nav>
+      {% set login_action = "location.href='/auth/google'" %}{% include "_auth_area.html" %}
+    </div>
+  </header>
+
+  <main class="sc-main">
+    <div class="sc-tabs" role="tablist" aria-label="스크리너">
+      <button type="button" role="tab" class="sc-tab" id="scTab-screen" data-tab="screen" aria-controls="scPanel-screen">종목 스크리너</button>
+      <button type="button" role="tab" class="sc-tab" id="scTab-compare" data-tab="compare" aria-controls="scPanel-compare">종목 비교</button>
+    </div>
+
+    <!-- 탭 1: 스크리너 -->
+    <section role="tabpanel" id="scPanel-screen" class="sc-panel" aria-labelledby="scTab-screen">
+      <div class="card sc-controls">
+        <div class="sc-row">
+          <div class="sc-seg" role="group" aria-label="시장" id="scMarket">
+            <button type="button" data-m="ALL" class="active" aria-pressed="true">전체</button>
+            <button type="button" data-m="KR" aria-pressed="false">한국</button>
+            <button type="button" data-m="US" aria-pressed="false">미국</button>
+          </div>
+          <span class="sc-asof" id="scAsof"></span>
+        </div>
+        <div class="sc-presets" id="scPresets" role="group" aria-label="원클릭 프리셋"></div>
+        <p class="sc-preset-desc" id="scPresetDesc">프리셋을 누르면 바로 걸러 드려요. 아래에서 조건을 직접 정할 수도 있습니다.</p>
+        <details class="sc-filters" id="scFilters">
+          <summary>세부 필터</summary>
+          <div class="sc-filter-grid">
+            <label>섹터<select id="fSector"><option value="">전체 섹터</option></select></label>
+            <label>최소 펀더멘탈<input id="fFund" type="number" min="0" max="100" step="5" placeholder="예: 70" inputmode="numeric" /></label>
+            <label>RSI 최소<input id="fRsiMin" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric" /></label>
+            <label>RSI 최대<input id="fRsiMax" type="number" min="0" max="100" step="5" placeholder="100" inputmode="numeric" /></label>
+            <label>PER 상한<input id="fPer" type="number" min="0" step="1" placeholder="예: 15" inputmode="decimal" /></label>
+            <label>최소 상승여력 %<input id="fUpside" type="number" step="5" placeholder="예: 15" inputmode="decimal" /></label>
+            <label>정렬<select id="fSort"></select></label>
+            <label>순서<select id="fOrder"><option value="desc">높은 순</option><option value="asc">낮은 순</option></select></label>
+          </div>
+          <div class="sc-filter-actions">
+            <button type="button" class="sub-cancel" id="fReset">필터 초기화</button>
+            <button type="button" class="sub-save" id="fApply">적용</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="card sc-results">
+        <div class="sc-results-head"><strong id="scCount">결과</strong><span class="ab-muted" id="scNote"></span></div>
+        <div id="scList" aria-live="polite"><div class="ab-muted">불러오는 중...</div></div>
+      </div>
+    </section>
+
+    <!-- 탭 2: 비교 -->
+    <section role="tabpanel" id="scPanel-compare" class="sc-panel" aria-labelledby="scTab-compare" hidden>
+      <div class="card sc-pick">
+        <div class="sc-picked" id="cmpPicked"></div>
+        <div class="sc-search">
+          <input id="cmpInput" type="text" placeholder="종목명 또는 티커로 추가 (최대 3개)" autocomplete="off" aria-label="비교할 종목 검색" />
+          <div id="cmpAc" class="autocomplete-list hidden" role="listbox"></div>
+        </div>
+        <div class="sc-examples" id="cmpExamples">
+          <span class="ab-muted">예시</span>
+          <button type="button" data-t="005930.KS,000660.KS">삼성전자 vs SK하이닉스</button>
+          <button type="button" data-t="NVDA,AMD">NVDA vs AMD</button>
+          <button type="button" data-t="AAPL,MSFT">AAPL vs MSFT</button>
+        </div>
+      </div>
+      <div id="cmpBody"></div>
+    </section>
+
+    <p class="ab-disclaimer sc-disclaimer">스크리너와 비교 결과는 참고용 정보이며 투자 권유가 아닙니다. 시세는 제공처 사정에 따라 지연될 수 있습니다.</p>
+  </main>
+
+  <!-- 비교 담기 플로팅 바 -->
+  <div class="sc-basket hidden" id="scBasket" role="region" aria-label="비교할 종목">
+    <div class="sc-basket-items" id="scBasketItems"></div>
+    <button type="button" class="sc-basket-go" id="scBasketGo"></button>
+  </div>
+
+  {% include "_footer.html" %}
+  <script src="/static/js/notify.js?v=3"></script>
+  <script src="/static/js/screener.js?v=2"></script>
+</body>
+</html>

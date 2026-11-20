@@ -227,6 +227,11 @@ def refresh(market, reason="manual"):
             "source": "네이버 증권" if market == "KR" else "Yahoo Finance (시총 = 현재가 × 발행주식수)",
         }
         _MEM[market] = payload
+        if D.get("on_rows"):
+            try:
+                D["on_rows"](market, rows)          # 스크리너 스냅샷의 가격·등락률·시총 갱신
+            except Exception as e:
+                log(f"{market} 스크리너 반영 실패: {e}")
         try:
             with D["app"].app_context():
                 D["ai_cache"].put(_key(market), None, "sectormap", payload, None, None, use_mem=False)

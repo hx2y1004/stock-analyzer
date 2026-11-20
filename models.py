@@ -327,3 +327,47 @@ class PushSubscription(db.Model):
     user_agent   = db.Column(db.String(80))           # 짧은 기기 이름 (예: "Android · Chrome")
     created_at   = db.Column(db.DateTime, default=datetime.utcnow)
     last_used_at = db.Column(db.DateTime)
+
+
+class ScreenerSnapshot(db.Model):
+    """스크리너용 종목별 경량 스냅샷 (종목당 1행). 요청 때 외부 조회 없이 이 표만 읽는다.
+    - 가격·등락률·시총: 섹터맵 갱신 때 (장중 15분)
+    - 기술 지표: AI 봇 장 마감 배치가 계산한 값
+    - 펀더멘탈·주당 지표·목표가: 7일보다 오래된 종목만 백그라운드로 천천히 갱신
+    PER·PBR·배당률·상승여력은 주당 지표 × 최신 가격으로 다시 계산한다."""
+    __tablename__ = "screener_snapshots"
+    id                = db.Column(db.Integer, primary_key=True)
+    ticker            = db.Column(db.String(30), nullable=False, unique=True)
+    name              = db.Column(db.String(200))
+    market            = db.Column(db.String(4), nullable=False, index=True)
+    sector            = db.Column(db.String(40), index=True)
+    sector_name       = db.Column(db.String(40))
+    price             = db.Column(db.Float)
+    change_pct        = db.Column(db.Float)
+    market_cap        = db.Column(db.Float)
+    per               = db.Column(db.Float)
+    forward_per       = db.Column(db.Float)
+    pbr               = db.Column(db.Float)
+    dividend_yield    = db.Column(db.Float)       # %
+    rsi14             = db.Column(db.Float)
+    bb_pos            = db.Column(db.Float)       # 볼린저 밴드 내 위치 %
+    volume_ratio      = db.Column(db.Float)       # 거래량 / 20일 평균
+    ma_aligned        = db.Column(db.Boolean)     # 5일 > 20일 > 60일 이동평균
+    trend_score       = db.Column(db.Float)       # 0~100
+    fundamental_score = db.Column(db.Float)       # Quality·Value·Growth 평균 (0~100)
+    quality_score     = db.Column(db.Float)
+    value_score       = db.Column(db.Float)
+    growth_score      = db.Column(db.Float)
+    momentum_score    = db.Column(db.Float)
+    upside_pct        = db.Column(db.Float)       # 목표가 대비 상승여력 %
+    target_price      = db.Column(db.Float)
+    eps               = db.Column(db.Float)
+    forward_eps       = db.Column(db.Float)
+    bps               = db.Column(db.Float)
+    dps               = db.Column(db.Float)
+    high52            = db.Column(db.Float)
+    low52             = db.Column(db.Float)
+    price_updated_at  = db.Column(db.DateTime)
+    tech_updated_at   = db.Column(db.DateTime)
+    fund_updated_at   = db.Column(db.DateTime, index=True)
+    updated_at        = db.Column(db.DateTime, default=datetime.utcnow)

@@ -153,7 +153,7 @@ def universe(market):
 
 
 # ── 데이터 ─────────────────────────────────────────────────────────────────────
-def download_daily(tickers, period="1y", chunk=40, pause=1.5):
+def download_daily(tickers, period="1y", chunk=40, pause=1.5, min_rows=70):
     """yfinance 묶음 다운로드 → {ticker: DataFrame(Open,High,Low,Close,Volume)}. 실패한 종목은 빠진다."""
     import yfinance as yf
     out = {}
@@ -169,7 +169,7 @@ def download_daily(tickers, period="1y", chunk=40, pause=1.5):
             try:
                 df = raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw
                 df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
-                if len(df) >= 70:
+                if len(df) >= min_rows:
                     df.index = pd.to_datetime(df.index).tz_localize(None)
                     out[t] = df
             except Exception:
@@ -643,6 +643,11 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                 feats[t] = compute_features(df)
             except Exception:
                 pass
+        if D.get("on_features") and not dry_run:
+            try:
+                D["on_features"](market, feats, data)          # 스크리너 스냅샷의 기술 지표 갱신
+            except Exception as e:
+                log(f"스크리너 반영 실패: {e}")
         as_of = max((x["date"] for x in feats.values()), default=None)
         summary = {"market": market, "as_of": str(as_of), "tickers": len(feats), "vix": vix,
                    "tracked": 0, "candidates": {}, "rejected": {}, "signals": {}, "ai_calls_used": 0}

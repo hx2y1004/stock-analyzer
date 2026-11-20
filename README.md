@@ -24,6 +24,7 @@
 | 🗺 **시황 대시보드** | KOSPI·KOSDAQ·환율·S&P 500·나스닥·VIX, 오늘의 급등락 |
 | 🧩 **시총가중 섹터맵** | 한국 약 350 / 미국 약 537종목 전체를 섹터별 **시가총액 가중 등락률**로 집계, 트리맵 면적 = 섹터 시총 비중, 섹터별 상승/하락/보합 종목 수, 클릭하면 구성 종목(시총순·상승순·하락순) |
 | 📈 **추세 상승 감지** | 전체 유니버스 백그라운드 스캔 (기술·모멘텀·펀더멘털 점수) |
+| 🔎 **원클릭 스크리너 · 종목 비교** | 한국·미국 전체 종목을 프리셋 5종(우량주 과매도·추세 돌파+수급·저평가 가치주·당일 모멘텀·AI 봇 최근 신호)과 세부 필터로 즉시 걸러 보기. 2~3종목을 상대 수익률 차트와 항목별 비교 표(우위 표시)로 나란히 비교 |
 | 💼 **포트폴리오 · 관심종목** | 실제 보유 종목(토스증권 계좌 불러오기, 소유자 전용), 관심종목과 현재가·등락률 |
 | 🎮 **모의투자 · 랭킹** | 1억 원 가상 계좌, 서버 실시간가 체결, 수수료 0.1%, 자산 곡선, 배지, 닉네임 랭킹(7일·30일·전체) |
 | 🤖 **멀티 AI 봇 4종** | 공격형 모멘텀 · 균형형 스윙 · 안정형 가치 · 기준선 정량(AI 미사용 대조군). 장 마감 후 신호 생성 → 다음 장 시가 체결 → 장중 손절·익절 확인. 봇마다 1억 원 가상 계좌, `/ai-bots`에서 수익률 비교 차트, AI 검증 효과, 보유 포지션, **매매 이력**, 신호 사후 검증 |
@@ -69,7 +70,7 @@ python app.py                      # http://127.0.0.1:5000
 
 - `DATABASE_URL`을 비워 두면 SQLite(`instance/portfolio.db`)를 씁니다.
 - API 키가 없어도 화면과 대부분의 로직은 확인할 수 있습니다(AI는 비활성 또는 대체 문구, 시세는 yfinance).
-- 로컬 개발 중 백그라운드 작업을 끄려면 `BOT_SCHEDULER=0`, `SECTORMAP_SCHEDULER=0`.
+- 로컬 개발 중 백그라운드 작업을 끄려면 `BOT_SCHEDULER=0`, `SECTORMAP_SCHEDULER=0`, `SCREENER_SCHEDULER=0`.
 
 ### 데이터 파일 다시 만들기 (가끔)
 
@@ -97,7 +98,7 @@ python build_sector_universe.py   # sector_universe.json: 섹터 분류 + 미국
 | | `TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS` | 소유자 전용 기능(계좌 불러오기, 진단 화면, 봇 수동 실행) 허용 계정 |
 | | `DART_API_KEY` | (선택) 국내 분기 실적 |
 | AI 봇 | `AI_DAILY_BUDGET` (기본 60), `BOT_AI_INTERVAL` (기본 4초), `BOT_SCHEDULER` | 봇 AI 평가 하루 상한·호출 간격·스케줄러 끄기 |
-| 섹터맵 | `SECTORMAP_SCHEDULER` | `0`이면 섹터맵 백그라운드 갱신 끔 |
+| 섹터맵 · 스크리너 | `SECTORMAP_SCHEDULER`, `SCREENER_SCHEDULER` | `0`이면 각각의 백그라운드 갱신 끔 |
 | 알림 | `NOTIFY_PROVIDERS` | 기본 `inapp` (사이트 안 알림) |
 | 웹 푸시 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (선택) PWA 푸시. 비워 두면 푸시만 꺼지고 나머지는 정상. 키 만드는 한 줄 명령은 `.env.example`에 있음 |
 
@@ -112,6 +113,7 @@ python build_sector_universe.py   # sector_universe.json: 섹터 분류 + 미국
 | AI 봇 장 마감 배치 | 한국 평일 15:45 · 미국 평일 16:30 | 전체 유니버스 정량 필터 → 후보 펀더멘털 → 종목당 하루 1회 AI 평가(봇 공유) → 봇별 판정·손익비 기각·하루 한도 → 신호 저장, 신호 추적, 봇 계좌 동기화, 알림·푸시 |
 | AI 봇 장중 체크 | 장중 매 5분 정각 | 대기 신호를 다음 장 시가로 체결, 보유 신호 손절·트레일링·익절, 봇 계좌 매매 |
 | 섹터맵 스냅샷 | 장중 매시 7·22·37·52분, 마감 후 한국 15:40 · 미국 16:20 | 시세 받아 시총가중 집계 후 `ai_cache`에 저장. 주말·휴장일 스킵 |
+| 스크리너 스냅샷 | 위 두 작업에 함께 + 펀더멘탈은 6초에 1종목 | 섹터맵 갱신 때 가격, 봇 배치 때 기술 지표, 7일 지난 종목만 펀더멘탈·목표가 갱신 |
 | 추세 스캔 | 요청 시 | 전체 종목 점수 계산 |
 
 ---
@@ -129,6 +131,7 @@ stock-analyzer/
 ├── notifier.py               # 신호 알림 발송 (사이트 안 알림 + 웹 푸시 묶음 발송)
 ├── webpush.py                # 웹 푸시: VAPID 확인, 구독 저장, 발송, 만료 구독 정리
 ├── sector_map.py             # 시총가중 섹터맵 집계와 백그라운드 스냅샷
+├── screener.py               # 스크리너 스냅샷 갱신·조회, 종목 비교
 ├── trends_scanner.py         # 추세 상승 감지 스캔
 ├── toss_api.py               # 토스증권 Open API
 ├── badges.py                 # 모의투자 배지
@@ -139,9 +142,9 @@ stock-analyzer/
 │   └── valuation.py          # DCF 적정가
 ├── build_stock_db.py         # → stock_db.json (종목 유니버스)
 ├── build_sector_universe.py  # → sector_universe.json (섹터 분류·발행주식수)
-├── templates/                # index(분석·시황), trading(모의투자), leaderboard(랭킹), ai_bots(AI 봇) + 공통 헤더·푸터
+├── templates/                # index(분석·시황), trading(모의투자), leaderboard(랭킹), ai_bots(AI 봇), screener(스크리너·비교) + 공통 헤더·푸터
 ├── static/
-│   ├── js/                   # main · trading · leaderboard · ai_bots · notify(알림 종·설정·푸시·관심종목) · chart
+│   ├── js/                   # main · trading · leaderboard · ai_bots · screener · notify(알림 종·설정·푸시·관심종목) · chart
 │   ├── css/style.css         # 다크 테마
 │   ├── service-worker.js     # 캐시 정책 + push / notificationclick
 │   ├── manifest.json, icons/ # PWA
@@ -161,6 +164,7 @@ stock-analyzer/
 | `ai_cache` | AI 결과·섹터맵 스냅샷·봇 배치 요약·잠금 |
 | `bot_strategies`, `ai_stock_assessments`, `ai_signals`, `bot_positions` | 봇 전략 파라미터, 종목별 AI 평가, 신호와 사후 추적, 신호 ↔ 봇 계좌 거래 |
 | `user_signal_subscriptions`, `watchlist_items`, `notifications`, `push_subscriptions` | 알림 구독 조건, 관심종목, 사이트 안 알림, 기기별 웹 푸시 구독 |
+| `screener_snapshots` | 스크리너용 종목별 경량 스냅샷 (가격·밸류에이션·기술 지표·펀더멘탈) |
 
 ---
 
@@ -177,6 +181,7 @@ stock-analyzer/
 | 랭킹 | `GET /api/leaderboard?metric=total\|7d\|30d&bots=1\|0` |
 | AI 봇 | `GET /api/ai-bots/overview`, `GET /api/ai-bots/chart?period=`, `GET /api/ai-bots/<봇>`, `GET /api/ai-bots/<봇>/trades`, `GET /api/bots/signals`, `GET /api/bots/signals/<id>`, `POST /api/admin/bots/run` (소유자) |
 | 알림 | `GET/PUT /api/signal-subscription`, `GET /api/notifications`, `POST /api/notifications/read` |
+| 스크리너 · 비교 | `GET /api/screener`, `GET /api/screener/meta`, `GET /api/compare?tickers=A,B,C` |
 | 웹 푸시 | `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `POST /api/push/test` |
 | 진단 (소유자) | `GET /api/debug/ai`, `GET /api/debug/toss` |
 
