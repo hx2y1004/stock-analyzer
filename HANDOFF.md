@@ -15,7 +15,10 @@
    **재시작/배포 때마다 로그인이 풀린다** (예전에는 공개 기본 키로 서명 → 세션 위조 가능했음).
 2. **`TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS`** 가 있는지. 없으면 운영에서 토스 계좌 불러오기와
    `/api/debug/toss`가 차단된다 (예전에는 로그인한 누구나 소유자 계좌를 불러올 수 있었음).
-3. 미국 종목 뉴스 제목 번역(`deep_translator` → Google 번역)이 운영에서 되는지. 이 환경에선 차단돼 원문으로만 확인.
+3. ~~미국 뉴스 제목 번역~~ → 운영에서도 영어로 나와 원인 확인: `deep_translator`는 translate.google.com 웹페이지를 긁는데
+   서버(데이터센터) IP는 Google 봇 확인(`/sorry`)으로 막힌다. PR #11에서 **AI(Gemini/Groq) 일괄 번역**으로 바꿈
+   (`_translate_news_items`, 원문 제목 기준 캐시, 실패 시 Google → 원문, Google 실패는 10분간 재시도 안 함, 실패 로그 `[translate]`).
+   운영 로그에서 `[news_translate]`/`[translate]` 경고가 없는지 확인.
 4. AI 호출(기업 소개·급등락 사유) 소요 시간. 이 환경엔 AI 키가 없어 측정 못 함. PR #10으로 첫 화면은 AI를 기다리지 않음.
 
 ### 운영 판단 기준 변경 (PR #7)
