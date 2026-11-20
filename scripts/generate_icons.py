@@ -95,7 +95,25 @@ def draw_icon(size: int, out_path: str):
     print(f"[OK] {out_path} ({size}x{size})")
 
 
+def draw_badge(size: int, out_path: str):
+    """안드로이드 상단바용 알림 배지: 투명 배경 + 흰색 모양만.
+    상단바는 이미지의 알파(모양)만 쓰고 색은 무시하므로, 배경이 꽉 찬 앱 아이콘을 쓰면 흰 사각형으로 보인다."""
+    S = size * 4                                   # 크게 그린 뒤 줄여 가장자리를 매끄럽게
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    W = (255, 255, 255, 255)
+    u = S / 24                                     # 24칸 격자 (상단바 아이콘 기준 24dp)
+    # 상승하는 캔들 3개 (몸통 + 꼬리)
+    for cx, top, bot, wt, wb in ((6, 13, 19, 11.5, 20.5), (12, 9, 15, 7.5, 16.5), (18, 4.5, 10.5, 3, 12)):
+        d.rectangle([(cx - 0.6) * u, wt * u, (cx + 0.6) * u, wb * u], fill=W)
+        d.rounded_rectangle([(cx - 2.2) * u, top * u, (cx + 2.2) * u, bot * u], radius=0.6 * u, fill=W)
+    # 바닥선
+    d.rounded_rectangle([2 * u, 21.5 * u, 22 * u, 23 * u], radius=0.75 * u, fill=W)
+    img.resize((size, size), Image.LANCZOS).save(out_path)
+
+
 if __name__ == "__main__":
+    draw_badge(96, os.path.join(OUT_DIR, "badge-96.png"))
     draw_icon(192, os.path.join(OUT_DIR, "icon-192.png"))
     draw_icon(512, os.path.join(OUT_DIR, "icon-512.png"))
     # iOS apple-touch-icon (180x180)

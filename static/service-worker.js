@@ -4,7 +4,7 @@
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v56';
+const CACHE_VERSION = 'sa-v57';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -123,7 +123,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: d.body || '',
     icon: '/static/icons/icon-192.png',
-    badge: '/static/icons/icon-192.png',
+    badge: '/static/icons/badge-96.png',   // 상단바용: 투명 배경 + 흰 모양 (안드로이드는 알파만 사용)
     data: { url: d.url || '/' },
     tag: d.tag || undefined,          // 같은 tag 는 새 알림이 이전 것을 대체 (중복 방지)
     renotify: !!d.tag,
