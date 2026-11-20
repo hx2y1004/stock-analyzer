@@ -96,14 +96,15 @@ def derive(r):
     r.upside_pct = round((r.target_price / p - 1) * 100, 1) if (r.target_price and r.target_price > 0) else None
 
 
-def upsert_prices(market, rows):
-    """섹터맵 갱신 결과(종목별 price · change_pct · market_cap · sector) 반영."""
+def upsert_prices(market, rows, as_of=None):
+    """섹터맵 갱신 결과(종목별 price · change_pct · market_cap · sector) 반영.
+    as_of: 시세 기준 시각(UTC). 저장된 섹터맵 스냅샷에서 채울 때는 그 스냅샷 시각을 쓴다."""
     M, db = D["Model"], D["db"]
     try:
         with D["app"].app_context():
             existing = {r.ticker: r for r in M.query.filter_by(market=market).all()}
             names = _sector_names()[market]
-            now = datetime.utcnow()
+            now = as_of or datetime.utcnow()
             for x in rows:
                 r = existing.get(x["ticker"])
                 if r is None:
@@ -123,6 +124,36 @@ def upsert_prices(market, rows):
             D["db"].session.rollback()
         except Exception:
             pass
+
+
+def backfill_prices():
+    """가격이 빈 시장이 있으면 이미 저장된 섹터맵 스냅샷으로 채운다.
+    가격은 섹터맵이 '갱신될 때'만 넘어오므로, 배포 직후가 주말·휴장이면 다음 장까지 비어 있었다
+    (2026-11-21: 토요일 새벽 배포 → 한국 0종목, 미국은 금요일 마감 갱신이 배포 뒤라 정상)."""
+    M = D["Model"]
+    done = {}
+    for market in ("KR", "US"):
+        try:
+            with D["app"].app_context():
+                total = M.query.filter_by(market=market).count()
+                priced = M.query.filter_by(market=market).filter(M.price.isnot(None)).count()
+            if total and priced >= total * 0.9:
+                continue
+            snap = D["sector_snapshot"](market) if D.get("sector_snapshot") else None
+            rows = [m for g in (snap or {}).get("groups", []) for m in g.get("members", [])]
+            if not rows:
+                continue
+            as_of = None
+            try:
+                as_of = datetime.fromisoformat(snap["updated_at"].rstrip("Z"))
+            except Exception:
+                pass
+            upsert_prices(market, rows, as_of=as_of)
+            done[market] = len(rows)
+            log(f"{market} 가격 {len(rows)}종목을 저장된 섹터맵 스냅샷({snap.get('updated_at')})으로 채움")
+        except Exception as e:
+            log(f"{market} 가격 채우기 실패: {e}")
+    return done
 
 
 def trend_score(x, high52=None):
@@ -170,6 +201,14 @@ def upsert_technicals(market, feats, data):
                     continue
                 for k, v in tech_fields(x, df).items():
                     setattr(r, k, v)
+                if r.price is None and x.get("close"):         # 섹터맵 가격이 아직 없을 때만 일봉 종가로
+                    r.price = _f(x["close"])
+                    r.change_pct = round(x["chg_pct"], 2) if x.get("chg_pct") is not None else None
+                    # 기준 시각 = 그 일봉의 장 마감 시각(UTC). Yahoo 당일 봉이 비면 전날 종가일 수 있어 '지금'으로 적지 않는다
+                    bar = x.get("date")
+                    r.price_updated_at = (datetime(bar.year, bar.month, bar.day, 6, 30) if market == "KR"
+                                          else datetime(bar.year, bar.month, bar.day, 21, 0)) if bar else now
+                    derive(r)
                 r.tech_updated_at = r.updated_at = now
                 n += 1
             db.session.commit()
@@ -292,6 +331,10 @@ def _loop():
     except Exception as e:
         log(f"빈 행 생성 실패: {e}")
     try:
+        backfill_prices()
+    except Exception as e:
+        log(f"가격 채우기 오류: {e}")
+    try:
         warm_technicals()
     except Exception as e:
         log(f"워밍업 오류: {e}")
@@ -302,6 +345,7 @@ def _loop():
                 continue
             t = _next_stale()
             if not t:
+                backfill_prices()                      # 할 일이 없을 때 빈 가격만 확인 (DB 개수 조회 2번)
                 time.sleep(600)
                 continue
             _state["fund_running"] = True
