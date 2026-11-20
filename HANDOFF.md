@@ -11,6 +11,10 @@
 > 배포 환경은 Railway가 아니라 **Oracle VM**이다 (CLAUDE.md 참고). 아래 "현재 상태(2026-07-25)" 절의 Railway 언급은 옛 정보.
 
 ### ⚠️ 운영에서 확인 필요 (로컬 PC 세션에서)
+0. **SSH 없이 확인하는 법 (PR #21)**: 운영 사이트에 소유자 계정으로 로그인 → `/api/debug/ai` 의 `config.set` 에
+   주요 환경변수가 설정됐는지(true/false, 값은 안 보임)와 `config.warnings` 가 나온다. 이 화면 자체가 "Not Found" 면
+   `TOSS_OWNER_EMAIL`/`TOSS_OWNER_USER_IDS` 가 없거나 로그인 계정이 소유자가 아니다.
+   (2026-11-20 기준: 로컬 PC `.env` 에는 Groq 키가 있음. 운영 서버 SSH 키 파일은 사용자 PC에서 찾지 못함 → 필요하면 Oracle 콘솔에서 새 키 등록)
 1. 운영 `.env`에 **`FLASK_SECRET_KEY`** 가 있는지. 없으면 PR #7 이후 프로세스마다 임시 랜덤 키를 써서
    **재시작/배포 때마다 로그인이 풀린다** (예전에는 공개 기본 키로 서명 → 세션 위조 가능했음).
 2. **`TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS`** 가 있는지. 없으면 운영에서 토스 계좌 불러오기와
