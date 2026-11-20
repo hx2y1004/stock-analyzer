@@ -5975,6 +5975,22 @@ def debug_ai():
         if err:
             info["last_error"] = {"at": datetime.utcfromtimestamp(err[0]).isoformat() + "Z", "message": err[1]}
         out[provider] = info
+    # 운영 설정 점검: 값은 절대 내보내지 않고 "설정됨(True)/미설정(False)"만 (SSH 없이 .env 확인용)
+    def _has(name):
+        return bool(os.environ.get(name, "").strip())
+    out["config"] = {
+        "is_production": IS_PRODUCTION,
+        "set": {name: _has(name) for name in (
+            "FLASK_SECRET_KEY", "TOSS_OWNER_EMAIL", "TOSS_OWNER_USER_IDS", "DATABASE_URL", "BASE_URL",
+            "GOOGLE_CLIENT_ID", "KAKAO_REST_API_KEY", "TOSS_CLIENT_ID", "DART_API_KEY", "AI_BACKUP_API_KEY")},
+        "warnings": [w for w, bad in (
+            ("FLASK_SECRET_KEY 미설정: 재시작·배포 때마다 모든 사용자 로그인이 풀립니다",
+             IS_PRODUCTION and not _has("FLASK_SECRET_KEY")),
+            ("AI 키가 하나도 없음: AI 해설·번역·AI 봇 평가가 동작하지 않습니다",
+             not (_has("GEMINI_API_KEY") or _has("GROQ_API_KEY") or _has("AI_BACKUP_API_KEY"))),
+        ) if bad],
+        "bot": {"scheduler": os.environ.get("BOT_SCHEDULER", "1") != "0", "ai_daily_budget": bot_engine.ai_budget_limit()},
+    }
     test = request.args.get("test") == "1"
     if test:
         out["test_reply"] = _ai_chat("짧게 답하세요.", "한국어로 '정상'이라고만 답하세요.", max_tokens=20, label="debug")
