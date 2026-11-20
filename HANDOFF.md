@@ -66,7 +66,8 @@
   - 펀더멘탈: 7일보다 오래된 종목만 6초에 1종목 (한국: 네이버 integration 1회 + 4팩터, 미국: yfinance info + 4팩터). 봇 작업 중이면 쉼
   - 첫 배포: 빈 행 생성 → 기술 지표가 비어 있으면 40종목씩 한 번 채움 → 펀더멘탈은 시총 큰 순으로 약 2시간에 걸쳐 채워짐 (화면에 "펀더멘탈 집계 중 N/887")
   - `SCREENER_SCHEDULER=0` 이면 펀더멘탈 순환·워밍업 끔
-- 한국 PER 은 네이버의 최근 4분기 EPS 기준(예: 삼성전자 5.7배). 종목 상세 화면의 PER 은 직전 확정 연간 EPS 기준이라 다를 수 있음
+- (PR #28) 한국 PER 기준을 종목 상세·스크리너·비교 모두 **최근 4분기(TTM) EPS** 로 통일 (`app.kr_per_basis`, 네이버 integration). TTM 값 자체가 없을 때만 직전 연간 EPS, TTM 적자면 PER 표시 안 함. 상세 PER·PBR 은 화면 현재가 ÷ 주당 지표로 계산. 라벨 `PER (TTM)` (연간 폴백이면 `PER (연간)`)
+- (PR #28) 프리셋 강조 1개만(터치 호버·포커스 잔상 제거), 비교 칩은 이름 받기 전 티커 1번만, `/screener?tab=compare` 는 서버가 초기 탭을 그려 깜빡임 없음, 비교 차트 좌우 여백으로 첫 날짜 라벨 안 잘림
 - API: `GET /api/screener` (market·preset·sector·min_fundamental·min/max_rsi·max_per·min_upside·sort_by·order·limit, DB 쿼리만),
   `GET /api/screener/meta` (프리셋·섹터·정렬·집계 현황), `GET /api/compare?tickers=` (최대 3, 1년 일봉 10분 메모리 캐시·최대 30종목,
   펀더멘탈이 없거나 오래된 종목만 그 자리에서 1회 받아 스냅샷에 저장)

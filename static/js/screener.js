@@ -27,7 +27,7 @@
   // ── URL ────────────────────────────────────────────────────────────────
   function readUrl() {
     const q = new URLSearchParams(location.search);
-    if (q.get('tab') === 'compare') S.tab = 'compare';
+    S.tab = document.body.dataset.tab === 'compare' || q.get('tab') === 'compare' ? 'compare' : 'screen';
     if (['ALL', 'KR', 'US'].includes((q.get('market') || '').toUpperCase())) S.market = q.get('market').toUpperCase();
     if (q.get('preset')) S.preset = q.get('preset');
     const t = (q.get('tickers') || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
@@ -70,6 +70,8 @@
       `<button type="button" class="sc-preset" data-p="${esc(p.key)}" aria-pressed="false"><span aria-hidden="true">${esc(p.emoji)}</span> ${esc(p.name)}</button>`).join('');
     $$('.sc-preset').forEach((b) => b.addEventListener('click', () => {
       S.preset = S.preset === b.dataset.p ? '' : b.dataset.p;
+      paintPresets();
+      b.blur();                                   // 터치 기기에서 이전 버튼의 포커스·호버 잔상이 남지 않게
       $('#fSort').value = ''; runQuery();
     }));
     $('#fSort').innerHTML = '<option value="">프리셋 기본</option>' + S.meta.sorts.map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join('');
@@ -95,8 +97,13 @@
   $$('.sc-filter-grid input').forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') runQuery(); }));
 
   let qSeq = 0;
+  function paintPresets() {
+    // 항상 현재 프리셋 1개만 강조 (모든 버튼의 상태를 매번 다시 씀)
+    $$('.sc-preset').forEach((b) => { const on = !!S.preset && b.dataset.p === S.preset; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  }
+
   async function runQuery() {
-    $$('.sc-preset').forEach((b) => { const on = b.dataset.p === S.preset; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on); });
+    paintPresets();
     const p = (S.meta.presets.find((x) => x.key === S.preset));
     $('#scPresetDesc').textContent = p ? `${p.emoji} ${p.desc}` : '프리셋을 누르면 바로 걸러 드려요. 아래에서 조건을 직접 정할 수도 있습니다.';
     writeUrl();
@@ -140,7 +147,7 @@
     }
     list.innerHTML = `<div class="ab-scroll"><table class="ab-table sc-table">
       <thead><tr><th>종목</th><th class="num">현재가</th><th class="num">등락률</th><th class="num">펀더멘탈</th><th class="num">RSI</th>
-        <th class="num">PER</th><th class="num">상승여력</th><th class="sc-act-h"><span class="sr-only">관심 · 비교</span></th></tr></thead>
+        <th class="num">PER (TTM)</th><th class="num">상승여력</th><th class="sc-act-h"><span class="sr-only">관심 · 비교</span></th></tr></thead>
       <tbody>${d.items.map((r) => `<tr>
         <td data-label="종목"><a href="/stock/${encodeURIComponent(r.ticker)}" class="sc-name">${esc(r.name)}</a>
           <span class="ab-muted">${esc(r.ticker)}${r.sector_name ? ' · ' + esc(r.sector_name) : ''}</span>
@@ -149,7 +156,7 @@
         <td class="num ${dir(r.change_pct)}" data-label="등락률">${pct(r.change_pct)}</td>
         <td class="num" data-label="펀더멘탈">${r.fundamental_score == null ? '<span class="ab-muted">집계 중</span>' : `<span class="sc-score s${Math.floor(r.fundamental_score / 20)}">${Math.round(r.fundamental_score)}</span>`}</td>
         <td class="num" data-label="RSI">${num(r.rsi14, 0)}</td>
-        <td class="num" data-label="PER">${r.per == null ? '—' : num(r.per, 1, 'x')}</td>
+        <td class="num" data-label="PER (TTM)">${r.per == null ? '—' : num(r.per, 1, 'x')}</td>
         <td class="num ${dir(r.upside_pct)}" data-label="상승여력">${pct(r.upside_pct, 1)}</td>
         <td class="sc-act" data-label="">
           <button type="button" class="sc-star" data-t="${esc(r.ticker)}" data-n="${esc(r.name)}" aria-pressed="false" aria-label="${esc(r.name)} 관심종목">${STAR(false)}</button>
@@ -223,7 +230,7 @@
 
   function renderPicked() {
     $('#cmpPicked').innerHTML = S.cmp.length ? S.cmp.map((t, i) =>
-      `<span class="sc-chip" style="--c:${COLORS[i]}"><i class="sc-dot" aria-hidden="true"></i>${esc(names[t] || t)}<span class="ab-muted">${esc(t)}</span>
+      `<span class="sc-chip" style="--c:${COLORS[i]}"><i class="sc-dot" aria-hidden="true"></i>${names[t] ? `${esc(names[t])}<span class="ab-muted">${esc(t)}</span>` : esc(t)}
         <button type="button" data-t="${esc(t)}" aria-label="${esc(names[t] || t)} 빼기">${ICON_X}</button></span>`).join('')
       : '<span class="ab-muted">비교할 종목을 2~3개 골라 주세요.</span>';
     $$('#cmpPicked button').forEach((b) => b.addEventListener('click', () => { S.cmp = S.cmp.filter((x) => x !== b.dataset.t); loadCompare(); }));
@@ -339,7 +346,12 @@
       s.setData(data);
       return { s, it, data, color: COLORS[i] };
     });
-    chart.timeScale().fitContent();
+    const n = Math.max(0, ...lines.map((l) => l.data.length));
+    if (n > 1) {
+      // 첫 봉이 왼쪽 경계에 붙으면 첫 날짜 라벨이 잘린다 → 앞뒤로 데이터 폭의 약 4%(최소 2칸) 여백
+      const pad = Math.max(2, Math.round(n * 0.04));
+      chart.timeScale().setVisibleLogicalRange({ from: -pad, to: n - 1 + Math.max(1, Math.round(pad / 2)) });
+    } else chart.timeScale().fitContent();
     legend(null);
     $('#cmpRetTable').innerHTML = `<table class="ab-table"><thead><tr><th>종목</th><th class="num">3M</th><th class="num">6M</th><th class="num">1Y</th></tr></thead><tbody>${
       d.items.map((it) => `<tr><td>${esc(it.name)}</td>${['3M', '6M', '1Y'].map((k) => `<td class="num ${dir((it.returns || {})[k])}">${pct((it.returns || {})[k], 1)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
@@ -370,7 +382,7 @@
       ['성장', (x) => x.growth_score, (x) => num(x.growth_score, 0), 'high', 0],
       ['모멘텀', (x) => x.momentum_score, (x) => num(x.momentum_score, 0), 'high', 0],
       ['밸류에이션'],
-      ['PER', (x) => (x.per > 0 ? x.per : null), (x) => x.per == null ? '—' : num(x.per, 1, 'x'), 'low'],
+      ['PER (TTM)', (x) => (x.per > 0 ? x.per : null), (x) => x.per == null ? '—' : num(x.per, 1, 'x'), 'low'],
       ['선행 PER', (x) => (x.forward_per > 0 ? x.forward_per : null), (x) => x.forward_per == null ? '—' : num(x.forward_per, 1, 'x'), 'low'],
       ['PBR', (x) => (x.pbr > 0 ? x.pbr : null), (x) => x.pbr == null ? '—' : num(x.pbr, 2, 'x'), 'low', 2],
       ['배당수익률', (x) => x.dividend_yield, (x) => x.dividend_yield == null ? '—' : num(x.dividend_yield, 2, '%'), 'high', 2],

@@ -5259,3 +5259,11 @@ body.has-basket .sc-main { padding-bottom: 120px; }
   .sc-table td.num { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 1px; text-align: left; font-size: 14px; }
   .sc-table td.num::before { font-size: 11px; }
 }
+
+/* 프리셋: 터치 기기에서 이전 버튼의 호버·탭 하이라이트 잔상이 강조처럼 보이지 않게 */
+.sc-preset { -webkit-tap-highlight-color: transparent; }
+.sc-preset:hover { border-color: var(--border); }
+@media (hover: hover) { .sc-preset:hover { border-color: var(--text2); } }
+.sc-preset[aria-pressed="false"] { background: var(--bg2); border-color: var(--border); }
+@media (hover: hover) { .sc-preset[aria-pressed="false"]:hover { border-color: var(--text2); } }
+.sc-preset[aria-pressed="true"] { border-color: var(--accent); background: rgba(88,166,255,.12); }

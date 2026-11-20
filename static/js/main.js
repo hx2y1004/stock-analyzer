@@ -2072,6 +2072,11 @@ function renderMetrics(stock, analysis) {
 
   document.getElementById('peRatio').textContent =
     stock.pe_ratio != null ? stock.pe_ratio.toFixed(1) + 'x' : '—';
+  // 기준 표기: 최근 4분기(TTM) — 한국 종목은 TTM 이 없을 때만 직전 연간
+  const peLbl = document.getElementById('peLabel');
+  if (peLbl) peLbl.textContent = stock.pe_basis === '연간' ? 'PER (연간)' : 'PER (TTM)';
+  document.getElementById('peRatio').title = stock.pe_basis === '연간'
+    ? '최근 4분기 실적이 없어 직전 확정 연간 EPS 기준' : '최근 4분기 합산(TTM) EPS 기준';
 
   const fpeEl = document.getElementById('forwardPeRatio');
   fpeEl.textContent =
