@@ -10,15 +10,19 @@
 > 이 세션은 운영 서버에 접속할 수 없는 클라우드 컨테이너에서 진행했다. 운영 로그·`.env`는 확인하지 못했다.
 > 배포 환경은 Railway가 아니라 **Oracle VM**이다 (CLAUDE.md 참고). 아래 "현재 상태(2026-07-25)" 절의 Railway 언급은 옛 정보.
 
-### ⚠️ 운영에서 확인 필요 (로컬 PC 세션에서)
+### ⚠️ 운영에서 확인 필요 (1·2번은 2026-11-20 확인 완료)
 0. **SSH 없이 확인하는 법 (PR #21)**: 운영 사이트에 소유자 계정으로 로그인 → `/api/debug/ai` 의 `config.set` 에
    주요 환경변수가 설정됐는지(true/false, 값은 안 보임)와 `config.warnings` 가 나온다. 이 화면 자체가 "Not Found" 면
    `TOSS_OWNER_EMAIL`/`TOSS_OWNER_USER_IDS` 가 없거나 로그인 계정이 소유자가 아니다.
-   (2026-11-20 기준: 로컬 PC `.env` 에는 Groq 키가 있음. 운영 서버 SSH 키 파일은 사용자 PC에서 찾지 못함 → 필요하면 Oracle 콘솔에서 새 키 등록)
-1. 운영 `.env`에 **`FLASK_SECRET_KEY`** 가 있는지. 없으면 PR #7 이후 프로세스마다 임시 랜덤 키를 써서
-   **재시작/배포 때마다 로그인이 풀린다** (예전에는 공개 기본 키로 서명 → 세션 위조 가능했음).
-2. **`TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS`** 가 있는지. 없으면 운영에서 토스 계좌 불러오기와
-   `/api/debug/toss`가 차단된다 (예전에는 로그인한 누구나 소유자 계좌를 불러올 수 있었음).
+   **2026-11-20 확인 결과 (운영 `/api/debug/ai`)**: `FLASK_SECRET_KEY`, `TOSS_OWNER_EMAIL`, `TOSS_OWNER_USER_IDS`,
+   `DATABASE_URL`, `BASE_URL`, Google·카카오 로그인 키, `TOSS_CLIENT_ID`, `DART_API_KEY`, Gemini·Groq 키 모두 설정됨.
+   `AI_BACKUP_API_KEY` 만 없음(선택). `warnings` 없음. Gemini 는 `gemini-3.5-flash-lite` 부터 자동 선택, 봇 스케줄러 켜짐, AI 하루 예산 60.
+   로컬 PC `.env` 에는 Groq 키만 확인함(로컬 실행용).
+   운영 서버 SSH 개인 키 파일은 사용자 PC에서 찾지 못함 → 서버 로그·설정 작업이 필요해지면 Oracle 콘솔에서 새 키를 등록해야 한다.
+1. ~~운영 `.env`에 `FLASK_SECRET_KEY` 가 있는지~~ → **확인 완료(2026-11-20, 설정됨)**. 없으면 PR #7 이후 프로세스마다 임시 랜덤 키를 써서
+   재시작/배포 때마다 로그인이 풀린다.
+2. ~~`TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS` 가 있는지~~ → **확인 완료(2026-11-20, 둘 다 설정됨, 소유자 계정으로 진단 화면 접근 확인)**.
+   없으면 운영에서 토스 계좌 불러오기, `/api/debug/toss`, `/api/debug/ai`, 봇 수동 실행이 차단된다.
 3. ~~미국 뉴스 제목 번역~~ → 운영에서도 영어로 나와 원인 확인: `deep_translator`는 translate.google.com 웹페이지를 긁는데
    서버(데이터센터) IP는 Google 봇 확인(`/sorry`)으로 막힌다. PR #11에서 **AI(Gemini/Groq) 일괄 번역**으로 바꿈
    (`_translate_news_items`, 원문 제목 기준 캐시, 실패 시 Google → 원문, Google 실패는 10분간 재시도 안 함, 실패 로그 `[translate]`).
