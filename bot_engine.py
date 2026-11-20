@@ -1044,14 +1044,18 @@ def intraday_check(market, quotes=None):
 
 def _scheduler_loop():
     time.sleep(30)
-    last_intraday = {"KR": 0.0, "US": 0.0}
+    last_slot = {"KR": None, "US": None}
+    tried = {}
     while True:
         try:
             with D["app"].app_context():
                 for market in ("KR", "US"):
-                    # 장중: 5분마다 체결·청산 확인 (DB 잠금 없이도 판정이 멱등이라 중복 실행돼도 결과 같음)
-                    if in_session(market) and time.time() - last_intraday[market] >= INTRADAY_EVERY:
-                        last_intraday[market] = time.time()
+                    # 장중: 매 5분 정각(0·5·10…분)에 체결·청산 확인. 섹터맵 갱신(7·22·37·52분)과 겹치지 않게 시계에 맞춘다.
+                    # (판정이 멱등이라 중복 실행돼도 결과 같음)
+                    now_m = datetime.now(_tz(market))
+                    slot = (now_m.date(), now_m.hour, now_m.minute // (INTRADAY_EVERY // 60))
+                    if in_session(market, now_m) and last_slot[market] != slot:
+                        last_slot[market] = slot
                         try:
                             if _RUN_LOCK.acquire(blocking=False):
                                 try:
@@ -1065,8 +1069,9 @@ def _scheduler_loop():
                             D["db"].session.remove()
                     now = datetime.now(_tz(market))
                     hh, mm = RUN_AFTER[market]
-                    if now.weekday() >= 5 or (now.hour, now.minute) < (hh, mm):
+                    if now.weekday() >= 5 or (now.hour, now.minute) < (hh, mm) or tried.get(market) == now.date():
                         continue
+                    tried[market] = now.date()          # 오늘 선점 시도는 한 번만 (DB 중복 삽입 시도 줄이기)
                     if _claim(market, now.date()):
                         log(f"scheduler: {market} {now.date()} 배치 시작")
                         try:
@@ -1077,7 +1082,7 @@ def _scheduler_loop():
                             D["db"].session.remove()
         except Exception as e:
             log(f"scheduler loop 오류: {e}")
-        time.sleep(60)
+        time.sleep(20)          # 정각에 가깝게 잡도록 20초마다 확인
 
 
 _started = False

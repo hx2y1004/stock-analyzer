@@ -828,6 +828,30 @@ _OVERVIEW_INDICES = [
 ]
 
 
+_NAVER_INDEX = {"^KS11": "KOSPI", "^KQ11": "KOSDAQ"}
+
+
+def _naver_index(sym):
+    """한국 지수는 네이버 값을 쓴다. Yahoo 는 장 마감 후 당일 봉 종가가 비어(NaN) 전날 값이 '오늘'로 보이는 경우가 있었다
+    (2026-11-20: KOSPI 실제 4,869.96 -5.21% 인데 5,137.89 +1.39% 로 표시). 실패하면 None → Yahoo 폴백."""
+    code = _NAVER_INDEX.get(sym)
+    if not code:
+        return None
+    try:
+        r = requests.get(f"https://m.stock.naver.com/api/index/{code}/basic",
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if r.status_code != 200:
+            return None
+        j = r.json() or {}
+        val = safe_float(str(j.get("closePrice", "")).replace(",", ""))
+        chg = safe_float(str(j.get("fluctuationsRatio", "")).replace(",", ""))
+        if not val:
+            return None
+        return {"value": round(val, 2), "change_pct": round(chg, 2) if chg is not None else None}
+    except Exception:
+        return None
+
+
 @app.route("/api/market/overview")
 def market_overview():
     """홈 대시보드용 주요 지수 스냅샷 (1분 캐시)."""
@@ -844,6 +868,10 @@ def market_overview():
             group_by="ticker", progress=False, threads=True, auto_adjust=False,
         )
         for sym, label, mkt, kind in _OVERVIEW_INDICES:
+            nv = _naver_index(sym)
+            if nv:
+                out.append({"symbol": sym, "label": label, "market": mkt, "kind": kind, **nv})
+                continue
             try:
                 df = data[sym].dropna(subset=["Close"])
                 if df.empty:
@@ -872,41 +900,7 @@ def market_overview():
     return jsonify(payload)
 
 
-# ── 실전 섹터맵 (핀비즈 스타일) ─────────────────────────────
-# GICS 대분류/네이버 테마 대신, 실제 매매 단위로 쓰이는 주도 섹터를 큐레이션.
-# weight = 그룹 합산 시가총액 근사치(1~10) → 타일 크기. 구성종목은 유동성 큰 대표주.
-_SECTORMAP_US = [
-    ("bigtech",  "빅테크·플랫폼", 10, ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]),
-    ("semi",     "반도체",       10, ["NVDA", "AVGO", "TSM", "AMD", "ASML", "MU", "QCOM", "INTC"]),
-    ("software", "AI·소프트웨어", 6, ["ORCL", "CRM", "NOW", "ADBE", "PLTR", "SNOW"]),
-    ("finance",  "금융",          6, ["JPM", "V", "MA", "BAC", "GS"]),
-    ("health",   "헬스케어·제약",  6, ["LLY", "UNH", "JNJ", "ABBV", "MRK"]),
-    ("consumer", "소비",          4, ["WMT", "COST", "MCD", "NKE", "SBUX"]),
-    ("ev",       "전기차·모빌리티", 4, ["TSLA", "UBER", "GM", "RIVN"]),
-    ("energy",   "에너지",        4, ["XOM", "CVX", "COP"]),
-    ("defense",  "방산·항공",     3, ["GE", "RTX", "LMT", "BA", "NOC"]),
-    ("power",    "원자력·전력",   3, ["NEE", "CEG", "VST", "DUK"]),
-    ("media",    "미디어·엔터",   3, ["NFLX", "DIS"]),
-    ("crypto",   "크립토",       2, ["COIN", "MSTR", "MARA"]),
-]
-_SECTORMAP_KR = [
-    ("semi",     "반도체",       10, ["005930.KS", "000660.KS", "042700.KS", "058470.KQ", "240810.KQ"]),
-    ("battery",  "2차전지",      7, ["373220.KS", "006400.KS", "247540.KQ", "086520.KQ", "003670.KS", "051910.KS"]),
-    ("bio",      "바이오·제약",   7, ["207940.KS", "068270.KS", "196170.KQ", "000100.KS"]),
-    ("auto",     "자동차",       6, ["005380.KS", "000270.KS", "012330.KS"]),
-    ("defense",  "방산",         6, ["012450.KS", "079550.KS", "064350.KS", "047810.KS"]),
-    ("ship",     "조선",         5, ["009540.KS", "010140.KS", "042660.KS", "329180.KS"]),
-    ("internet", "인터넷·게임",   5, ["035420.KS", "035720.KS", "259960.KS", "036570.KS"]),
-    ("finance",  "금융",         5, ["105560.KS", "055550.KS", "086790.KS"]),
-    ("power",    "전력·원전",    4, ["034020.KS", "015760.KS", "052690.KS"]),
-    ("material", "화학·철강",    4, ["005490.KS", "010130.KS"]),
-    ("ent",      "엔터·미디어",  3, ["352820.KS", "041510.KQ", "035900.KQ"]),
-    ("beauty",   "화장품·소비",  3, ["090430.KS", "051900.KS", "192820.KS"]),
-]
-_SECTORMAP_CACHE = {}              # market -> (ts, payload)
-_SECTORMAP_TTL = 60 * 10           # 10분
-
-
+# ── 섹터맵: 전체 유니버스 시총가중 + 상승/하락 분포 (sector_map.py 가 백그라운드로 스냅샷 갱신) ─────
 def _stock_name(ticker, market):
     for s in STOCK_DB:
         if s.get("symbol") == ticker:
@@ -918,64 +912,14 @@ def _stock_name(ticker, market):
 
 @app.route("/api/market/sectormap")
 def market_sectormap():
-    """실전 섹터맵: 큐레이션 그룹별 등락률 + 구성종목 (10분 캐시).
-    그룹 등락률 = 구성종목 단순평균. 타일 크기는 weight(시총 근사)."""
-    market = (request.args.get("market") or "US").upper()
-    groups_def = _SECTORMAP_KR if market == "KR" else _SECTORMAP_US
-    market = "KR" if market == "KR" else "US"
-
-    now = time.time()
-    c = _SECTORMAP_CACHE.get(market)
-    if c and (now - c[0]) < _SECTORMAP_TTL:
-        return jsonify(c[1])
-
-    all_tickers = sorted({t for *_, members in groups_def for t in members})
-    changes = {}
-    try:
-        data = yf.download(
-            " ".join(all_tickers), period="5d", interval="1d",
-            group_by="ticker", progress=False, threads=True, auto_adjust=False,
-        )
-        for t in all_tickers:
-            try:
-                df = data[t].dropna(subset=["Close"])
-                if df is None or len(df) < 2:
-                    continue
-                cur = float(df["Close"].iloc[-1])
-                prev = float(df["Close"].iloc[-2])
-                if prev:
-                    changes[t] = {"price": round(cur, 2),
-                                  "change_pct": round((cur / prev - 1) * 100, 2)}
-            except Exception:
-                continue
-    except Exception as e:
-        app.logger.warning(f"[sectormap {market}] download: {e}")
-
-    groups = []
-    for key, name, weight, members in groups_def:
-        rows = []
-        for t in members:
-            ch = changes.get(t)
-            if not ch:
-                continue
-            rows.append({"ticker": t, "name": _stock_name(t, market), **ch})
-        if not rows:
-            continue
-        rows.sort(key=lambda r: r["change_pct"], reverse=True)
-        avg = sum(r["change_pct"] for r in rows) / len(rows)
-        groups.append({
-            "key": key, "name": name, "weight": weight,
-            "change_pct": round(avg, 2), "members": rows,
-        })
-
-    payload = {
-        "market": market,
-        "groups": groups,
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
-    }
-    if groups:
-        _SECTORMAP_CACHE[market] = (now, payload)
-    return jsonify(payload)
+    """최신 섹터맵 스냅샷을 즉시 돌려준다 (요청 때 시세를 받지 않음).
+    스냅샷이 아직 없으면 백그라운드로 한 번 만들기 시작하고 warming=true 를 돌려준다."""
+    market = "KR" if (request.args.get("market") or "US").upper() == "KR" else "US"
+    snap = sector_map.get(market)
+    if not snap:
+        sector_map.warmup_async((market,))
+        return jsonify({"market": market, "warming": True, "groups": []})
+    return jsonify(snap)
 
 
 # 급등/급락 관찰 유니버스 — 유동성 큰 대표주 (한국 25 + 미국 30)
@@ -6071,6 +6015,10 @@ with app.app_context():
         db.session.rollback()
         app.logger.warning(f"[BOT] 전략·계좌 초기화 실패: {e}")
 bot_engine.start_scheduler()
+
+import sector_map
+sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_LOCK})
+sector_map.start()
 
 
 def _signal_dict(s):

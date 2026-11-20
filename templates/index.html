@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=68" />
+  <link rel="stylesheet" href="/static/css/style.css?v=72" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -176,7 +176,7 @@
         <div id="mdHeatmap" class="md-heatmap">
           <div class="pf-loading">불러오는 중...</div>
         </div>
-        <p class="md-hint">색 = 등락률 · 크기 = 시가총액 규모 · 클릭하면 구성 종목</p>
+        <p class="md-hint" id="mdHeatmapHint">색 = 등락률 · 크기 = 섹터 시가총액 비중 · 클릭하면 구성 종목</p>
       </div>
 
       <div class="card md-card">
@@ -569,7 +569,7 @@
     <div class="modal-box sector-modal-box">
       <button class="modal-close" onclick="closeSectorModal()" aria-label="닫기"><svg class="icon-x" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg></button>
       <h2 class="modal-title" id="sectorModalTitle" style="font-size:17px;margin-bottom:4px">섹터</h2>
-      <p class="modal-desc" id="sectorModalDesc" style="margin-bottom:14px"></p>
+      <div class="modal-desc" id="sectorModalDesc" style="margin-bottom:14px;text-align:left"></div>
       <div id="sectorModalList" class="sector-modal-list"></div>
     </div>
   </div>
@@ -646,6 +646,6 @@
   {% include "_footer.html" %}
   <script src="/static/js/chart.js"></script>
   <script src="/static/js/notify.js?v=2"></script>
-  <script src="/static/js/main.js?v=67"></script>
+  <script src="/static/js/main.js?v=71"></script>
 </body>
 </html>
