@@ -57,6 +57,25 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 종목 스크리너 · 나란히 비교 (PR #27)
+- `screener_snapshots` 테이블(종목당 1행): 가격·등락률·시총, PER·선행PER·PBR·배당률, RSI·BB 위치·거래량 배수·MA 정배열·추세 점수,
+  펀더멘탈(Q·V·G 평균)과 세부 점수, 목표가·상승여력, 52주 고저, 주당 지표(EPS·추정EPS·BPS·주당배당금)
+- 채우는 곳 (요청 때 외부 조회 없음)
+  - 가격: `sector_map.refresh` 끝에 `screener.upsert_prices` (장중 15분·마감 후). PER 등은 주당 지표 × 최신 가격으로 다시 계산
+  - 기술 지표: `bot_engine.run_market` 이 계산한 feats 로 `screener.upsert_technicals` (장 마감 배치)
+  - 펀더멘탈: 7일보다 오래된 종목만 6초에 1종목 (한국: 네이버 integration 1회 + 4팩터, 미국: yfinance info + 4팩터). 봇 작업 중이면 쉼
+  - 첫 배포: 빈 행 생성 → 기술 지표가 비어 있으면 40종목씩 한 번 채움 → 펀더멘탈은 시총 큰 순으로 약 2시간에 걸쳐 채워짐 (화면에 "펀더멘탈 집계 중 N/887")
+  - `SCREENER_SCHEDULER=0` 이면 펀더멘탈 순환·워밍업 끔
+- 한국 PER 은 네이버의 최근 4분기 EPS 기준(예: 삼성전자 5.7배). 종목 상세 화면의 PER 은 직전 확정 연간 EPS 기준이라 다를 수 있음
+- API: `GET /api/screener` (market·preset·sector·min_fundamental·min/max_rsi·max_per·min_upside·sort_by·order·limit, DB 쿼리만),
+  `GET /api/screener/meta` (프리셋·섹터·정렬·집계 현황), `GET /api/compare?tickers=` (최대 3, 1년 일봉 10분 메모리 캐시·최대 30종목,
+  펀더멘탈이 없거나 오래된 종목만 그 자리에서 1회 받아 스냅샷에 저장)
+- 프리셋 5종: 우량주 과매도, 추세 돌파+수급, 저평가 가치주, 당일 모멘텀, AI 봇 최근 신호(7일)
+- 화면 `/screener` (상단 메뉴 '스크리너'): 스크리너 탭(시장·프리셋·세부 필터·관심종목·비교 담기·플로팅 비교 바), 비교 탭(자동완성·예시 칩·
+  URL `?tab=compare&tickers=` 동기화·3M/6M/1Y 상대 수익률 차트·항목별 비교 표, 화면에 보이는 자릿수 기준 단독 최고값에만 '우위' 배지)
+- 로컬 측정: 프리셋 응답 4~76ms, 비교 첫 호출 1.0초·캐시 38ms, 기술 지표 워밍업 +6MB, 펀더멘탈 100종목 후 추가 증가 없음(2.6초/종목)
+- 기존 한계: `/api/search` 는 미국 종목의 한글 이름(예: '애플')을 찾지 못함. 영문·티커로 검색
+
 ### PWA 웹 푸시 (PR #25) + README 최신화
 - `push_subscriptions` 테이블(기기별, endpoint 유니크, 사용자당 최대 10대). `webpush.py`: VAPID 확인·구독 저장/해제·발송·404/410 만료 구독 자동 삭제
 - 켜짐 조건: `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY` 가 있고 pywebpush 를 import 할 수 있을 때. 아니면 푸시만 꺼지고 서버·인앱 알림은 정상

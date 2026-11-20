@@ -66,7 +66,7 @@ from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
-                    BotPosition, PushSubscription)
+                    BotPosition, PushSubscription, ScreenerSnapshot)
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -6022,8 +6022,18 @@ with app.app_context():
 bot_engine.start_scheduler()
 
 import sector_map
-sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_LOCK})
+import screener
+screener.init({
+    "app": app, "db": db, "Model": ScreenerSnapshot, "AiSignal": AiSignal, "universe": sector_map.universe,
+    "download_daily": bot_engine.download_daily, "compute_features": bot_engine.compute_features,
+    "bot_lock": lambda: bot_engine._RUN_LOCK.locked(),
+    "name_of": lambda t: _stock_name(t, "KR" if t.endswith((".KS", ".KQ")) else "US"),
+})
+bot_engine.D["on_features"] = screener.upsert_technicals          # 장 마감 배치 → 스크리너 기술 지표
+sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_LOCK,
+                 "on_rows": screener.upsert_prices})               # 섹터맵 갱신 → 스크리너 가격
 sector_map.start()
+screener.start()
 
 
 def _signal_dict(s):
@@ -6564,6 +6574,48 @@ def push_test():
         "body": "푸시 알림이 정상적으로 연결됐어요. AI 봇 신호가 나오면 이렇게 알려 드립니다.",
         "url": "/ai-bots", "tag": "push-test"})
     return jsonify({"ok": r["sent"] > 0, **r})
+
+
+
+# ── 스크리너 · 종목 비교 ─────────────────────────────────────────────────────────
+@app.route("/screener")
+def screener_page():
+    return render_template("screener.html")
+
+
+@app.route("/api/screener/meta")
+def screener_meta():
+    return jsonify({"presets": screener.PRESETS, "sectors": screener.sectors(), "coverage": screener.coverage("ALL"),
+                    "sorts": [{"key": "fundamental", "name": "펀더멘탈 점수"}, {"key": "change_pct", "name": "등락률"},
+                              {"key": "upside_pct", "name": "목표가 상승여력"}, {"key": "volume_ratio", "name": "거래량 배수"},
+                              {"key": "market_cap", "name": "시가총액"}, {"key": "trend", "name": "추세 점수"},
+                              {"key": "rsi", "name": "RSI"}, {"key": "per", "name": "PER"}]})
+
+
+@app.route("/api/screener")
+def screener_api():
+    """스냅샷 DB 쿼리만으로 필터·정렬. market, preset, sector, min_fundamental, min_rsi, max_rsi, max_per,
+    min_upside, sort_by, order, limit"""
+    t0 = time.time()
+    out = screener.query(request.args)
+    out["took_ms"] = round((time.time() - t0) * 1000, 1)
+    return jsonify(out)
+
+
+_COMPARE_TICKER_RE = re.compile(r"^[A-Z0-9.\-^=]{1,30}$")
+
+
+@app.route("/api/compare")
+def compare_api():
+    """?tickers=005930.KS,000660.KS (최대 3개)"""
+    raw = [t.strip().upper() for t in (request.args.get("tickers") or "").split(",") if t.strip()]
+    tickers = [t for t in raw if _COMPARE_TICKER_RE.match(t)][:3]
+    if not tickers:
+        return jsonify({"error": "비교할 종목을 1~3개 골라 주세요"}), 400
+    t0 = time.time()
+    out = screener.compare(tickers)
+    out["took_ms"] = round((time.time() - t0) * 1000)
+    return app.response_class(json.dumps(out, cls=NumpyEncoder, ensure_ascii=False), mimetype="application/json")
 
 
 if __name__ == "__main__":
