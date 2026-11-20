@@ -64,7 +64,8 @@ from flask_login import LoginManager, login_required, current_user
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
-from models import db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW
+from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
+                    BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription)
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -5983,6 +5984,118 @@ def debug_toss():
     except Exception:
         out["toss_fx_usdkrw"] = None
     return jsonify(out)
+
+# ── AI 매매 신호 봇 (Step 1: 신호 생성 파이프라인) ───────────────────────────
+import bot_engine
+
+bot_engine.init({
+    "app": app, "db": db, "ai_cache": ai_cache, "STOCK_DB": STOCK_DB,
+    "BotStrategy": BotStrategy, "AiStockAssessment": AiStockAssessment, "AiSignal": AiSignal, "AiCache": AiCache,
+    "ai_json": _ai_json, "last_model": lambda: getattr(_AI_LAST_MODEL, "v", None),
+    "compute_dcf": compute_dcf, "get_financials": _get_financials, "get_risk_free_rate": _get_risk_free_rate,
+    "fetch_upcoming_events": fetch_upcoming_events, "fetch_kr_news": fetch_kr_news, "fetch_news": fetch_news,
+})
+with app.app_context():
+    try:
+        bot_engine.seed_strategies()
+    except Exception as e:
+        app.logger.warning(f"[BOT] 전략 초기화 실패: {e}")
+bot_engine.start_scheduler()
+
+
+def _signal_dict(s):
+    return {
+        "id": s.id, "strategy": s.strategy_key, "ticker": s.ticker, "name": s.name, "market": s.market,
+        "side": s.side, "signal_date": s.signal_date.isoformat() if s.signal_date else None,
+        "price_at_signal": s.price_at_signal, "entry_price": s.entry_price, "target_price": s.target_price,
+        "stop_price": s.stop_price, "rr": s.rr, "confidence": s.confidence, "quant_score": s.quant_score,
+        "reason": s.reason, "status": s.status, "status_reason": s.status_reason,
+        "fill_price": s.fill_price, "filled_date": s.filled_date.isoformat() if s.filled_date else None,
+        "exit_price": s.exit_price, "exit_date": s.exit_date.isoformat() if s.exit_date else None,
+        "pnl_pct": s.pnl_pct, "holding_days": s.holding_days,
+    }
+
+
+@app.route("/api/bots/signals")
+def bot_signals():
+    """최근 봇 신호 목록 (공개 읽기). ?strategy=&status=&market=&limit="""
+    q = AiSignal.query
+    strategy = (request.args.get("strategy") or "").strip()
+    status = (request.args.get("status") or "").strip().upper()
+    market = (request.args.get("market") or "").strip().upper()
+    if strategy:
+        q = q.filter(AiSignal.strategy_key == strategy)
+    if status:
+        q = q.filter(AiSignal.status == status)
+    if market:
+        q = q.filter(AiSignal.market == market)
+    try:
+        limit = max(1, min(200, int(request.args.get("limit", 50))))
+    except ValueError:
+        limit = 50
+    rows = q.order_by(AiSignal.created_at.desc(), AiSignal.id.desc()).limit(limit).all()
+    strategies = [{"key": s.key, "name": s.name, "emoji": s.emoji, "kind": s.kind, "use_ai": s.use_ai,
+                   "enabled": s.enabled} for s in BotStrategy.query.order_by(BotStrategy.id).all()]
+    return jsonify({"strategies": strategies, "signals": [_signal_dict(s) for s in rows],
+                    "kr_earnings_filter": "skipped",
+                    "disclaimer": "알고리즘 검증용 가상 모의 데이터이며 실제 투자 권유가 아닙니다."})
+
+
+@app.route("/api/bots/signals/<int:sid>")
+def bot_signal_detail(sid):
+    s = AiSignal.query.get_or_404(sid)
+    out = _signal_dict(s)
+    try:
+        out["evidence"] = json.loads(s.evidence_json) if s.evidence_json else None
+    except Exception:
+        out["evidence"] = None
+    if s.assessment_id:
+        a = AiStockAssessment.query.get(s.assessment_id)
+        if a:
+            out["ai"] = {"confidence": a.confidence, "verdict": a.verdict, "summary": a.summary,
+                         "catalyst": a.catalyst, "fatal_risk": a.fatal_risk, "structural_risk": a.structural_risk,
+                         "model": a.model_used, "as_of": a.as_of.isoformat()}
+            try:
+                payload = json.loads(a.payload_json or "{}").get("out") or {}
+                out["ai"]["positives"], out["ai"]["risks"] = payload.get("positives"), payload.get("risks")
+            except Exception:
+                pass
+    return jsonify(out)
+
+
+@app.route("/api/bots/runs")
+def bot_runs():
+    """최근 배치 요약 (후보 수, 기각 사유, 생성 신호, AI 호출 수)."""
+    rows = (AiCache.query.filter_by(cache_type="bot_run").order_by(AiCache.created_at.desc()).limit(10).all())
+    out = []
+    for r in rows:
+        try:
+            out.append(json.loads(r.payload_json))
+        except Exception:
+            pass
+    return jsonify({"runs": out, "ai_budget_limit": bot_engine.ai_budget_limit()})
+
+
+@app.route("/api/admin/bots/run", methods=["POST"])
+def admin_bots_run():
+    """소유자 전용 수동 실행. JSON {"market": "KR"|"US", "dry_run": bool}. 백그라운드로 돌고 즉시 응답."""
+    if not _is_toss_owner():
+        return jsonify({"error": "Not Found"}), 404
+    body = request.get_json(silent=True) or {}
+    market = str(body.get("market", "KR")).upper()
+    if market not in ("KR", "US"):
+        return jsonify({"error": "market 은 KR 또는 US"}), 400
+    dry = bool(body.get("dry_run"))
+
+    def _job():
+        with app.app_context():
+            try:
+                bot_engine.run_market(market, dry_run=dry)
+            finally:
+                db.session.remove()
+    _BG_EXEC.submit(_job)
+    return jsonify({"ok": True, "started": market, "dry_run": dry,
+                    "note": "결과는 /api/bots/runs 에서 확인 (수 분 소요)"})
 
 
 if __name__ == "__main__":

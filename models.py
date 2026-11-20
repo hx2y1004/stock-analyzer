@@ -177,3 +177,87 @@ class AiCache(db.Model):
     model_used   = db.Column(db.String(120))
     created_at   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     expires_at   = db.Column(db.DateTime, nullable=True)        # None = 만료 없음
+
+
+# ── AI 매매 신호 봇 (Step 1) ────────────────────────────────────────────────
+class BotStrategy(db.Model):
+    """봇 전략 설정. 파라미터는 JSON 이라 코드 수정 없이 튜닝·추가할 수 있다."""
+    __tablename__ = "bot_strategies"
+    id          = db.Column(db.Integer, primary_key=True)
+    key         = db.Column(db.String(40), nullable=False, unique=True)   # aggressive_momentum ...
+    name        = db.Column(db.String(60), nullable=False)
+    emoji       = db.Column(db.String(8))
+    kind        = db.Column(db.String(20), nullable=False)                # momentum | swing | value
+    use_ai      = db.Column(db.Boolean, default=True)
+    enabled     = db.Column(db.Boolean, default=True)
+    params_json = db.Column(db.Text, nullable=False)
+    user_id     = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)   # Step 3: 봇 모의투자 계정
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AiStockAssessment(db.Model):
+    """종목·날짜별 공통 AI 평가. 여러 봇이 같은 평가를 공유한다(종목당 하루 1회 호출)."""
+    __tablename__ = "ai_stock_assessments"
+    id          = db.Column(db.Integer, primary_key=True)
+    ticker      = db.Column(db.String(30), nullable=False, index=True)
+    as_of       = db.Column(db.Date, nullable=False, index=True)          # 시장 기준 날짜
+    confidence  = db.Column(db.Integer)                                   # 0~100
+    verdict     = db.Column(db.String(10))                                # pass | caution | reject
+    catalyst    = db.Column(db.Boolean, default=False)                    # 단기 호재·모멘텀
+    fatal_risk  = db.Column(db.Boolean, default=False)                    # 치명적 악재
+    structural_risk = db.Column(db.Boolean, default=False)                # 구조적 악재
+    summary     = db.Column(db.String(300))
+    payload_json = db.Column(db.Text)                                     # 전체 응답 + 입력 요약
+    model_used  = db.Column(db.String(120))
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("ticker", "as_of", name="uq_ai_assess_ticker_date"),)
+
+
+class AiSignal(db.Model):
+    """봇별 신호 불변 스냅샷 + 사후 결과.
+
+    status: PENDING(다음 장 체결 대기) → ACTIVE → TARGET_HIT | STOP_LOSS | TRAILING_STOP | TIME_STOP
+            | TREND_EXIT | AI_RISK_EXIT,  또는 CANCELLED(다음 장 시가가 계획을 깨뜨림)
+    """
+    __tablename__ = "ai_signals"
+    id            = db.Column(db.Integer, primary_key=True)
+    strategy_key  = db.Column(db.String(40), nullable=False, index=True)
+    ticker        = db.Column(db.String(30), nullable=False, index=True)
+    name          = db.Column(db.String(200))
+    market        = db.Column(db.String(4))                               # KR | US
+    side          = db.Column(db.String(4), nullable=False, default="BUY")
+    signal_date   = db.Column(db.Date, nullable=False)                    # 판단에 쓴 일봉 날짜
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    price_at_signal = db.Column(db.Float, nullable=False)                 # 신호 당시 종가
+    entry_price   = db.Column(db.Float)                                   # 계획 진입가(=신호 종가)
+    target_price  = db.Column(db.Float)
+    stop_price    = db.Column(db.Float)
+    rr            = db.Column(db.Float)                                   # 손익비
+    confidence    = db.Column(db.Integer)                                 # AI+정량 결합 (AI 미사용 봇은 정량)
+    quant_score   = db.Column(db.Integer)
+    assessment_id = db.Column(db.Integer, db.ForeignKey("ai_stock_assessments.id"), nullable=True)
+    reason        = db.Column(db.String(300))                             # 한 줄 근거
+    evidence_json = db.Column(db.Text)                                    # 판단 근거 전체 (불변)
+    status        = db.Column(db.String(16), nullable=False, default="PENDING", index=True)
+    status_reason = db.Column(db.String(200))
+    fill_price    = db.Column(db.Float)                                   # 다음 장 시가 체결가
+    filled_date   = db.Column(db.Date)
+    peak_price    = db.Column(db.Float)                                   # 트레일링용 최고가
+    exit_price    = db.Column(db.Float)
+    exit_date     = db.Column(db.Date)
+    pnl_pct       = db.Column(db.Float)                                   # 수수료 반영 수익률(%)
+    holding_days  = db.Column(db.Integer)                                 # 보유 거래일
+
+
+class UserSignalSubscription(db.Model):
+    """신호 알림 구독 (Step 2 화면에서 사용)."""
+    __tablename__ = "user_signal_subscriptions"
+    id             = db.Column(db.Integer, primary_key=True)
+    user_id        = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    strategy_keys  = db.Column(db.String(300), nullable=False)            # 콤마 구분
+    scope          = db.Column(db.String(20), nullable=False, default="all")   # all | portfolio | watchlist
+    min_confidence = db.Column(db.Integer, default=70)
+    enabled        = db.Column(db.Boolean, default=True)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at     = db.Column(db.DateTime, default=datetime.utcnow)
