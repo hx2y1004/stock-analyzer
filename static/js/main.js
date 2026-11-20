@@ -1454,6 +1454,30 @@ function _showExtrasError(ticker, data) {
 }
 function _retryExtras() { if (window._extrasRetry) window._extrasRetry(); }
 
+// AI(번역·기업 소개·등락 사유)가 동작하지 않을 때 이유를 짧게 알려준다 (키 값·원문 오류는 서버가 보내지 않음)
+function _renderAiStatus(st) {
+  const news = document.getElementById('newsList');
+  if (!news) return;
+  let el = document.getElementById('aiStatusNote');
+  if (!el) {
+    el = document.createElement('p');
+    el.id = 'aiStatusNote';
+    el.className = 'ai-status-note';
+    news.parentNode.insertBefore(el, news);
+  }
+  const reason = {
+    no_key:  '서버에 AI 키가 설정되지 않았어요',
+    auth:    'AI 키 인증에 실패했어요 (키 만료·오류)',
+    quota:   'AI 무료 사용 한도를 넘었어요',
+    model:   '사용할 수 있는 AI 모델을 찾지 못했어요',
+    network: 'AI 서버에 연결하지 못했어요',
+    unknown: 'AI 호출이 실패했어요',
+  }[st && st.state];
+  if (!reason) { el.textContent = ''; el.classList.add('hidden'); return; }
+  el.textContent = `AI 번역·해설을 쓰지 못하고 있어요 — ${reason}. 원문과 기본 정보로 보여드려요.`;
+  el.classList.remove('hidden');
+}
+
 async function loadAnalyzeExtras(ticker, data, refill = 0) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000);
@@ -1465,6 +1489,7 @@ async function loadAnalyzeExtras(ticker, data, refill = 0) {
     if (!res.ok) throw new Error(ex.error || res.status);
     renderAnalysts(ex.analysts, data.stock);
     renderNews(ex.news);
+    _renderAiStatus(ex.ai_status);
     renderPriceMoveBanner(data.stock, ex.move_reason);
     if (ex.company_overview) {
       // AI 기업 소개가 오면 투자 판단 탭의 회사 소개만 다시 그린다

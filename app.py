@@ -2940,8 +2940,44 @@ _AI_MODEL_TTL = 6 * 3600
 _AI_LAST_ERROR = {}           # provider → (ts, message)  (진단용, 키 값은 넣지 않음)
 
 
+_AI_LAST_OK = {}              # provider → ts (마지막 성공)
+
+
 def _ai_note_error(provider, msg):
     _AI_LAST_ERROR[provider] = (time.time(), str(msg)[:300])
+
+
+def _ai_note_ok(provider):
+    _AI_LAST_OK[provider] = time.time()
+
+
+def _ai_error_kind(msg):
+    """오류 문구 → 화면에 보여줄 분류 (키 값·원문은 노출하지 않는다)."""
+    m = (msg or "").lower()
+    if "http 401" in m or "http 403" in m or "api key" in m or "api_key" in m or "permission" in m:
+        return "auth"
+    if "http 429" in m or "quota" in m or "rate" in m or "exhausted" in m:
+        return "quota"
+    if "http 404" in m or "not found" in m or "decommission" in m or "deprecat" in m:
+        return "model"
+    if "timeout" in m or "connection" in m or "proxy" in m:
+        return "network"
+    return "unknown"
+
+
+def _ai_status():
+    """화면용 AI 상태 요약: ok / no_key / auth / quota / model / network / unknown."""
+    providers = [p for p, env in (("gemini", "GEMINI_API_KEY"), ("groq", "GROQ_API_KEY"))
+                 if os.environ.get(env, "").strip()]
+    if not providers:
+        return {"state": "no_key", "providers": []}
+    last_ok = max((_AI_LAST_OK.get(p, 0) for p in providers), default=0)
+    last_err = max((_AI_LAST_ERROR.get(p, (0, ""))  for p in providers), key=lambda x: x[0], default=(0, ""))
+    if last_ok and last_ok >= last_err[0]:
+        return {"state": "ok", "providers": providers}
+    if not last_err[0]:
+        return {"state": "ok", "providers": providers}      # 아직 호출 기록 없음
+    return {"state": _ai_error_kind(last_err[1]), "providers": providers}
 
 
 def _pick_gemini_models(names):
@@ -3082,6 +3118,7 @@ def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
                 if resp.status_code == 429:
                     wait = 1.5 * (attempt + 1)
                     app.logger.warning(f"[groq:{label}] {model_name} 429, retry in {wait}s")
+                    _ai_note_error("groq", f"{model_name} HTTP 429 rate limit")
                     time.sleep(wait)
                     continue
                 if 500 <= resp.status_code < 600:
@@ -3118,13 +3155,16 @@ def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
                 text = _strip_hanja(text, label=label)
 
                 app.logger.info(f"[groq:{label}] OK model={model_name} attempt={attempt+1}")
+                _ai_note_ok("groq")
                 return text
 
             except requests.exceptions.Timeout:
                 app.logger.warning(f"[groq:{label}] {model_name} timeout (attempt {attempt+1})")
+                _ai_note_error("groq", f"{model_name} timeout")
                 continue
             except Exception as e:
                 app.logger.error(f"[groq:{label}] {model_name} {type(e).__name__}: {e}")
+                _ai_note_error("groq", f"{model_name} {type(e).__name__}: {e}")
                 break
 
     app.logger.warning(f"[groq:{label}] 모든 모델 실패")
@@ -3164,6 +3204,7 @@ def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
                     no_thinking_cfg = True
                     continue
                 if resp.status_code == 429:
+                    _ai_note_error("gemini", f"{model_name} HTTP 429 quota")
                     app.logger.warning(f"[gemini:{label}] {model_name} 429 (무료 한도), "
                                        f"attempt {attempt+1}")
                     time.sleep(2 * (attempt + 1))
@@ -3183,13 +3224,16 @@ def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
                 text = "".join(p.get("text", "") for p in parts).strip()
                 if text:
                     app.logger.info(f"[gemini:{label}] OK model={model_name}")
+                    _ai_note_ok("gemini")
                     return text
                 break
             except requests.exceptions.Timeout:
                 app.logger.warning(f"[gemini:{label}] {model_name} timeout")
+                _ai_note_error("gemini", f"{model_name} timeout")
                 continue
             except Exception as e:
                 app.logger.error(f"[gemini:{label}] {model_name} {type(e).__name__}: {e}")
+                _ai_note_error("gemini", f"{model_name} {type(e).__name__}: {e}")
                 break
     app.logger.warning(f"[gemini:{label}] 모든 모델 실패")
     return None
@@ -3554,6 +3598,7 @@ def analyze_extra():
     done = [done_news, done_an, _take(f_ov, "company_overview", None), _take(f_mv, "move_reason", None)]
     partial = not all(done)
     out["partial"] = partial
+    out["ai_status"] = _ai_status()
     out = json.loads(json.dumps(out, cls=NumpyEncoder, ensure_ascii=False))
     with _ANALYZE_LOCK:
         # 부분 결과는 짧게(20초)만 캐시 → 화면이 다시 요청하면 그 사이 끝난 AI 결과로 채워진다
