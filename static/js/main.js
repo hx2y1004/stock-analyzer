@@ -140,70 +140,186 @@ async function loadMarketOverview() {
   return null;
 }
 
-// ── 실전 섹터맵 (핀비즈 스타일: 색 = 등락률, 크기 = 시총 근사) ──
+// ── 섹터맵: 전체 유니버스 시총가중 (색 = 등락률, 크기 = 섹터 시총 비중) ──
+// 서버가 백그라운드로 만든 스냅샷을 즉시 받는다. 두 시장 모두 받아 두어 토글 전환이 바로 된다.
 let _sectorMapData = null;
+const _sectorMapCache = {};
+let _sectorSort = 'cap';
 
+function _fmtCap(v, mkt) {
+  if (v == null || !v) return '';
+  if (mkt === 'KR') return v >= 1e12 ? (v / 1e12).toFixed(v >= 1e14 ? 0 : 1) + '조' : Math.round(v / 1e8).toLocaleString('ko-KR') + '억';
+  return v >= 1e12 ? '$' + (v / 1e12).toFixed(2) + 'T' : '$' + (v / 1e9).toFixed(1) + 'B';
+}
+
+// 스퀘어리파이드 트리맵: 면적 = 값, 가능한 한 정사각형에 가깝게 (Bruls et al.)
+function _squarify(items, x, y, w, h) {
+  const out = [];
+  const total = items.reduce((a, b) => a + b.v, 0);
+  if (!total || w <= 0 || h <= 0) return out;
+  const scale = (w * h) / total;
+  let rest = items.map(it => ({ ...it, a: it.v * scale }));
+  const worst = (row, side) => {
+    const s = row.reduce((a, b) => a + b.a, 0);
+    let mx = 0, mn = Infinity;
+    row.forEach(r => { mx = Math.max(mx, r.a); mn = Math.min(mn, r.a); });
+    return Math.max((side * side * mx) / (s * s), (s * s) / (side * side * mn));
+  };
+  while (rest.length) {
+    const side = Math.min(w, h);
+    let row = [rest[0]], i = 1;
+    while (i < rest.length && worst(row.concat([rest[i]]), side) <= worst(row, side)) { row.push(rest[i]); i++; }
+    const s = row.reduce((a, b) => a + b.a, 0);
+    if (w >= h) {                          // 왼쪽에 세로 줄
+      const cw = s / h; let cy = y;
+      row.forEach(r => { const rh = r.a / cw; out.push({ ...r, x, y: cy, w: cw, h: rh }); cy += rh; });
+      x += cw; w -= cw;
+    } else {                               // 위쪽에 가로 줄
+      const rh = s / w; let cx = x;
+      row.forEach(r => { const cw = r.a / rh; out.push({ ...r, x: cx, y, w: cw, h: rh }); cx += cw; });
+      y += rh; h -= rh;
+    }
+    rest = rest.slice(i);
+  }
+  return out;
+}
+
+function _sectorHint(d) {
+  const hint = document.getElementById('mdHeatmapHint');
+  if (!hint) return;
+  if (!d || d.warming) { hint.textContent = '섹터맵을 처음 집계하고 있어요 (1~2분). 잠시 후 자동으로 표시됩니다.'; return; }
+  const t = d.updated_at ? new Date(d.updated_at) : null;
+  const hm = t ? t.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+  const md = t ? `${t.getMonth() + 1}/${t.getDate()} ` : '';
+  const today = t && t.toDateString() === new Date().toDateString();
+  const kind = d.reason === 'close' ? '장 마감' : d.reason === 'intraday' ? '장중' : '';
+  hint.innerHTML = `주요 <b>${d.covered_count}</b>종목 시총가중 · ${today ? '' : md}${hm} 기준${kind ? ` (${kind})` : ''}`
+    + ` · 상승 <span class="up">${d.advancing_count}</span> · 하락 <span class="down">${d.declining_count}</span>`
+    + `<span class="md-hint-sub"> · 색 = 등락률, 크기 = 섹터 시가총액 비중, 클릭하면 구성 종목</span>`;
+}
+
+async function _fetchSectorMap(mkt) {
+  const r = await fetch(`/api/market/sectormap?market=${mkt}`);
+  if (!r.ok) throw 0;
+  const d = await r.json();
+  if (!d.warming) _sectorMapCache[mkt] = d;
+  return d;
+}
+
+let _sectorRetry = null;
 async function loadSectorMap() {
   const el = document.getElementById('mdHeatmap');
   if (!el) return;
-  el.innerHTML = '<div class="pf-loading">불러오는 중...</div>';
+  const mkt = _dashMarket;
+  clearTimeout(_sectorRetry);
+  if (_sectorMapCache[mkt]) renderSectorMap(_sectorMapCache[mkt]);   // 받아 둔 것 즉시 표시
+  else el.innerHTML = '<div class="pf-loading">불러오는 중...</div>';
   try {
-    const r = await fetch(`/api/market/sectormap?market=${_dashMarket}`);
-    if (!r.ok) throw 0;
-    const d = await r.json();
-    _sectorMapData = d;
-    const groups = d.groups || [];
-    if (!groups.length) { el.innerHTML = '<div class="empty-state">데이터 없음</div>'; return; }
-
-    const colorCls = (c) =>
-      c >= 2 ? 'hm-up3' : c >= 1 ? 'hm-up2' : c > 0.15 ? 'hm-up1'
-      : c <= -2 ? 'hm-dn3' : c <= -1 ? 'hm-dn2' : c < -0.15 ? 'hm-dn1' : 'hm-flat';
-    // 핀비즈처럼 시총 규모(weight)에 따라 타일 크기 차등
-    const sizeCls = (w) => w >= 9 ? 'hm-xl' : w >= 6 ? 'hm-lg' : w >= 4 ? 'hm-md' : 'hm-sm';
-
-    el.innerHTML = `<div class="hm-tree">${groups.map(g => {
-      const c = g.change_pct;
-      // 큰 타일에는 대표 종목 등락 미리보기
-      const preview = (g.weight >= 6 ? g.members.slice(0, 2) : []).map(m =>
-        `<div class="hm-mini"><span>${escapeHtmlMain(m.name)}</span><span>${fmtPct(m.change_pct)}</span></div>`
-      ).join('');
-      return `
-        <div class="hm-tile ${colorCls(c)} ${sizeCls(g.weight)}" onclick="toggleSectorDrill('${g.key}')"
-             title="${escapeHtmlMain(g.name)} ${fmtPct(c)}">
-          <div class="hm-name">${escapeHtmlMain(g.name)}</div>
-          <div class="hm-chg">${fmtPct(c)}</div>
-          ${preview}
-        </div>`;
-    }).join('')}</div>`;
+    const d = await _fetchSectorMap(mkt);
+    if (mkt !== _dashMarket) return;
+    if (d.warming) {
+      _sectorHint(d);
+      if (!_sectorMapCache[mkt]) el.innerHTML = '<div class="pf-loading">섹터 집계 준비 중...</div>';
+      _sectorRetry = setTimeout(loadSectorMap, 15000);
+      return;
+    }
+    renderSectorMap(d);
+    const other = mkt === 'KR' ? 'US' : 'KR';                       // 다른 시장도 미리 받아 둠
+    if (!_sectorMapCache[other]) _fetchSectorMap(other).catch(() => {});
   } catch (e) {
-    el.innerHTML = '<div class="empty-state">불러오기 실패 — 잠시 후 다시 시도해주세요</div>';
+    if (!_sectorMapCache[mkt]) el.innerHTML = '<div class="empty-state">불러오기 실패 — 잠시 후 다시 시도해주세요</div>';
   }
 }
 
-// 타일 클릭 → 구성 종목 모달 (응답에 이미 포함돼 있어 추가 요청 없음)
+function renderSectorMap(d) {
+  const el = document.getElementById('mdHeatmap');
+  if (!el) return;
+  _sectorMapData = d;
+  _sectorHint(d);
+  const groups = (d.groups || []).filter(g => g.market_cap > 0);
+  if (!groups.length) { el.innerHTML = '<div class="empty-state">데이터 없음</div>'; return; }
+  const W = el.clientWidth || 600;
+  const H = W < 520 ? Math.round(W * 0.95) : Math.max(300, Math.round(W * 0.56));
+  const colorCls = (c) =>
+    c >= 2 ? 'hm-up3' : c >= 1 ? 'hm-up2' : c > 0.15 ? 'hm-up1'
+    : c <= -2 ? 'hm-dn3' : c <= -1 ? 'hm-dn2' : c < -0.15 ? 'hm-dn1' : 'hm-flat';
+  const rects = _squarify(groups.map(g => ({ g, v: g.market_cap })), 0, 0, W, H);
+  el.innerHTML = `<div class="hm-treemap" style="height:${H}px">${rects.map(({ g, x, y, w, h }) => {
+    const c = g.change_pct;
+    const big = w >= 150 && h >= 96, mid = w >= 74 && h >= 56, tiny = w < 40 || h < 30, narrow = !tiny && w < 84;
+    const breadth = mid ? `<span class="hm-br">${g.advancing_count}↑ ${g.declining_count}↓</span>` : '';
+    const nPrev = big ? Math.max(0, Math.min(3, Math.floor((h - 78) / 18))) : 0;   // 높이에 들어가는 만큼만
+    const preview = nPrev ? g.members.slice(0, nPrev).map(m =>
+      `<span class="hm-mini"><span>${escapeHtmlMain(m.name)}</span><span>${fmtPct(m.change_pct)}</span></span>`).join('') : '';
+    const label = `${g.name} ${fmtPct(c)} · 상승 ${g.advancing_count} 하락 ${g.declining_count} 보합 ${g.unchanged_count} · 시총 비중 ${g.cap_share}%`;
+    return `<button type="button" class="hm-tile hm-abs ${colorCls(c)}${big ? ' hm-big' : ''}${tiny ? ' hm-tiny' : ''}${narrow ? ' hm-narrow' : ''}"
+        style="left:${(x / W * 100).toFixed(3)}%;top:${y.toFixed(1)}px;width:${(w / W * 100).toFixed(3)}%;height:${h.toFixed(1)}px"
+        onclick="toggleSectorDrill('${g.key}')" title="${escapeHtmlMain(label)}" aria-label="${escapeHtmlMain(label)}">
+        <span class="hm-in">${tiny ? '' : `<span class="hm-name">${escapeHtmlMain(g.name)}</span><span class="hm-chg">${fmtPct(c)}</span>`}${breadth}${preview}</span>
+      </button>`;
+  }).join('')}</div>`;
+}
+
+let _smResize = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_smResize);
+  _smResize = setTimeout(() => { if (_sectorMapData && !_sectorMapData.warming) renderSectorMap(_sectorMapData); }, 200);
+});
+
+// 타일 클릭 → 구성 종목 모달 (스냅샷에 이미 포함돼 있어 추가 요청 없음)
 function toggleSectorDrill(key) {
   if (!_sectorMapData) return;
   const g = (_sectorMapData.groups || []).find(x => x.key === key);
   if (!g) return;
   const title = document.getElementById('sectorModalTitle');
   const desc = document.getElementById('sectorModalDesc');
-  const list = document.getElementById('sectorModalList');
-  if (!title || !list) return;
+  if (!title) return;
   const c = g.change_pct;
-  title.textContent = `${_dashMarket === 'KR' ? '🇰🇷' : '🇺🇸'} ${g.name}`;
-  desc.innerHTML = `오늘 <span class="${c > 0 ? 'up' : c < 0 ? 'down' : ''}" style="font-weight:700">${c > 0 ? '+' : ''}${c}%</span> · 종목을 누르면 분석 페이지로 이동`;
-  list.innerHTML = g.members.map(m => {
+  const mkt = _sectorMapData.market;
+  title.textContent = `${mkt === 'KR' ? '🇰🇷' : '🇺🇸'} ${g.name}`;
+  const n = g.total_count || 1;
+  const pa = g.advancing_count / n * 100, pu = g.unchanged_count / n * 100, pd = g.declining_count / n * 100;
+  desc.innerHTML = `
+    <div class="sm-summary">
+      <span class="sm-chg ${c > 0 ? 'up' : c < 0 ? 'down' : ''}">${fmtPct(c)}</span>
+      <span class="sm-basis">${g.basis === 'simple' ? '단순 평균' : '시총가중'} · ${g.total_count}종목 · 시총 ${_fmtCap(g.market_cap, mkt)} (시장의 ${g.cap_share}%)</span>
+    </div>
+    <div class="sm-bar" role="img" aria-label="상승 ${g.advancing_count}, 보합 ${g.unchanged_count}, 하락 ${g.declining_count}">
+      <i class="sm-adv" style="width:${pa}%"></i><i class="sm-unch" style="width:${pu}%"></i><i class="sm-dec" style="width:${pd}%"></i>
+    </div>
+    <div class="sm-bar-legend"><span class="up">상승 ${g.advancing_count}</span><span>보합 ${g.unchanged_count}</span><span class="down">하락 ${g.declining_count}</span></div>
+    <div class="sm-sort" role="group" aria-label="정렬">
+      ${[['cap', '시총순'], ['up', '상승순'], ['down', '하락순']].map(([k, l]) =>
+        `<button type="button" class="sm-sort-btn${_sectorSort === k ? ' active' : ''}" data-sort="${k}" aria-pressed="${_sectorSort === k}">${l}</button>`).join('')}
+      <span class="sm-sort-hint">종목을 누르면 분석 페이지로</span>
+    </div>`;
+  desc.querySelectorAll('.sm-sort-btn').forEach(b => b.onclick = () => {
+    _sectorSort = b.dataset.sort;
+    desc.querySelectorAll('.sm-sort-btn').forEach(x => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
+    _renderSectorMembers(g, mkt);
+  });
+  _renderSectorMembers(g, mkt);
+  document.getElementById('sectorModal').classList.remove('hidden');
+}
+
+function _renderSectorMembers(g, mkt) {
+  const list = document.getElementById('sectorModalList');
+  const rows = g.members.slice();
+  if (_sectorSort === 'up') rows.sort((a, b) => b.change_pct - a.change_pct);
+  else if (_sectorSort === 'down') rows.sort((a, b) => a.change_pct - b.change_pct);
+  else rows.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+  list.innerHTML = rows.map(m => {
     const cls = m.change_pct > 0 ? 'up' : m.change_pct < 0 ? 'down' : '';
-    const cur = _dashMarket === 'KR'
+    const cur = mkt === 'KR'
       ? Math.round(m.price).toLocaleString('ko-KR') + '원'
       : '$' + Number(m.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return `<button class="sector-modal-item" onclick="gotoStock('${m.ticker}')">
-        <span class="smi-name">${escapeHtmlMain(m.name)}</span>
+        <span class="smi-name"><span class="smi-nm">${escapeHtmlMain(m.name)}</span><span class="smi-cap">${_fmtCap(m.market_cap, mkt)}</span></span>
         <span class="smi-price">${cur}</span>
         <span class="smi-chg ${cls}">${fmtPct(m.change_pct)}</span>
       </button>`;
   }).join('');
-  document.getElementById('sectorModal').classList.remove('hidden');
+  list.scrollTop = 0;
 }
 
 function closeSectorModal(event) {
@@ -211,6 +327,10 @@ function closeSectorModal(event) {
     document.getElementById('sectorModal').classList.add('hidden');
   }
 }
+document.addEventListener('keydown', (e) => {
+  const m = document.getElementById('sectorModal');
+  if (e.key === 'Escape' && m && !m.classList.contains('hidden')) m.classList.add('hidden');
+});
 
 async function loadMovers() {
   try {

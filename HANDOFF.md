@@ -57,6 +57,17 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 섹터맵 개편 (PR #24) — 전체 유니버스 시총가중 + 상승/하락 분포 + 백그라운드 스냅샷
+- 대상: `stock_db.json` 전체(한국 350 / 미국 537). 섹터 분류·미국 발행주식수는 `sector_universe.json`(정적, `build_sector_universe.py` 로 생성)
+  - 한국: 네이버 업종 79개 → 대분류 16개(반도체, IT·전자부품, 2차전지·화학 …). 미국: S&P 500 GICS 11개 + 반도체 분리, 나머지 나스닥은 yfinance
+  - 자동 분류가 틀린 종목은 스크립트의 `OVERRIDE` 로 손보정. 분기에 한 번쯤 다시 생성 권장(편입·주식수 변화)
+- 시세: 한국은 네이버 '시가총액순' 목록 API(100종목씩, 가격·등락률·시총), 미국은 yfinance 5일 일봉 40개 묶음 → 시총 = 현재가 × 발행주식수
+- 집계: 섹터 등락률 = Σ(시총×등락률)/Σ시총, 트리맵 면적 = 섹터 시총 비중, 섹터마다 total/advancing/declining/unchanged. 시총 없는 종목은 가중치에서만 빠짐(분포엔 포함), 섹터 전체가 시총 없으면 단순 평균(`basis: simple`)
+- 저장: `ai_cache` 의 `sectormap:KR`/`sectormap:US` 한 줄(종목당 6개 필드) + 메모리. `/api/market/sectormap` 은 이 스냅샷만 즉시 반환(로컬 2~3ms). 없으면 `warming: true` 를 주고 백그라운드로 한 번 생성
+- 갱신(`sector_map.py` 스레드, `SECTORMAP_SCHEDULER=0` 으로 끔): 장중 15분마다 매시 7·22·37·52분, 마감 후 확정 1회(한국 15:40 · 미국 16:20 현지), 주말·휴장일(받은 데이터 날짜 ≠ 오늘) 스킵. 봇 장중 체크는 매 5분 정각으로 맞춰 겹치지 않게 했고, 봇 작업 중이면 섹터맵이 잠깐 미룸
+- 로컬 측정: 한국 갱신 약 26초, 미국 약 44초. 프로세스 메모리 +6MB(한국) / +22MB(미국, 첫 회 pandas·yfinance 로딩 포함), 이후 반복해도 증가 없음. 스냅샷 JSON 한국 49KB · 미국 74KB
+- 같은 PR: 시황 카드의 KOSPI·KOSDAQ 을 네이버 값으로. Yahoo 는 장 마감 후 당일 봉 종가가 비어 전날 값(+1.39%)이 오늘처럼 보였다(실제 -5.21%)
+
 ### AI 매매 신호 봇 Step 3 (PR #19) — 봇 가상 계좌 · 자동 매매 · /ai-bots
 - 봇 계좌: 전략마다 `users` 행 1개(`provider='bot'`, `provider_id`=전략 키, 1억 원). 앱 시작 시 `bot_trader.ensure_accounts()` 가 없으면 만든다. 로그인 불가(OAuth 제공자가 아님)
 - 새 테이블 `bot_positions`: 신호 1건 ↔ 봇 계좌 거래. OPEN/CLOSED/SKIPPED(현금·비중·보유 수 한도로 못 삼)

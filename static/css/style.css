@@ -5073,3 +5073,56 @@ button, input, select, textarea { font-family: inherit; }
 #abTrades { min-height: 96px; transition: opacity .15s; }
 #abTrades.is-loading { opacity: .5; pointer-events: none; }
 #abTrades .ab-empty { min-height: 72px; display: flex; align-items: center; margin: 0; }
+
+/* ── 섹터맵: 진짜 트리맵(면적 = 섹터 시총 비중) ─────────────────────── */
+.hm-treemap { position: relative; width: 100%; }
+.hm-abs { position: absolute; box-sizing: border-box; min-height: 0; margin: 0; border: 2px solid var(--bg2);
+  border-radius: 8px; padding: 8px 10px; justify-content: flex-start; align-items: flex-start; text-align: left;
+  overflow: hidden; font: inherit; color: #fff; }
+.hm-abs:hover { transform: none; border-color: rgba(255,255,255,.55); z-index: 1; }
+.hm-abs:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
+.hm-abs .hm-name { max-width: 100%; }
+.hm-big .hm-name { font-size: 15px; }
+.hm-big .hm-chg { font-size: 19px; }
+.hm-br { font-size: 11px; color: rgba(255,255,255,.88); margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hm-abs .hm-mini { width: 100%; }
+.hm-tiny { padding: 0; }
+.md-hint b { color: var(--text); font-weight: 700; }
+.md-hint .up { color: var(--green); font-weight: 700; }
+.md-hint .down { color: var(--red); font-weight: 700; }
+@media (max-width: 640px) { .md-hint-sub { display: none; } .hm-abs { padding: 6px 7px; border-radius: 6px; } }
+
+/* 섹터 모달: 요약 · 상승/보합/하락 비율 바 · 정렬 */
+.sm-summary { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sm-chg { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sm-chg.up { color: var(--green); } .sm-chg.down { color: var(--red); }
+.sm-basis { font-size: 12px; color: var(--text2); }
+.sm-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 10px 0 4px; background: var(--bg3); gap: 2px; }
+.sm-bar i { display: block; height: 100%; }
+.sm-bar i[style="width:0%"] { display: none; }
+.sm-adv { background: var(--green); } .sm-unch { background: #6e7681; } .sm-dec { background: var(--red); }
+.sm-bar-legend { display: flex; gap: 12px; font-size: 12px; color: var(--text2); }
+.sm-bar-legend .up { color: var(--green); } .sm-bar-legend .down { color: var(--red); }
+.sm-sort { display: flex; align-items: center; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.sm-sort-btn { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border); background: transparent;
+  color: var(--text2); font-size: 12px; cursor: pointer; }
+.sm-sort-btn.active { background: var(--bg3); color: var(--text); border-color: var(--text2); }
+.sm-sort-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sm-sort-hint { margin-left: auto; font-size: 11px; color: var(--text2); }
+.smi-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.smi-cap { font-size: 11px; color: var(--text2); font-weight: 400; flex: 0 0 auto; }
+.sector-modal-box { max-width: 460px; }
+.hm-narrow { padding: 5px 6px; }
+.hm-narrow .hm-name { font-size: 10.5px; }
+.hm-narrow .hm-chg { font-size: 11px; margin-top: 1px; }
+/* 버튼은 내용을 세로 가운데로 두어 넘치면 위가 잘린다 → 안쪽 블록을 위·왼쪽에 고정 */
+.hm-abs { display: block; padding: 0; }
+.hm-in { position: absolute; inset: 0; padding: 8px 10px; display: flex; flex-direction: column; align-items: stretch;
+  justify-content: flex-start; overflow: hidden; }
+.hm-in > .hm-name, .hm-in > .hm-chg, .hm-in > .hm-br { display: block; }
+.hm-in > .hm-mini { display: flex; }
+.hm-narrow .hm-in { padding: 5px 6px; }
+@media (max-width: 640px) { .hm-in { padding: 6px 7px; } }
+.smi-name { overflow: visible; }
+.smi-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.hm-in > * { flex-shrink: 0; }
