@@ -62,12 +62,22 @@ if _db_url.startswith("postgres://"):          # Railway 구버전 호환
     _db_url = _db_url.replace("postgres://", "postgresql://", 1)
 
 app = Flask(__name__)
+
+# 운영 여부: 운영 DB(DATABASE_URL)가 있거나 예전 Railway 배포면 운영으로 본다.
+# (예전에는 RAILWAY_ENVIRONMENT 만 봐서 Oracle 서버에서는 운영 보호가 꺼져 있었다)
+IS_PRODUCTION = bool(os.environ.get("DATABASE_URL") or os.environ.get("RAILWAY_ENVIRONMENT"))
+
 _secret = os.environ.get("FLASK_SECRET_KEY", "").strip()
 if not _secret:
-    if os.environ.get("RAILWAY_ENVIRONMENT"):
-        # 운영에서 시크릿 키 없이 뜨면 세션 위조 가능 → 기동 자체를 막음
-        raise RuntimeError("FLASK_SECRET_KEY 환경변수가 설정되지 않았습니다 (운영 환경 필수)")
-    _secret = "dev-only-change-in-production"
+    if IS_PRODUCTION:
+        # 공개된 기본 키를 쓰면 누구나 세션 쿠키를 위조할 수 있다. 기동을 막으면 자동 롤백되므로
+        # 대신 프로세스마다 임의 키를 만든다 (재시작 시 로그인이 풀리는 것 외에는 안전).
+        import secrets as _secrets
+        _secret = _secrets.token_hex(32)
+        print("[security] FLASK_SECRET_KEY 미설정 — 임시 랜덤 키 사용 (재시작 시 로그인 해제). "
+              ".env 에 FLASK_SECRET_KEY 를 설정하세요.", flush=True)
+    else:
+        _secret = "dev-only-change-in-production"
 app.secret_key = _secret
 app.config["SQLALCHEMY_DATABASE_URI"]        = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -4123,6 +4133,9 @@ def import_toss_portfolio():
     #   - TOSS_OWNER_USER_IDS: 콤마구분 user id 목록 (카카오는 이메일 미제공 → id로)
     owner_emails = {e.strip() for e in os.environ.get("TOSS_OWNER_EMAIL", "").lower().split(",") if e.strip()}
     owner_ids    = {i.strip() for i in os.environ.get("TOSS_OWNER_USER_IDS", "").split(",") if i.strip()}
+    if not (owner_emails or owner_ids) and IS_PRODUCTION:
+        # 소유자 미지정 상태의 운영에서는 아무나 소유자 계좌를 불러올 수 있으므로 차단
+        return jsonify({"error": "토스 계좌 연동 소유자가 설정되지 않았습니다 (TOSS_OWNER_EMAIL 또는 TOSS_OWNER_USER_IDS)"}), 403
     if owner_emails or owner_ids:
         my_email = (current_user.email or "").strip().lower()
         my_id    = str(current_user.id)
@@ -5412,7 +5425,7 @@ def _is_toss_owner() -> bool:
     owner_emails = {e.strip() for e in os.environ.get("TOSS_OWNER_EMAIL", "").lower().split(",") if e.strip()}
     owner_ids    = {i.strip() for i in os.environ.get("TOSS_OWNER_USER_IDS", "").split(",") if i.strip()}
     if not (owner_emails or owner_ids):
-        return not os.environ.get("RAILWAY_ENVIRONMENT")
+        return not IS_PRODUCTION      # 소유자 미지정: 로컬 개발에서만 허용
     if not current_user.is_authenticated:
         return False
     my_email = (current_user.email or "").strip().lower()
