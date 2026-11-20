@@ -3530,8 +3530,11 @@ _EXTRA_TTL = 300
 
 @app.route("/api/analyze/extra", methods=["GET"])
 def analyze_extra():
-    """/api/analyze 가 먼저 화면을 그린 뒤 부르는 부가 섹션.
-    analyze 캐시(5분)에 남은 stock_data/info/ai_result 를 재사용해 같은 계산을 반복하지 않는다."""
+    """/api/analyze 가 먼저 화면을 그린 뒤 부르는 부가 섹션 (뉴스·애널리스트·AI 3종).
+
+    어떤 부분이 실패해도 나머지는 돌려준다(항상 200). 뉴스·애널리스트는 분석 맥락 없이 바로 시작하고,
+    AI 는 분석 맥락(메모리 → DB → 백그라운드 재분석 순)을 찾은 경우에만 돌린다.
+    """
     ticker = request.args.get("ticker", "").strip().upper()
     interval = request.args.get("interval", "1d")
     if interval not in ("1d", "1wk", "1mo"):
@@ -3543,41 +3546,61 @@ def analyze_extra():
     if hit and (time.time() - hit[0]) < _EXTRA_TTL:
         return jsonify(hit[1])
 
-    cached = _analyze_cache_get((ticker, interval)) or _analyze_cache_get((ticker, "1d"))
-    if not cached:
-        # 캐시가 만료됐으면 본 분석을 먼저 돌려 채운다 (드문 경우)
-        resp = analyze()
-        if getattr(resp, "status_code", 200) != 200:
-            return resp
-        cached = _analyze_cache_get((ticker, interval))
-        if not cached:
-            return jsonify({"error": "분석 데이터를 찾을 수 없습니다"}), 404
-    ctx = cached[2]
-    stock_data = dict(ctx.get("stock_data") or {})
-    info = ctx.get("info") or {}
-    ai_result = ctx.get("ai_result") or {}
-    name = stock_data.get("name") or ticker
+    t_start = time.time()
     is_kr = ticker.endswith((".KS", ".KQ"))
     stock = yf.Ticker(ticker)
-
+    code = ticker.split(".")[0]
     out = {"news": [], "analysts": None, "move_reason": None, "company_overview": None,
            "valuation_comment": None}
+    timing, problems = {}, []
 
-    # 뉴스·애널리스트(외부 데이터)와 AI 2종(기업 소개 30일 캐시 / 종목 인사이트 1회 통합 호출)을
-    # 동시에 돌리고, 뉴스·애널리스트가 준비되면 AI 는 3초만 더 기다린다. 늦은 AI 는 백그라운드에서 끝까지 돌아
-    # DB 캐시를 채우고, 화면이 다시 받아 채운다.
-    def _news():
-        return fetch_kr_news(ticker.split(".")[0]) if is_kr else fetch_news(stock)
+    def _timed(name, fn, *a):
+        t0 = time.time()
+        try:
+            return fn(*a)
+        finally:
+            timing[name] = round(time.time() - t0, 2)
+
+    # ① 외부 데이터: 분석 맥락과 무관하게 바로 시작
+    f_news = _BG_EXEC.submit(_timed, "news", lambda: fetch_kr_news(code) if is_kr else fetch_news(stock))
+    ctx_holder = {}
 
     def _analysts():
-        return fetch_kr_analysts(ticker.split(".")[0]) if is_kr else fetch_analysts(stock, info)
+        if is_kr:
+            return fetch_kr_analysts(code)
+        info = (ctx_holder.get("ctx") or {}).get("info") or (stock.info or {})
+        return fetch_analysts(stock, info)
+    f_an = _BG_EXEC.submit(_timed, "analysts", _analysts)
 
-    def _overview():
-        return fetch_company_overview(ticker, name, info, stock_data.get("revenue_quarters", []),
-                                      stock_data.get("currency", "USD"))
+    # ② 분석 맥락: 메모리(같은 프로세스) → DB(다른 프로세스·재시작 후) → 백그라운드 재분석(8초까지만 대기)
+    ctx = None
+    try:
+        mem = _analyze_cache_get((ticker, interval)) or _analyze_cache_get((ticker, "1d"))
+        if mem:
+            ctx = mem[2]
+        else:
+            dbh = ai_cache.get(f"analysis_ctx:{ticker}")
+            if dbh:
+                ctx = dbh[0]
+            else:
+                problems.append("ctx_miss")
+                def _reanalyze():
+                    with app.test_request_context(f"/api/analyze?ticker={ticker}&interval={interval}"):
+                        analyze()
+                    m = _analyze_cache_get((ticker, interval))
+                    return m[2] if m else None
+                # 재분석은 백그라운드에서 끝까지 돌고(결과는 메모리·DB 맥락 캐시에 남음), 여기선 8초까지만 기다린다
+                fut = _BG_EXEC.submit(lambda: ai_cache.single_flight(f"reanalyze:{ticker}", _reanalyze))
+                try:
+                    ctx = fut.result(timeout=8)
+                except Exception:
+                    ctx = None
+    except Exception as e:
+        problems.append(f"ctx_error:{type(e).__name__}")
+        app.logger.warning(f"[extra] ticker={ticker} 분석 맥락 조회 실패: {e}")
+    ctx_holder["ctx"] = ctx
 
     deadline = time.time() + 10
-    f_news, f_an, f_ov = _BG_EXEC.submit(_news), _BG_EXEC.submit(_analysts), _BG_EXEC.submit(_overview)
 
     def _take(fut, key, default):
         try:
@@ -3585,41 +3608,66 @@ def analyze_extra():
             return True
         except Exception as e:
             if not fut.done():
+                problems.append(f"{key}_slow")
                 return False            # 시간 초과 — 백그라운드에서 계속 돈다
-            app.logger.warning(f"[extra] {key} {ticker}: {e}")
+            problems.append(f"{key}_error:{type(e).__name__}")
+            app.logger.warning(f"[extra] ticker={ticker} {key} 실패: {e}")
             out[key] = default
             return True
 
     done_news = _take(f_news, "news", [])
     news_list = out["news"] or []
-    f_ins = _BG_EXEC.submit(get_stock_insight, ticker, name, stock_data, ai_result, news_list, is_kr)
     done_an = _take(f_an, "analysts", None)
-    deadline = min(deadline, time.time() + 3)
-    done_ov = _take(f_ov, "company_overview", None)
-    ins = None
-    try:
-        ins = f_ins.result(timeout=max(0.1, deadline - time.time()))
-        done_ins = True
-    except Exception:
-        done_ins = f_ins.done()
-    if ins:
-        out["move_reason"] = ins.get("move_reason")
-        out["valuation_comment"] = ins.get("valuation_comment")
-        tr = ins.get("news_tr") or {}
-        for n in news_list:
-            t = tr.get(_news_id(n))
-            if t:
-                n["title_orig"] = n.get("title_orig") or n["title"]
-                n["title"] = t.get("title") or n["title"]
-                if t.get("summary"):
-                    n["desc"] = t["summary"]
-    else:
-        out["move_reason"] = _move_reason_fallback(stock_data.get("price_change_pct"), news_list)
-    done = [done_news, done_an, done_ov, done_ins]
-    partial = not all(done)
+
+    # ③ AI: 맥락이 있을 때만. 뉴스·애널리스트 결과와 무관하게 진행(뉴스가 없으면 없는 대로)
+    ai_done = False
+    if ctx:
+        stock_data = dict(ctx.get("stock_data") or {})
+        info = ctx.get("info") or {}
+        ai_result = ctx.get("ai_result") or {}
+        name = stock_data.get("name") or ticker
+        f_ov = _BG_EXEC.submit(_timed, "overview", fetch_company_overview, ticker, name, info,
+                               stock_data.get("revenue_quarters", []), stock_data.get("currency", "USD"))
+        f_ins = _BG_EXEC.submit(_timed, "insight", get_stock_insight, ticker, name, stock_data, ai_result,
+                                news_list, is_kr)
+        deadline = min(deadline, time.time() + 3) if (done_news and done_an) else deadline
+        done_ov = _take(f_ov, "company_overview", None)
+        ins = None
+        try:
+            ins = f_ins.result(timeout=max(0.1, deadline - time.time()))
+            done_ins = True
+        except Exception as e:
+            done_ins = f_ins.done()
+            if not done_ins:
+                problems.append("insight_slow")
+            else:
+                problems.append(f"insight_error:{type(e).__name__}")
+                app.logger.warning(f"[extra] ticker={ticker} insight 실패: {e}")
+        if ins:
+            out["move_reason"] = ins.get("move_reason")
+            out["valuation_comment"] = ins.get("valuation_comment")
+            tr = ins.get("news_tr") or {}
+            for n in news_list:
+                t = tr.get(_news_id(n))
+                if t:
+                    n["title_orig"] = n.get("title_orig") or n["title"]
+                    n["title"] = t.get("title") or n["title"]
+                    if t.get("summary"):
+                        n["desc"] = t["summary"]
+        else:
+            out["move_reason"] = _move_reason_fallback(stock_data.get("price_change_pct"), news_list)
+        ai_done = done_ov and done_ins
+    partial = not (done_news and done_an and ai_done)
     out["partial"] = partial
     out["ai_status"] = _ai_status()
-    out = json.loads(json.dumps(out, cls=NumpyEncoder, ensure_ascii=False))
+    # 이번 응답이 아직 AI 를 기다리는 중이면 '실패'로 표시하지 않는다 (화면 깜빡임 방지)
+    out["ai_pending"] = bool(partial)
+    app.logger.info(f"[extra] ticker={ticker} total={time.time() - t_start:.2f}s parts={timing} "
+                    f"partial={partial} ctx={'yes' if ctx else 'no'} problems={problems or '-'}")
+    try:
+        out = json.loads(json.dumps(out, cls=NumpyEncoder, ensure_ascii=False))
+    except Exception as e:
+        app.logger.warning(f"[extra] ticker={ticker} 직렬화 실패: {e}")
     with _ANALYZE_LOCK:
         # 부분 결과는 캐시하지 않는다 → 화면이 다시 요청하면 그 사이 끝난 AI 결과(DB 캐시)로 채워진다
         if not partial:
@@ -3660,6 +3708,19 @@ def analyze():
 
     # 5분 안에 같은 종목·봉을 분석했으면 그 결과를 쓰고, 내 포지션만 새로 붙인다
     cached = _analyze_cache_get((ticker, interval))
+    if not cached:
+        # 다른 프로세스나 재시작 전에 만든 결과가 DB 에 있으면 그것을 쓴다
+        try:
+            dbb = ai_cache.get(f"analysis_body:{ticker}:{interval}", use_mem=False)
+            dbc = ai_cache.get(f"analysis_ctx:{ticker}") if dbb else None
+            if dbb and dbc:
+                import gzip as _gz, base64 as _b64
+                body = _gz.decompress(_b64.b64decode(dbb[0]["b"])).decode("utf-8")
+                _analyze_cache_put((ticker, interval), body, dbc[0])
+                cached = _analyze_cache_get((ticker, interval))
+                app.logger.info(f"[analyze] ticker={ticker} DB 캐시 사용")
+        except Exception as e:
+            app.logger.warning(f"[analyze] ticker={ticker} DB 캐시 읽기 실패: {e}")
     if cached:
         ctx = cached[2]
         try:
@@ -4265,9 +4326,19 @@ def analyze():
             },
             cls=NumpyEncoder, ensure_ascii=False,
         )
-        _analyze_cache_put((ticker, interval), base_body,
-                           {"stock_data": stock_data, "info": info,
-                            "current_price": current_price, "ai_result": ai_result})
+        _ctx = {"stock_data": stock_data, "info": info, "current_price": current_price, "ai_result": ai_result}
+        _analyze_cache_put((ticker, interval), base_body, _ctx)
+        try:
+            # numpy 값 등을 JSON 으로 정리해 DB 에 1시간 보관 (가벼운 맥락만, 차트 제외)
+            _ctx_json = json.loads(json.dumps(_ctx, cls=NumpyEncoder, ensure_ascii=False))
+            _BG_EXEC.submit(ai_cache.put, f"analysis_ctx:{ticker}", ticker, "analysis_ctx", _ctx_json, None, 3600)
+            # 분석 본문(차트 포함, 수 MB)도 압축해 5분 보관 → 다른 프로세스·재시작 후 재진입도 즉시
+            import gzip as _gz, base64 as _b64
+            _packed = {"b": _b64.b64encode(_gz.compress(base_body.encode("utf-8"), 5)).decode("ascii")}
+            _BG_EXEC.submit(ai_cache.put, f"analysis_body:{ticker}:{interval}", ticker, "analysis_body",
+                            _packed, None, _ANALYZE_TTL, False, True)
+        except Exception as e:
+            app.logger.warning(f"[analyze] ticker={ticker} 맥락 저장 실패: {e}")
         return _analyze_response(base_body, position_data)
 
     except Exception as e:
