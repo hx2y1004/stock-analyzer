@@ -37,8 +37,15 @@ try:
             try:
                 return fut.result(timeout=timeout)
             except Exception as e:
-                # timeout 또는 네트워크 에러 → 원문 그대로
+                # timeout 또는 네트워크 에러 → 원문 그대로. 원인은 10분에 한 번 로그로 남긴다
+                # (데이터센터 IP 는 Google 이 /sorry 봇 확인 페이지로 돌려보내 실패하는 경우가 많다)
+                global _TR_LAST_WARN
+                if time.time() - _TR_LAST_WARN > 600:
+                    _TR_LAST_WARN = time.time()
+                    print(f"[translate] google 번역 실패 → 원문 사용: {type(e).__name__}: {str(e)[:160]}", flush=True)
                 return text
+
+    _TR_LAST_WARN = 0.0
 
     def _translate_batch(texts):
         with _TPE(max_workers=6) as ex:
@@ -2625,6 +2632,62 @@ def _fetch_kr_news_uncached(krx_code, limit=8):
         return []
 
 
+_NEWS_TR_CACHE = {}        # 원문 제목 → (번역 제목, 번역 요약)
+
+
+def _translate_news_items(raw):
+    """뉴스 제목·요약을 한글로. AI(Gemini/Groq) 한 번 호출로 일괄 번역하고, 실패하면 Google 번역, 그것도 안 되면 원문.
+
+    deep_translator 는 translate.google.com 웹페이지를 긁는 방식이라 서버(데이터센터) IP 에서는
+    Google 봇 확인 페이지로 막혀 조용히 원문만 돌려주는 일이 많았다.
+    """
+    pending = [r for r in raw if r["title"] not in _NEWS_TR_CACHE and not _has_korean_text(r["title"])]
+    if pending and (os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip()):
+        payload = [{"t": r["title"], "d": r["desc"]} for r in pending]
+        text = _ai_chat(
+            system_msg=("당신은 경제 뉴스 번역가입니다. 영어 금융 뉴스를 자연스러운 한국어로 번역합니다. "
+                        "한자는 쓰지 않고, 회사명·티커·인명은 원문 그대로 둬도 됩니다."),
+            user_msg=("다음 JSON 배열의 각 항목에서 t(제목)와 d(요약)를 한국어로 번역하세요. "
+                      "같은 순서, 같은 개수의 JSON 배열 [{\"t\":...,\"d\":...}] 만 출력하고 다른 말은 쓰지 마세요.\n"
+                      + json.dumps(payload, ensure_ascii=False)),
+            max_tokens=1800, temperature=0.2, label="news_translate",
+        )
+        try:
+            body = text[text.index("["): text.rindex("]") + 1] if text else ""
+            out = json.loads(body) if body else None
+            if isinstance(out, list) and len(out) == len(pending):
+                for r, o in zip(pending, out):
+                    t = (o or {}).get("t") or r["title"]
+                    d = (o or {}).get("d") if r["desc"] else ""
+                    _NEWS_TR_CACHE[r["title"]] = (str(t).strip(), str(d or "").strip())
+            elif text:
+                app.logger.warning(f"[news_translate] AI 응답 개수 불일치: {len(out) if isinstance(out, list) else '?'} / {len(pending)}")
+        except Exception as e:
+            app.logger.warning(f"[news_translate] AI 응답 파싱 실패: {e}")
+    # AI 로 못 한 것은 Google 번역 시도 (실패하면 원문)
+    rest = [r for r in raw if r["title"] not in _NEWS_TR_CACHE and not _has_korean_text(r["title"])]
+    # 최근 10분 안에 Google 번역이 막혔으면 다시 시도하지 않는다 (요청마다 수 초 낭비 방지)
+    google_blocked = (time.time() - globals().get("_TR_LAST_WARN", 0.0)) < 600
+    if rest and not google_blocked:
+        ts = _translate_batch([r["title"] for r in rest])
+        ds = _translate_batch([r["desc"] for r in rest])
+        for r, t, d in zip(rest, ts, ds):
+            if t and t != r["title"]:          # 실제로 번역된 경우만 기억
+                _NEWS_TR_CACHE[r["title"]] = (t, d)
+    if len(_NEWS_TR_CACHE) > 1000:
+        for k in list(_NEWS_TR_CACHE)[:300]:
+            _NEWS_TR_CACHE.pop(k, None)
+    titles, descs = [], []
+    for r in raw:
+        t, d = _NEWS_TR_CACHE.get(r["title"], (r["title"], r["desc"]))
+        titles.append(t); descs.append(d)
+    return titles, descs
+
+
+def _has_korean_text(text):
+    return bool(text) and sum(1 for c in text[:200] if "가" <= c <= "힯") >= 3
+
+
 def fetch_news(stock):
     try:
         news_list = stock.news or []
@@ -2651,9 +2714,8 @@ def fetch_news(stock):
         if not raw:
             return []
 
-        # 제목 + 설명 병렬 번역
-        titles = _translate_batch([r["title"] for r in raw])
-        descs  = _translate_batch([r["desc"]  for r in raw])
+        # 제목 + 설명 번역 (AI 일괄 → Google → 원문)
+        titles, descs = _translate_news_items(raw)
 
         return [
             {**r, "title": titles[i], "title_orig": r["title"], "desc": descs[i]}
