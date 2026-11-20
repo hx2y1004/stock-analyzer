@@ -132,7 +132,8 @@ def _eps_revision_trend(stock):
         up30   = _f(row.get("upLast30days"))   or 0
         down30 = _f(row.get("downLast30days")) or 0
         up7    = _f(row.get("upLast7days"))    or 0
-        down7  = _f(row.get("downLast7days"))  or 0
+        # Yahoo 열 이름은 downLast7Days (D 대문자). 예전 표기도 함께 확인
+        down7  = _f(row.get("downLast7Days", row.get("downLast7days"))) or 0
         total30 = up30 + down30
         score30 = (up30 - down30) / total30 * 100 if total30 > 0 else 0
         return {
