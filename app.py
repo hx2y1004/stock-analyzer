@@ -1346,6 +1346,42 @@ def sector_constituents():
     })
 
 
+_KR_INTEG_CACHE = {}
+
+
+def fetch_naver_integration(krx_code):
+    """네이버 종목 요약(integration) 한 번으로 최근 4분기(TTM) EPS·추정 EPS·BPS·주당배당금·목표가·52주 고저.
+    종목 상세·스크리너·비교가 같은 값을 쓰도록 한국 PER 의 기준으로 삼는다. 10분 캐시 (빈 결과 2분)."""
+    def _fetch():
+        try:
+            j = requests.get(f"https://m.stock.naver.com/api/stock/{krx_code}/integration",
+                             headers={"User-Agent": "Mozilla/5.0"}, timeout=8).json()
+        except Exception:
+            return {}
+        def n(v):
+            return safe_float(str(v).replace(",", "").replace("원", "").replace("배", "").replace("%", "").strip()) if v not in (None, "", "-", "N/A") else None
+        tot = {x.get("code"): x.get("value") for x in (j.get("totalInfos") or [])}
+        out = {"eps": n(tot.get("eps")), "cns_eps": n(tot.get("cnsEps")), "bps": n(tot.get("bps")),
+               "dps": n(tot.get("dividend")), "high52": n(tot.get("highPriceOf52Weeks")),
+               "low52": n(tot.get("lowPriceOf52Weeks")),
+               "target": n((j.get("consensusInfo") or {}).get("priceTargetMean"))}
+        return {k: v for k, v in out.items() if v is not None}
+    return _ttl_cached(_KR_INTEG_CACHE, krx_code, 600, 120, is_empty=lambda d: not d, fetch=_fetch, max_entries=200)
+
+
+def kr_per_basis(krx_code):
+    """한국 종목 PER 기준 EPS: 최근 4분기(TTM) 우선, TTM 값 자체가 없을 때만 직전 확정 연간 EPS.
+    → (eps, 'TTM'|'연간') | (None, 'TTM')=적자 | (None, None)=자료 없음"""
+    integ = fetch_naver_integration(krx_code) or {}
+    if integ.get("eps") is not None:
+        # TTM 이 적자(0 이하)면 PER 은 의미가 없어 표시하지 않는다 (흑자였던 연간 값으로 바꾸지 않음)
+        return (integ["eps"], "TTM") if integ["eps"] > 0 else (None, "TTM")
+    annual = fetch_naver_fundamentals(krx_code) or {}
+    if annual.get("eps") and annual["eps"] > 0:
+        return annual["eps"], "연간"
+    return None, None
+
+
 def fetch_naver_fundamentals(krx_code):
     """
     네이버 금융 API로 한국 주식 EPS/BPS를 가져옵니다.
@@ -3711,13 +3747,24 @@ def analyze():
 
             # 현재가 기준 PER/PBR 직접 계산 (네이버 역사 테이블 값 ×)
             ref_price = safe_float(info.get("currentPrice")) or safe_float(info.get("previousClose"))
+            # PER: 스크리너·비교와 같은 기준 = 최근 4분기(TTM) EPS, 없으면 직전 연간 EPS
+            integ = fetch_naver_integration(krx_code) or {}
+            kr_eps, kr_basis = kr_per_basis(krx_code)
+            if kr_basis and not kr_eps:                    # 최근 4분기 적자 → PER 없음
+                info["trailingPE"] = None
+                info["_pe_basis"] = kr_basis
+            if kr_eps:
+                info["trailingEps"] = kr_eps
+                info["_pe_basis"] = kr_basis
+                if ref_price:
+                    info["trailingPE"] = round(ref_price / kr_eps, 2)
+            kr_bps = integ.get("bps") or (naver or {}).get("bps")
+            if kr_bps and ref_price:
+                info["bookValue"]   = kr_bps
+                info["priceToBook"] = round(ref_price / kr_bps, 2)
+            if integ.get("dps"):
+                naver = dict(naver or {}, dps=integ["dps"])        # 배당도 같은 출처
             if naver and ref_price:
-                if naver.get("eps"):
-                    info["trailingEps"] = naver["eps"]
-                    info["trailingPE"]  = round(ref_price / naver["eps"], 2)
-                if naver.get("bps"):
-                    info["bookValue"]   = naver["bps"]
-                    info["priceToBook"] = round(ref_price / naver["bps"], 2)
                 # 선행PER: Yahoo forwardPE 는 어느 해 추정치인지 불분명하고(삼성전자 2.4x 등) 네이버와 어긋난다.
                 # 네이버 컨센서스(확정 다음 해) EPS 로 계산하고 기준 연도를 같이 내려준다.
                 if naver.get("cns_eps"):
@@ -4193,11 +4240,16 @@ def analyze():
             "avg_volume": safe_float(df["Volume"].tail(20).mean()),
             "year_high": year_high,
             "year_low": year_low,
-            "pe_ratio": safe_float(info.get("trailingPE")),
+            "pe_ratio": (round(current_price / info["trailingEps"], 2)
+                         if (is_korean and info.get("_pe_basis") and current_price and info.get("trailingEps"))
+                         else safe_float(info.get("trailingPE"))),
+            "pe_basis": info.get("_pe_basis") or ("TTM" if info.get("trailingPE") else None),
             "forward_pe": safe_float(info.get("forwardPE")),
             "forward_pe_year": info.get("_fwd_pe_year"),
             "forward_pe_basis": info.get("_fwd_pe_basis") or ("Yahoo 애널리스트 추정 EPS 기준" if info.get("forwardPE") else None),
-            "pb_ratio": safe_float(info.get("priceToBook")),
+            "pb_ratio": (round(current_price / info["bookValue"], 2)
+                         if (is_korean and current_price and safe_float(info.get("bookValue")))
+                         else safe_float(info.get("priceToBook"))),
             "eps": safe_float(info.get("trailingEps")),
             "dividend_yield": _calc_dividend_yield(info, current_price),
             "sector": info.get("sector"),
@@ -6028,6 +6080,7 @@ screener.init({
     "download_daily": bot_engine.download_daily, "compute_features": bot_engine.compute_features,
     "bot_lock": lambda: bot_engine._RUN_LOCK.locked(),
     "name_of": lambda t: _stock_name(t, "KR" if t.endswith((".KS", ".KQ")) else "US"),
+    "kr_integration": fetch_naver_integration, "kr_per_basis": kr_per_basis,
 })
 bot_engine.D["on_features"] = screener.upsert_technicals          # 장 마감 배치 → 스크리너 기술 지표
 sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_LOCK,

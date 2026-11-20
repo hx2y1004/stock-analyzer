@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=75" />
+  <link rel="stylesheet" href="/static/css/style.css?v=76" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -24,7 +24,8 @@
     }
   </script>
 </head>
-<body>
+{% set init_tab = 'compare' if request.args.get('tab') == 'compare' else 'screen' %}
+<body data-tab="{{ init_tab }}">
   <header class="header">
     <div class="header-inner">
       <div class="logo">📈 StockAnalyzer</div>
@@ -41,12 +42,12 @@
 
   <main class="sc-main">
     <div class="sc-tabs" role="tablist" aria-label="스크리너">
-      <button type="button" role="tab" class="sc-tab" id="scTab-screen" data-tab="screen" aria-controls="scPanel-screen">종목 스크리너</button>
-      <button type="button" role="tab" class="sc-tab" id="scTab-compare" data-tab="compare" aria-controls="scPanel-compare">종목 비교</button>
+      <button type="button" role="tab" class="sc-tab{% if init_tab == 'screen' %} active{% endif %}" id="scTab-screen" data-tab="screen" aria-controls="scPanel-screen" aria-selected="{{ 'true' if init_tab == 'screen' else 'false' }}" tabindex="{{ 0 if init_tab == 'screen' else -1 }}">종목 스크리너</button>
+      <button type="button" role="tab" class="sc-tab{% if init_tab == 'compare' %} active{% endif %}" id="scTab-compare" data-tab="compare" aria-controls="scPanel-compare" aria-selected="{{ 'true' if init_tab == 'compare' else 'false' }}" tabindex="{{ 0 if init_tab == 'compare' else -1 }}">종목 비교</button>
     </div>
 
     <!-- 탭 1: 스크리너 -->
-    <section role="tabpanel" id="scPanel-screen" class="sc-panel" aria-labelledby="scTab-screen">
+    <section role="tabpanel" id="scPanel-screen" class="sc-panel" aria-labelledby="scTab-screen"{% if init_tab != 'screen' %} hidden{% endif %}>
       <div class="card sc-controls">
         <div class="sc-row">
           <div class="sc-seg" role="group" aria-label="시장" id="scMarket">
@@ -65,7 +66,7 @@
             <label>최소 펀더멘탈<input id="fFund" type="number" min="0" max="100" step="5" placeholder="예: 70" inputmode="numeric" /></label>
             <label>RSI 최소<input id="fRsiMin" type="number" min="0" max="100" step="5" placeholder="0" inputmode="numeric" /></label>
             <label>RSI 최대<input id="fRsiMax" type="number" min="0" max="100" step="5" placeholder="100" inputmode="numeric" /></label>
-            <label>PER 상한<input id="fPer" type="number" min="0" step="1" placeholder="예: 15" inputmode="decimal" /></label>
+            <label>PER (TTM) 상한<input id="fPer" type="number" min="0" step="1" placeholder="예: 15" inputmode="decimal" /></label>
             <label>최소 상승여력 %<input id="fUpside" type="number" step="5" placeholder="예: 15" inputmode="decimal" /></label>
             <label>정렬<select id="fSort"></select></label>
             <label>순서<select id="fOrder"><option value="desc">높은 순</option><option value="asc">낮은 순</option></select></label>
@@ -84,7 +85,7 @@
     </section>
 
     <!-- 탭 2: 비교 -->
-    <section role="tabpanel" id="scPanel-compare" class="sc-panel" aria-labelledby="scTab-compare" hidden>
+    <section role="tabpanel" id="scPanel-compare" class="sc-panel" aria-labelledby="scTab-compare"{% if init_tab != 'compare' %} hidden{% endif %}>
       <div class="card sc-pick">
         <div class="sc-picked" id="cmpPicked"></div>
         <div class="sc-search">
@@ -112,6 +113,6 @@
 
   {% include "_footer.html" %}
   <script src="/static/js/notify.js?v=3"></script>
-  <script src="/static/js/screener.js?v=2"></script>
+  <script src="/static/js/screener.js?v=3"></script>
 </body>
 </html>

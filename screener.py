@@ -229,16 +229,13 @@ def fetch_fundamentals(ticker):
     except Exception:
         info = {}
     if market_of(ticker) == "KR":
-        # 네이버 한 번으로 EPS(최근 4분기)·추정EPS·BPS·주당배당금·목표가·52주 고저
+        # 종목 상세와 같은 함수: 최근 4분기(TTM) EPS 우선, 없으면 직전 연간 EPS (app.kr_per_basis)
+        code = ticker.split(".")[0]
         try:
-            import requests
-            j = requests.get(f"https://m.stock.naver.com/api/stock/{ticker.split('.')[0]}/integration",
-                             headers={"User-Agent": "Mozilla/5.0"}, timeout=8).json()
-            tot = {x.get("code"): x.get("value") for x in (j.get("totalInfos") or [])}
-            out.update(eps=_num(tot.get("eps")), forward_eps=_num(tot.get("cnsEps")), bps=_num(tot.get("bps")),
-                       dps=_num(tot.get("dividend")), high52=_num(tot.get("highPriceOf52Weeks")),
-                       low52=_num(tot.get("lowPriceOf52Weeks")),
-                       target_price=_num((j.get("consensusInfo") or {}).get("priceTargetMean")))
+            integ = D["kr_integration"](code) or {}
+            eps, basis = D["kr_per_basis"](code)
+            out.update(eps=eps, forward_eps=integ.get("cns_eps"), bps=integ.get("bps"), dps=integ.get("dps"),
+                       high52=integ.get("high52"), low52=integ.get("low52"), target_price=integ.get("target"))
         except Exception as e:
             log(f"{ticker} 네이버 지표 실패: {e}")
     else:
