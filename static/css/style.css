@@ -4770,3 +4770,5 @@ button, input, select, textarea { font-family: inherit; }
 .modal-close, .delete-btn { display: inline-flex; align-items: center; justify-content: center; }
 .ps-refresh-btn { display: inline-flex; align-items: center; justify-content: center; }
 .ps-refresh-btn .icon-x { width: 14px; height: 14px; }
+
+.ai-status-note { font-size: 12px; color: var(--text2); background: var(--bg3); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; }
