@@ -161,3 +161,19 @@ class UserBadge(db.Model):
             "badge_key": self.badge_key,
             "earned_at": self.earned_at.isoformat() if self.earned_at else None,
         }
+
+
+class AiCache(db.Model):
+    """AI 생성 결과 영구 캐시. 재시작·재배포에도 남아 무료 한도를 아낀다.
+
+    cache_type: company_profile(30일) / news_translation(영구, expires_at=None) / daily_insight(수 시간)
+    """
+    __tablename__ = "ai_cache"
+    id           = db.Column(db.Integer, primary_key=True)
+    cache_key    = db.Column(db.String(200), nullable=False, unique=True, index=True)
+    ticker       = db.Column(db.String(30), index=True)
+    cache_type   = db.Column(db.String(40), nullable=False, index=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    model_used   = db.Column(db.String(120))
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at   = db.Column(db.DateTime, nullable=True)        # None = 만료 없음

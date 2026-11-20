@@ -11,6 +11,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 import toss_api
+import ai_cache
 try:
     from deep_translator import GoogleTranslator as _GTrans
     from concurrent.futures import ThreadPoolExecutor as _TPE
@@ -24,10 +25,14 @@ try:
 
     def _translate_ko(text, max_chars=2000, timeout=4):
         """영문 → 한글 번역. timeout 초과 시 원문 반환."""
+        global _TR_LAST_WARN
         if not text or not text.strip():
             return text
         # 이미 한글이면 번역 스킵 (불필요한 외부 호출 방지)
         if _has_korean(text):
+            return text
+        # 최근 10분 안에 Google 번역이 막혔으면 바로 원문 (서버 IP 는 자주 막혀 요청마다 수 초를 낭비했다)
+        if time.time() - _TR_LAST_WARN < 600:
             return text
         # ThreadPoolExecutor 로 timeout 강제 (deep_translator 자체엔 timeout 없음)
         with _TPE(max_workers=1) as ex:
@@ -39,7 +44,6 @@ try:
             except Exception as e:
                 # timeout 또는 네트워크 에러 → 원문 그대로. 원인은 10분에 한 번 로그로 남긴다
                 # (데이터센터 IP 는 Google 이 /sorry 봇 확인 페이지로 돌려보내 실패하는 경우가 많다)
-                global _TR_LAST_WARN
                 if time.time() - _TR_LAST_WARN > 600:
                     _TR_LAST_WARN = time.time()
                     print(f"[translate] google 번역 실패 → 원문 사용: {type(e).__name__}: {str(e)[:160]}", flush=True)
@@ -60,7 +64,7 @@ from flask_login import LoginManager, login_required, current_user
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
-from models import db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, INITIAL_CAPITAL_KRW
+from models import db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -114,6 +118,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 CORS(app)
 
 db.init_app(app)
+ai_cache.init(app, db, AiCache, app.logger)   # AI 결과 영구 캐시 (ai_cache 테이블은 아래 db.create_all() 이 만든다)
 
 login_manager = LoginManager(app)
 login_manager.login_view = None   # API 위주라 리다이렉트 없음
@@ -2632,92 +2637,10 @@ def _fetch_kr_news_uncached(krx_code, limit=8):
         return []
 
 
-_NEWS_TR_CACHE = {}        # 원문 제목 → (번역 제목, 번역 요약)
-
 # 느린 외부 호출(AI 등)을 시간 예산 안에서만 기다리기 위한 공용 실행기.
 # 예산을 넘긴 작업은 버리지 않고 끝까지 돌아 각자의 캐시를 채운다 → 다음 조회에서 바로 쓰인다.
-from concurrent.futures import ThreadPoolExecutor as _BgTPE, wait as _fut_wait
+from concurrent.futures import ThreadPoolExecutor as _BgTPE
 _BG_EXEC = _BgTPE(max_workers=6, thread_name_prefix="bg-extra")
-_AI_TR_INFLIGHT = set()     # 번역 중인 기사 묶음 (중복 요청 방지)
-
-
-def _translate_news_items(raw):
-    """뉴스 제목·요약을 한글로. AI(Gemini/Groq) 한 번 호출로 일괄 번역하고, 실패하면 Google 번역, 그것도 안 되면 원문.
-
-    deep_translator 는 translate.google.com 웹페이지를 긁는 방식이라 서버(데이터센터) IP 에서는
-    Google 봇 확인 페이지로 막혀 조용히 원문만 돌려주는 일이 많았다.
-    """
-    pending = [r for r in raw if r["title"] not in _NEWS_TR_CACHE and not _has_korean_text(r["title"])]
-    has_ai = bool(os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip())
-    batch_key = tuple(r["title"] for r in pending)
-    if pending and has_ai and batch_key not in _AI_TR_INFLIGHT:
-        # AI 번역은 백그라운드에서 돌리고 3초까지만 기다린다. 늦으면 이번엔 원문, 끝나면 캐시에 남아 다음 조회부터 한글.
-        _AI_TR_INFLIGHT.add(batch_key)
-        fut = _BG_EXEC.submit(_ai_translate_into_cache, pending, batch_key)
-        try:
-            fut.result(timeout=3)
-        except Exception:
-            pass
-        # AI 가 백그라운드에서 마저 번역하므로 (서버 IP 에선 거의 막혀 있는) Google 번역은 시도하지 않는다
-        return _news_tr_lookup(raw)
-    if not has_ai:
-        _finish_news_translation(raw)
-    return _news_tr_lookup(raw)
-
-
-def _ai_translate_into_cache(pending, batch_key):
-    try:
-        payload = [{"t": r["title"], "d": r["desc"]} for r in pending]
-        text = _ai_chat(
-            system_msg=("당신은 경제 뉴스 번역가입니다. 영어 금융 뉴스를 자연스러운 한국어로 번역합니다. "
-                        "한자는 쓰지 않고, 회사명·티커·인명은 원문 그대로 둬도 됩니다."),
-            user_msg=("다음 JSON 배열의 각 항목에서 t(제목)와 d(요약)를 한국어로 번역하세요. "
-                      "같은 순서, 같은 개수의 JSON 배열 [{\"t\":...,\"d\":...}] 만 출력하고 다른 말은 쓰지 마세요.\n"
-                      + json.dumps(payload, ensure_ascii=False)),
-            max_tokens=1800, temperature=0.2, label="news_translate",
-        )
-        try:
-            body = text[text.index("["): text.rindex("]") + 1] if text else ""
-            out = json.loads(body) if body else None
-            if isinstance(out, list) and len(out) == len(pending):
-                for r, o in zip(pending, out):
-                    t = (o or {}).get("t") or r["title"]
-                    d = (o or {}).get("d") if r["desc"] else ""
-                    _NEWS_TR_CACHE[r["title"]] = (str(t).strip(), str(d or "").strip())
-            elif text:
-                app.logger.warning(f"[news_translate] AI 응답 개수 불일치: {len(out) if isinstance(out, list) else '?'} / {len(pending)}")
-        except Exception as e:
-            app.logger.warning(f"[news_translate] AI 응답 파싱 실패: {e}")
-    finally:
-        _AI_TR_INFLIGHT.discard(batch_key)
-
-
-def _finish_news_translation(raw):
-    """AI 로 아직 번역 못 한 것은 Google 번역 시도 (실패하면 원문)."""
-    rest = [r for r in raw if r["title"] not in _NEWS_TR_CACHE and not _has_korean_text(r["title"])]
-    # 최근 10분 안에 Google 번역이 막혔으면 다시 시도하지 않는다 (요청마다 수 초 낭비 방지)
-    google_blocked = (time.time() - globals().get("_TR_LAST_WARN", 0.0)) < 600
-    if rest and not google_blocked:
-        ts = _translate_batch([r["title"] for r in rest])
-        ds = _translate_batch([r["desc"] for r in rest])
-        for r, t, d in zip(rest, ts, ds):
-            if t and t != r["title"]:          # 실제로 번역된 경우만 기억
-                _NEWS_TR_CACHE[r["title"]] = (t, d)
-    if len(_NEWS_TR_CACHE) > 1000:
-        for k in list(_NEWS_TR_CACHE)[:300]:
-            _NEWS_TR_CACHE.pop(k, None)
-
-
-def _news_tr_lookup(raw):
-    titles, descs = [], []
-    for r in raw:
-        t, d = _NEWS_TR_CACHE.get(r["title"], (r["title"], r["desc"]))
-        titles.append(t); descs.append(d)
-    return titles, descs
-
-
-def _has_korean_text(text):
-    return bool(text) and sum(1 for c in text[:200] if "가" <= c <= "힯") >= 3
 
 
 def fetch_news(stock):
@@ -2747,7 +2670,8 @@ def fetch_news(stock):
             return []
 
         # 제목 + 설명 번역 (AI 일괄 → Google → 원문)
-        titles, descs = _translate_news_items(raw)
+        # 번역은 종목 통합 AI 호출(get_stock_insight)에서 기사별로 한 번만 하고 영구 캐시한다
+        titles, descs = [r["title"] for r in raw], [r["desc"] for r in raw]
 
         return [
             {**r, "title": titles[i], "title_orig": r["title"], "desc": descs[i]}
@@ -2756,119 +2680,6 @@ def fetch_news(stock):
     except Exception:
         return []
 
-
-def analyze_move_reason(ticker, name, price_change_pct, news_items, stock_data=None, ai_result=None):
-    """Gemini(우선) / Groq(폴백)으로 주가 변동 이유 종합 분석."""
-    if price_change_pct is None or abs(price_change_pct) < 0.5:
-        return None
-
-    direction = "상승" if price_change_pct > 0 else "하락"
-    kind      = "급등" if price_change_pct >= 5 else ("급락" if price_change_pct <= -5 else direction)
-
-    _has_ai = os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip()
-
-    if _has_ai:
-        # ── 기술적 지표 컨텍스트 ──────────────────────────
-        tech_ctx = ""
-        if ai_result:
-            rsi    = ai_result.get("rsi")
-            macd   = ai_result.get("macd")
-            trend  = ai_result.get("trend", "")
-            verdict = ai_result.get("verdict", "")
-            score  = ai_result.get("score", 0)
-            ma_analysis = ai_result.get("ma_analysis", {})
-            ma_trend = ma_analysis.get("trend", "") if ma_analysis else ""
-
-            trend_map = {
-                "strong-uptrend": "강한 상승 추세",
-                "uptrend": "상승 추세",
-                "sideways": "횡보",
-                "downtrend": "하락 추세",
-                "strong-downtrend": "강한 하락 추세",
-            }
-            tech_ctx = (
-                f"\n[기술적 지표]\n"
-                f"- 종합 판단: {verdict} (점수: {score:+d})\n"
-                f"- 추세: {trend_map.get(trend, trend)}\n"
-                f"- RSI(14): {rsi if rsi else '—'}\n"
-                f"- MACD: {macd if macd else '—'}\n"
-                f"- 이동평균 추세: {ma_trend}\n"
-            )
-
-        # ── 종목 기본 정보 ────────────────────────────────
-        stock_ctx = ""
-        if stock_data:
-            sector   = stock_data.get("sector", "")
-            pe       = stock_data.get("pe_ratio")
-            year_high = stock_data.get("year_high")
-            year_low  = stock_data.get("year_low")
-            cur_price = stock_data.get("current_price")
-            vol_ratio = ""
-            vol  = stock_data.get("volume")
-            avg_vol = stock_data.get("avg_volume")
-            if vol and avg_vol and avg_vol > 0:
-                vr = vol / avg_vol
-                vol_ratio = f"{vr:.1f}배 (평균 대비)"
-            stock_ctx = (
-                f"\n[종목 정보]\n"
-                f"- 섹터: {sector or '—'}\n"
-                f"- 현재가: {cur_price}\n"
-                f"- 52주 고가: {year_high} / 저가: {year_low}\n"
-                f"- PER: {pe if pe else '—'}\n"
-                f"- 거래량: {vol_ratio or '—'}\n"
-            )
-
-        # ── 뉴스 헤드라인 (원문) ──────────────────────────
-        news_ctx = ""
-        if news_items:
-            headlines = "\n".join(
-                f"- {n.get('title_orig') or n['title']}" for n in news_items[:6]
-            )
-            news_ctx = f"\n[최근 뉴스 헤드라인]\n{headlines}"
-
-        prompt = f"""당신은 트레이딩 데스크에서 일하는 시니어 트레이더로, {name}({ticker}) 주식의 오늘 {price_change_pct:+.2f}% {kind} 움직임의 **진짜 원인**을 분석합니다.
-{stock_ctx}{tech_ctx}{news_ctx}
-
-[분석 프레임워크 — 다음 우선순위로 추론]
-1) **명확한 캐털리스트(촉발 사건)**: 실적 발표, 가이던스 변경, 인수합병, 규제, 신제품, 애널리스트 의견 변동 — 뉴스에서 확인 가능한가?
-2) **섹터/시장 전반 동조**: 동종 업종이 같이 움직였나? 시장 전반(S&P/KOSPI) 분위기와 연동되나?
-3) **기술적 트리거**: 주요 지지/저항선 돌파/이탈, 이평선 데드/골든크로스, RSI 과매수/과매도 진입 — 차트 패턴이 매도/매수를 촉발했나?
-4) **수급 변화**: 거래량 급증(평소 대비 1.5배+)이 누구의 행동인지 — 기관 청산? 외국인 매수? 차익 실현?
-
-[출력 형식 — 4~6문장, 다음 요소를 자연스럽게 포함]
-- **핵심 원인 1~2가지**: 가장 가능성 높은 것 (뉴스가 있으면 헤드라인 핵심을 짧게 인용, 없으면 기술적/거시 요인)
-- **시장 맥락**: 이 움직임이 섹터/시장 전체와 같은 방향인지 다른지
-- **데이터 근거**: RSI/MACD/거래량 중 의미 있는 1~2개만 골라 "이 지표가 이런 의미"로 해석 (단순 수치 나열 금지)
-- **모니터링 포인트**: 이 추세가 지속될 시그널 또는 반전될 조건 (예: "다음 분기 가이던스가 핵심" / "OO 가격선 회복하면 반등 신호")
-
-[작성 규칙]
-1) 모든 텍스트를 **순수 한글**로만. **한자(漢字) 절대 금지**.
-   - 잘못된 예: 賣出, 投資, 經濟, 産業, 倉庫 / 올바른 예: 매출, 투자, 경제, 산업, 창고
-2) 영문 약어(RSI, MACD, EPS, AI 등)와 회사명·티커는 그대로 OK.
-3) 추측 표현("보인다", "추정된다")은 데이터가 약할 때만 신중히 사용.
-4) 단순 나열식이 아닌 **인과관계가 보이는 문장**으로 — "A 때문에 B가 되었고, 이는 C 가능성을 시사한다" 식.
-5) 불필요한 서론 없이 바로 분석 시작."""
-
-        text = _ai_chat(
-            system_msg=(
-                "당신은 한국 투자자를 위해 주가 움직임의 원인을 분석하는 시니어 트레이더입니다. "
-                "반드시 순수 한글로만 답변하며, 한자(漢字)는 절대 사용하지 않습니다. "
-                "한자어 단어도 모두 한글로 풀어 씁니다 (例: 倉庫→창고, 賣出→매출). "
-                "영문 약어와 회사명·티커만 영문 그대로 사용합니다."
-            ),
-            user_msg=prompt,
-            max_tokens=550,
-            temperature=0.4,
-            label=f"move_reason:{ticker}",
-        )
-        if text:
-            return text
-
-    # 폴백
-    if not news_items:
-        return f"현재 {kind} 관련 정보를 찾을 수 없습니다. 거시경제 지표나 시장 전반의 흐름을 함께 확인해 보세요."
-    top = [n['title'] for n in news_items[:3]]
-    return "관련 뉴스: " + " / ".join(top)
 
 
 # ── DCF 재무제표 캐시 ──────────────────────────────────────
@@ -2923,8 +2734,6 @@ def _get_risk_free_rate(currency):
 
 
 # ── Groq 응답 캐시 (rate limit 회피) ──
-_OVERVIEW_CACHE = {}              # ticker → (timestamp, sections)
-_OVERVIEW_TTL   = 60 * 60 * 6     # 6시간 캐시
 
 # ── AI 모델 선택 ──────────────────────────────────────────────────────────────
 # 모델 이름을 코드에 고정하면 제공사가 모델을 종료할 때 AI 기능이 조용히 전부 멈춘다
@@ -2932,7 +2741,8 @@ _OVERVIEW_TTL   = 60 * 60 * 6     # 6시간 캐시
 #   1) 환경변수 GEMINI_MODELS / GROQ_MODELS (콤마 구분) 가 있으면 그대로 쓰고
 #   2) 없으면 각 제공사의 모델 목록 API 로 "지금 쓸 수 있는" 모델을 골라 6시간 캐시하고
 #   3) 목록 조회도 실패하면 아래 기본 목록을 쓴다.
-_GEMINI_FALLBACK_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest",
+# 요약·번역·짧은 해설 위주라 빠르고 무료 한도가 넉넉한 Flash-Lite 를 먼저 쓴다
+_GEMINI_FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest",
                            "gemini-2.5-flash-lite", "gemini-2.5-flash"]
 _GROQ_FALLBACK_MODELS   = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 _AI_MODEL_CACHE = {}          # provider → (ts, [models], source)
@@ -2981,16 +2791,16 @@ def _ai_status():
 
 
 def _pick_gemini_models(names):
-    """정식 Flash 계열(gemini-<버전>-flash[-lite])만, 버전 높은 순 · flash 가 lite 보다 앞."""
+    """정식 Flash 계열(gemini-<버전>-flash[-lite])만. Flash-Lite 우선(빠르고 한도 넉넉) → 같은 종류 안에선 최신 버전 먼저."""
     picked = []
     for n in names:
         m = re.fullmatch(r"gemini-(\d+(?:\.\d+)?)-flash(-lite)?", n)
         if m:
-            picked.append((-float(m.group(1)), 1 if m.group(2) else 0, n))
+            picked.append((0 if m.group(2) else 1, -float(m.group(1)), n))
     picked.sort()
     out = [n for _, _, n in picked][:3]
     # 별칭(-latest)이 있으면 마지막 보험으로
-    out += [n for n in ("gemini-flash-latest", "gemini-flash-lite-latest") if n in names and n not in out]
+    out += [n for n in ("gemini-flash-lite-latest", "gemini-flash-latest") if n in names and n not in out]
     return out
 
 
@@ -3084,185 +2894,222 @@ def _strip_hanja(text: str, label: str = "") -> str:
     return cleaned
 
 
-def _groq_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
-               label="generic", timeout=30):
-    """Groq Chat Completion 공용 호출 (모델 fallback + 재시도).
+# ── AI 공급자 호출 (공통) ────────────────────────────────────────────────────
+# 순서: Gemini(주력) → Groq → (선택) OpenAI 호환 백업(AI_BACKUP_*). 한도(429)·5xx·타임아웃이면 다음으로.
+# 429 를 받은 모델은 다시 두드리지 않는다: 분당 한도면 잠시, 일일 한도면 리셋 시각까지 건너뛴다.
+# (예전엔 429 마다 같은 모델 2번 재시도 + 모델 4개 순회 → 논리 호출 1번이 실제 요청 최대 8번이었다)
+_AI_COOLDOWN = {}           # (provider, model) → (until_ts, status)
+_AI_LAST_MODEL = threading.local()   # 이 스레드에서 마지막으로 성공한 "provider/model" (캐시 model_used 기록용)
+_AI_COOLDOWN_LOCK = threading.Lock()
 
-    Returns: 텍스트 또는 None
-    """
-    for model_name in _ai_models("groq", api_key):
-        is_reasoning = "gpt-oss" in model_name
-        for attempt in range(2):
+
+def _ai_log(ticker, task, cache_hit, provider, model, latency_ms, status):
+    """원인 추적용 한 줄 로그. 분당(429_rpm)/일일(429_rpd) 한도를 구분해 남긴다."""
+    app.logger.info(f"[AI] ticker={ticker or '-'} task={task} cache_hit={'true' if cache_hit else 'false'} "
+                    f"provider={provider} model={model or '-'} latency_ms={int(latency_ms)} status={status}")
+
+
+def _next_pacific_midnight_ts():
+    """Gemini 일일 한도는 미국 태평양 자정에 리셋된다."""
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import timedelta as _td
+        now = datetime.now(ZoneInfo("America/Los_Angeles"))
+        nxt = (now + _td(days=1)).replace(hour=0, minute=1, second=0, microsecond=0)
+        return nxt.timestamp()
+    except Exception:
+        return time.time() + 3600
+
+
+def _classify_429(body, headers):
+    """429 응답 → ('429_rpd' | '429_rpm', 쉬어야 할 초)."""
+    t = (body or "").lower()
+    daily = any(k in t for k in ("perday", "per day", "per_day", "requests per day", "(rpd)", "rpd", "daily"))
+    if daily:
+        return "429_rpd", None
+    try:
+        ra = float((headers or {}).get("retry-after") or 0)
+    except (TypeError, ValueError):
+        ra = 0
+    return "429_rpm", max(20.0, min(ra or 60.0, 300.0))
+
+
+def _cooldown_set(provider, model, status, seconds=None, until=None):
+    with _AI_COOLDOWN_LOCK:
+        _AI_COOLDOWN[(provider, model)] = (until or time.time() + (seconds or 60), status)
+
+
+def _cooldown_active(provider, model):
+    with _AI_COOLDOWN_LOCK:
+        hit = _AI_COOLDOWN.get((provider, model))
+        if hit and hit[0] > time.time():
+            return hit[1]
+        return None
+
+
+def _gemini_once(api_key, model, system_msg, user_msg, max_tokens, temperature, json_mode, timeout):
+    """Gemini 1회 호출 → (text, status, http_status, body, headers)."""
+    gen_cfg = {"temperature": temperature, "maxOutputTokens": max(max_tokens, 256),
+               "thinkingConfig": {"thinkingBudget": 0}}
+    if json_mode:
+        gen_cfg["responseMimeType"] = "application/json"
+    for _ in range(2):      # thinkingConfig 를 모르는 모델이면 빼고 한 번 더
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            params={"key": api_key},
+            json={"system_instruction": {"parts": [{"text": system_msg}]},
+                  "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
+                  "generationConfig": gen_cfg},
+            timeout=timeout)
+        if resp.status_code == 400 and "thinking" in resp.text.lower() and "thinkingConfig" in gen_cfg:
+            gen_cfg.pop("thinkingConfig")
+            continue
+        break
+    if resp.status_code != 200:
+        return None, None, resp.status_code, resp.text[:400], resp.headers
+    data = resp.json()
+    cands = data.get("candidates") or []
+    parts = ((cands[0].get("content") or {}).get("parts") or []) if cands else []
+    text = "".join(p.get("text", "") for p in parts).strip()
+    return (text or None), ("ok" if text else "error"), 200, "" if text else str(data)[:300], resp.headers
+
+
+def _openai_compat_once(base_url, api_key, model, system_msg, user_msg, max_tokens, temperature,
+                        json_mode, timeout):
+    """OpenAI 호환 Chat Completions 1회 호출 (Groq / 백업 공급자)."""
+    is_reasoning = "gpt-oss" in model
+    body = {"model": model,
+            "messages": [{"role": "system", "content": system_msg},
+                         {"role": "user", "content": user_msg}],
+            "temperature": temperature,
+            # 추론 모델은 생각 토큰도 출력 한도에 포함 → 넉넉히
+            "max_tokens": max_tokens * 3 if is_reasoning else max_tokens}
+    if is_reasoning:
+        body["reasoning_effort"] = "low"
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+    for _ in range(3):      # 모르는 선택 파라미터면 빼고 재시도
+        resp = requests.post(f"{base_url.rstrip('/')}/chat/completions",
+                             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                             json=body, timeout=timeout)
+        low = resp.text.lower() if resp.status_code == 400 else ""
+        if "reasoning" in low and "reasoning_effort" in body:
+            body.pop("reasoning_effort"); continue
+        if "response_format" in low and "response_format" in body:
+            body.pop("response_format"); continue
+        break
+    if resp.status_code != 200:
+        return None, None, resp.status_code, resp.text[:400], resp.headers
+    data = resp.json()
+    ch = data.get("choices") or []
+    text = ((ch[0].get("message") or {}).get("content") or "").strip() if ch else ""
+    return (text or None), ("ok" if text else "error"), 200, "" if text else str(data)[:300], resp.headers
+
+
+def _ai_providers():
+    """설정된 공급자 목록 [(이름, 호출함수, 모델들)]."""
+    out = []
+    g = os.environ.get("GEMINI_API_KEY", "").strip()
+    if g:
+        out.append(("gemini", lambda m, *a: _gemini_once(g, m, *a), _ai_models("gemini", g)))
+    q = os.environ.get("GROQ_API_KEY", "").strip()
+    if q:
+        out.append(("groq", lambda m, *a: _openai_compat_once("https://api.groq.com/openai/v1", q, m, *a),
+                    _ai_models("groq", q)))
+    bu, bk = os.environ.get("AI_BACKUP_BASE_URL", "").strip(), os.environ.get("AI_BACKUP_API_KEY", "").strip()
+    bm = [m.strip() for m in os.environ.get("AI_BACKUP_MODEL", "").split(",") if m.strip()]
+    if bu and bk and bm:
+        out.append(("backup", lambda m, *a: _openai_compat_once(bu, bk, m, *a), bm))
+    return out
+
+
+def _ai_chat(system_msg, user_msg, max_tokens=800, temperature=0.4, label="generic",
+             ticker=None, json_mode=False, timeout=25):
+    """모든 AI 기능의 공통 진입점. 공급자/모델을 차례로 시도하고 텍스트(또는 None)를 돌려준다."""
+    task = label.split(":")[0]
+    for provider, call, models in _ai_providers():
+        for model in models:
+            if _cooldown_active(provider, model):
+                continue
+            t0 = time.time()
             try:
-                body = {
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": system_msg},
-                        {"role": "user",   "content": user_msg},
-                    ],
-                    "temperature": temperature,
-                    # 추론 모델은 생각 토큰도 출력 한도에 포함되므로 넉넉히
-                    "max_tokens": max_tokens * 3 if is_reasoning else max_tokens,
-                }
-                if is_reasoning and attempt == 0:
-                    body["reasoning_effort"] = "low"
-                resp = requests.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                    json=body,
-                    timeout=timeout,
-                )
-                if resp.status_code == 400 and is_reasoning and attempt == 0 and "reasoning" in resp.text.lower():
-                    continue   # reasoning_effort 를 모르는 모델이면 빼고 한 번 더
-
-                if resp.status_code == 429:
-                    wait = 1.5 * (attempt + 1)
-                    app.logger.warning(f"[groq:{label}] {model_name} 429, retry in {wait}s")
-                    _ai_note_error("groq", f"{model_name} HTTP 429 rate limit")
-                    time.sleep(wait)
-                    continue
-                if 500 <= resp.status_code < 600:
-                    wait = 1.5 * (attempt + 1)
-                    app.logger.warning(f"[groq:{label}] {model_name} {resp.status_code}, retry in {wait}s")
-                    time.sleep(wait)
-                    continue
-                if resp.status_code >= 400:
-                    err_body = resp.text[:300] if resp.text else "(empty)"
-                    app.logger.error(f"[groq:{label}] {model_name} HTTP {resp.status_code}: {err_body}")
-                    _ai_note_error("groq", f"{model_name} HTTP {resp.status_code}: {err_body[:150]}")
-                    break   # 이 모델 안 됨, 다음 모델 시도
-
-                data = resp.json()
-
-                if "error" in data:
-                    err = data["error"]
-                    msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-                    app.logger.error(f"[groq:{label}] {model_name} error: {msg}")
-                    if "model" in msg.lower() or "deprecated" in msg.lower() or "decommissioned" in msg.lower():
-                        break
-                    continue
-
-                if "choices" not in data or not data["choices"]:
-                    app.logger.error(f"[groq:{label}] {model_name} no choices: {str(data)[:200]}")
-                    break
-
-                text = (data["choices"][0].get("message", {}).get("content") or "").strip()
-                if not text:
-                    app.logger.error(f"[groq:{label}] {model_name} empty")
-                    break
-
-                # 한자 후처리 (한자 → 한글 매핑 + 잔여 제거)
-                text = _strip_hanja(text, label=label)
-
-                app.logger.info(f"[groq:{label}] OK model={model_name} attempt={attempt+1}")
-                _ai_note_ok("groq")
-                return text
-
+                text, status, http, body, headers = call(model, system_msg, user_msg, max_tokens,
+                                                         temperature, json_mode, timeout)
             except requests.exceptions.Timeout:
-                app.logger.warning(f"[groq:{label}] {model_name} timeout (attempt {attempt+1})")
-                _ai_note_error("groq", f"{model_name} timeout")
+                _ai_log(ticker, task, False, provider, model, (time.time() - t0) * 1000, "error")
+                _ai_note_error(provider, f"{model} timeout")
+                _cooldown_set(provider, model, "error", seconds=30)
                 continue
             except Exception as e:
-                app.logger.error(f"[groq:{label}] {model_name} {type(e).__name__}: {e}")
-                _ai_note_error("groq", f"{model_name} {type(e).__name__}: {e}")
-                break
-
-    app.logger.warning(f"[groq:{label}] 모든 모델 실패")
-    return None
-
-
-
-
-def _gemini_chat(api_key, system_msg, user_msg, max_tokens=800, temperature=0.4,
-                 label="generic", timeout=25):
-    """Gemini generateContent 공용 호출 (모델 fallback + 429 재시도).
-
-    Returns: 텍스트 또는 None
-    """
-    for model_name in _ai_models("gemini", api_key):
-        no_thinking_cfg = False
-        for attempt in range(3):
-            try:
-                gen_cfg = {
-                    "temperature": temperature,
-                    "maxOutputTokens": max(max_tokens, 1024),
-                }
-                if not no_thinking_cfg:
-                    # thinking 토큰이 출력 한도를 잡아먹지 않도록 비활성화 (지원하지 않는 모델이면 아래에서 빼고 재시도)
-                    gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
-                resp = requests.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent",
-                    params={"key": api_key},
-                    json={
-                        "system_instruction": {"parts": [{"text": system_msg}]},
-                        "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
-                        "generationConfig": gen_cfg,
-                    },
-                    timeout=timeout,
-                )
-                if resp.status_code == 400 and not no_thinking_cfg and "thinking" in resp.text.lower():
-                    no_thinking_cfg = True
-                    continue
-                if resp.status_code == 429:
-                    _ai_note_error("gemini", f"{model_name} HTTP 429 quota")
-                    app.logger.warning(f"[gemini:{label}] {model_name} 429 (무료 한도), "
-                                       f"attempt {attempt+1}")
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                if resp.status_code >= 400:
-                    app.logger.error(f"[gemini:{label}] {model_name} HTTP "
-                                     f"{resp.status_code}: {resp.text[:200]}")
-                    _ai_note_error("gemini", f"{model_name} HTTP {resp.status_code}: {resp.text[:150]}")
-                    break
-                data = resp.json()
-                cands = data.get("candidates") or []
-                if not cands:
-                    app.logger.error(f"[gemini:{label}] {model_name} no candidates: "
-                                     f"{str(data)[:200]}")
-                    break
-                parts = (cands[0].get("content") or {}).get("parts") or []
-                text = "".join(p.get("text", "") for p in parts).strip()
-                if text:
-                    app.logger.info(f"[gemini:{label}] OK model={model_name}")
-                    _ai_note_ok("gemini")
-                    return text
-                break
-            except requests.exceptions.Timeout:
-                app.logger.warning(f"[gemini:{label}] {model_name} timeout")
-                _ai_note_error("gemini", f"{model_name} timeout")
+                _ai_log(ticker, task, False, provider, model, (time.time() - t0) * 1000, "error")
+                _ai_note_error(provider, f"{model} {type(e).__name__}: {e}")
                 continue
-            except Exception as e:
-                app.logger.error(f"[gemini:{label}] {model_name} {type(e).__name__}: {e}")
-                _ai_note_error("gemini", f"{model_name} {type(e).__name__}: {e}")
-                break
-    app.logger.warning(f"[gemini:{label}] 모든 모델 실패")
+            ms = (time.time() - t0) * 1000
+            if status == "ok":
+                _ai_log(ticker, task, False, provider, model, ms, "ok")
+                _ai_note_ok(provider)
+                _AI_LAST_MODEL.v = f"{provider}/{model}"
+                return text if json_mode else _strip_hanja(text, label=label)
+            if http == 429:
+                kind, wait = _classify_429(body, headers)
+                _ai_log(ticker, task, False, provider, model, ms, kind)
+                _ai_note_error(provider, f"{model} HTTP 429 {'quota per day' if kind == '429_rpd' else 'rate per minute'}")
+                if kind == "429_rpd":
+                    _cooldown_set(provider, model, kind,
+                                  until=_next_pacific_midnight_ts() if provider == "gemini" else time.time() + 3600)
+                else:
+                    _cooldown_set(provider, model, kind, seconds=wait)
+                continue
+            _ai_log(ticker, task, False, provider, model, ms, "error")
+            _ai_note_error(provider, f"{model} HTTP {http}: {(body or '')[:150]}")
+            if http == 404:                      # 모델 종료 → 오래 건너뛰고 목록 다시 조회
+                _cooldown_set(provider, model, "error", seconds=6 * 3600)
+                _AI_MODEL_CACHE.pop(provider, None)
+            elif http and http >= 500:
+                _cooldown_set(provider, model, "error", seconds=30)
     return None
 
 
-def _ai_chat(system_msg, user_msg, max_tokens=800, temperature=0.4, label="generic"):
-    """Gemini 우선(한국어 품질↑), 실패/한도 시 Groq 폴백. 모든 AI 기능 공통 진입점."""
-    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if gemini_key:
-        text = _gemini_chat(gemini_key, system_msg, user_msg,
-                            max_tokens=max_tokens, temperature=temperature, label=label)
-        if text:
-            return text
-    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if groq_key:
-        return _groq_chat(groq_key, system_msg, user_msg,
-                          max_tokens=max_tokens, temperature=temperature, label=label)
-    return None
+def _ai_json(system_msg, user_msg, max_tokens, label, ticker=None, temperature=0.3):
+    """JSON 객체를 돌려받는 호출. 파싱 실패면 None."""
+    text = _ai_chat(system_msg, user_msg, max_tokens=max_tokens, temperature=temperature,
+                    label=label, ticker=ticker, json_mode=True)
+    if not text:
+        return None
+    try:
+        body = text[text.index("{"): text.rindex("}") + 1]
+        return json.loads(body)
+    except Exception as e:
+        app.logger.warning(f"[AI] ticker={ticker or '-'} task={label} JSON 파싱 실패: {e}")
+        return None
+
+
+_PROFILE_TTL = 30 * 24 * 3600     # 기업 소개는 자주 안 바뀐다 → 30일 (DB 영구 캐시)
 
 
 def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
-    """Gemini(우선) / Groq(폴백)으로 기업 소개·주요 사업·분석 인사이트를 한국어로 생성 (6h 캐시)."""
-    # ── 캐시 hit ──
-    now = time.time()
-    cached = _OVERVIEW_CACHE.get(ticker)
-    if cached and (now - cached[0]) < _OVERVIEW_TTL:
-        app.logger.info(f"[company_overview] {ticker}: cache hit")
-        return cached[1]
+    """기업 소개·주요 사업·분석 (AI). DB 캐시 30일 + 같은 종목 동시 생성 1회로 제한."""
+    key = f"company_profile:{ticker}"
+    t0 = time.time()
+    hit = ai_cache.get(key)
+    if hit:
+        _ai_log(ticker, "company_profile", True, "cache", hit[1], (time.time() - t0) * 1000, "ok")
+        return hit[0]
 
+    def _make():
+        again = ai_cache.get(key)               # 기다리는 사이 다른 요청이 만들었으면 그대로
+        if again:
+            return again[0]
+        result = _generate_company_overview(ticker, name, info, revenue_quarters, currency)
+        if result:
+            ai_cache.put(key, ticker, "company_profile", result, getattr(_AI_LAST_MODEL, "v", None), _PROFILE_TTL)
+        return result
+
+    return ai_cache.single_flight(key, _make, wait_timeout=30)
+
+
+def _generate_company_overview(ticker, name, info, revenue_quarters, currency):
+    now = time.time()
     if not (os.environ.get("GEMINI_API_KEY", "").strip() or os.environ.get("GROQ_API_KEY", "").strip()):
         app.logger.warning(f"[company_overview] {ticker}: GEMINI_API_KEY / GROQ_API_KEY 미설정")
         return None
@@ -3357,12 +3204,12 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
 - 위상감을 알 수 있는 한 줄 (시가총액 순위·점유율·매출 규모 중 가장 인상적인 것)
 
 [주요사업]
-3~5개의 핵심 매출원. 각 항목은 다음 형식의 bullet:
+3~4개의 핵심 매출원. 각 항목은 다음 형식의 bullet:
 "• [사업부문명]: 1문장 설명 (가능하면 매출 비중 % 또는 규모 명시)"
 나열이 아니라 비즈니스 모델이 한눈에 보이도록.
 
 [기업분석]
-5~8문장. 다음 4가지를 모두 다루되, **위에 주어진 숫자(매출 추이, PER 등)를 직접 인용**해 구체적으로 작성:
+4~5문장. 다음 4가지를 모두 다루되, **위에 주어진 숫자(매출 추이, PER 등)를 직접 인용**해 구체적으로 작성:
 1) **시장 지위 & 경쟁 구도**: 동종 산업 핵심 경쟁사 1~2곳을 실명 거론 (예: 코카콜라 vs 펩시, 엔비디아 vs AMD). 차별화 포인트(브랜드·기술·네트워크 효과·원가 우위 등)를 구체적으로.
 2) **산업의 중장기 흐름**: {industry} 산업이 어디로 가고 있는지 — AI/금리/규제/인구·소비 트렌드/구조 변화 등 외부 동인과 연결.
 3) **이 기업의 현 위치**: 주어진 매출 추이를 보고 가속화/안정/둔화/턴어라운드 중 어느 국면인지 판단. PER이 동종 대비 비싼지/싼지 한 줄 평가.
@@ -3386,9 +3233,10 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
             "영문 약어와 회사명만 영어 그대로 사용 가능합니다."
         ),
         user_msg=prompt,
-        max_tokens=1200,
+        max_tokens=900,
         temperature=0.35,
-        label=f"overview:{ticker}",
+        label="company_profile",
+        ticker=ticker,
     )
     if not text:
         return None
@@ -3400,12 +3248,7 @@ def fetch_company_overview(ticker, name, info, revenue_quarters, currency):
         m = _re.search(rf'\[{key}\]\s*(.*?)(?=\[(?:기업소개|주요사업|기업분석)\]|$)', text, _re.DOTALL)
         if m:
             sections[key] = m.group(1).strip()
-    result = sections if sections else {"기업소개": text}
-
-    # 캐시 저장 후 반환
-    _OVERVIEW_CACHE[ticker] = (now, result)
-    app.logger.info(f"[company_overview] {ticker} cached 6h")
-    return result
+    return sections if sections else {"기업소개": text}
 
 
 def _is_market_open(ticker: str) -> bool:
@@ -3514,9 +3357,174 @@ def _analyze_response(base_body, position_data):
     return app.response_class(response=body, status=200, mimetype="application/json")
 
 
+# ── 종목 AI 인사이트: 급등락 사유 + 밸류에이션 해설 + 미번역 뉴스 → 단 1회 JSON 호출 ────────
+_INSIGHT_TTL = 4 * 3600          # daily_insight: 4시간
+_INSIGHT_REFRESH_PCT = 2.0       # 장중 등락률이 이만큼(%p) 바뀌면 사유를 새로 만든다
+_NEWS_ONLY_GAP = 30 * 60         # 인사이트는 캐시돼 있고 새 기사만 있을 때, 번역 호출은 종목당 30분에 1번
+_NEWS_ONLY_LAST = {}             # ticker → ts
+_INSIGHT_FAIL = {}               # ticker → ts  (실패 직후 5분은 재시도 안 함)
+
+
+def _news_id(n):
+    """기사 식별자: URL(없으면 원문 제목) 해시. 같은 기사는 다시 번역하지 않는다."""
+    import hashlib
+    basis = n.get("url") or n.get("title_orig") or n.get("title") or ""
+    return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:20]
+
+
+def _lead(text, max_chars=160):
+    """본문 대신 앞 1~2문장만 (입력 토큰 절약)."""
+    t = re.sub(r"\s+", " ", (text or "")).strip()
+    parts = re.split(r"(?<=[.!?])\s+", t)
+    out = " ".join(parts[:2])
+    return out[:max_chars]
+
+
+def _move_reason_fallback(chg, news):
+    if chg is None or abs(chg) < 0.5:
+        return None
+    kind = "급등" if chg >= 5 else ("급락" if chg <= -5 else ("상승" if chg > 0 else "하락"))
+    if not news:
+        return f"현재 {kind} 관련 정보를 찾을 수 없습니다. 거시경제 지표나 시장 전반의 흐름을 함께 확인해 보세요."
+    return "관련 뉴스: " + " / ".join(n["title"] for n in news[:3])
+
+
+def _dcf_brief(dcf):
+    a = dcf.get("assumptions") or {}
+    return (f"현재가 {dcf.get('current_price')}, DCF 적정주가 {dcf.get('fair_value')} "
+            f"(상승여력 {dcf.get('upside_pct')}%), 시나리오 비관/기본/낙관 "
+            f"{(dcf.get('scenarios') or {}).get('bear', {}).get('fair_value')}/"
+            f"{(dcf.get('scenarios') or {}).get('base', {}).get('fair_value')}/"
+            f"{(dcf.get('scenarios') or {}).get('bull', {}).get('fair_value')}, "
+            f"현재가가 반영한 매출성장률(역산) {dcf.get('implied_growth_pct')}%, 역산 영업이익률 {dcf.get('implied_margin_pct')}% "
+            f"(현재 {a.get('ebit_margin_pct')}%), 적용 성장률 {a.get('base_growth_pct')}% "
+            f"(컨센서스 {a.get('consensus_growth_pct')}%, 과거 {a.get('hist_cagr_pct')}%), WACC {a.get('wacc_pct')}%, "
+            f"애널리스트 목표가 {dcf.get('analyst_target')}, 신뢰도 {dcf.get('reliability')}")
+
+
+def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr):
+    """→ {"move_reason", "valuation_comment", "news_tr": {id: {"title","summary"}}, "ai": bool}
+
+    캐시 우선: daily_insight(4시간) · news_translation(영구). 필요한 것만 모아 AI 를 최대 1번 부른다.
+    """
+    chg = stock_data.get("price_change_pct")
+    dcf = stock_data.get("dcf")
+    want_move = chg is not None and abs(chg) >= 0.5
+    want_val = bool(dcf)
+    t0 = time.time()
+
+    key = f"daily_insight:{ticker}"
+    hit = ai_cache.get(key)
+    ins = hit[0] if hit else None
+    stale = (ins is None) or (want_move and abs((ins.get("chg") or 0) - chg) >= _INSIGHT_REFRESH_PCT)
+
+    tr, pending = {}, []
+    if not is_kr:                                   # 한국 종목 뉴스는 이미 한글
+        for n in news[:8]:
+            nid = _news_id(n)
+            h = ai_cache.get(f"news_translation:{nid}")
+            if h:
+                tr[nid] = h[0]
+            else:
+                pending.append((nid, n))
+
+    need_ins = stale and (want_move or want_val)
+    news_ok = pending and (need_ins or time.time() - _NEWS_ONLY_LAST.get(ticker, 0) > _NEWS_ONLY_GAP)
+    recently_failed = time.time() - _INSIGHT_FAIL.get(ticker, 0) < 300
+    has_ai = bool(_ai_providers())
+
+    def _result(src, used_ai):
+        mv = (src or {}).get("move_reason") if want_move else None
+        return {"move_reason": mv or _move_reason_fallback(chg, [
+                    {"title": (tr.get(_news_id(n)) or {}).get("title") or n["title"]} for n in news]),
+                "valuation_comment": (src or {}).get("valuation_comment") if want_val else None,
+                "news_tr": tr, "ai": used_ai}
+
+    if not has_ai or recently_failed or (not need_ins and not news_ok):
+        if ins:
+            _ai_log(ticker, "daily_insight", True, "cache", hit[1], (time.time() - t0) * 1000, "ok")
+        return _result(ins, bool(ins))
+
+    def _make():
+        nonlocal ins
+        ask_move, ask_val = need_ins and want_move, need_ins and want_val
+        items = pending if news_ok else []
+        lines = [f"종목: {name} ({ticker})"]
+        req = []
+        if ask_move:
+            req.append(f'- "move_reason": 오늘 {chg:+.2f}% 움직임의 가능한 원인 2~3문장. 아래 헤드라인에 근거가 있으면 짧게 인용, '
+                       "없으면 기술적·시장 요인. 단정하지 말 것.")
+        if ask_val:
+            req.append('- "valuation_comment": 아래 DCF 결과 해설 2~3문장. 주어진 숫자만 인용, 역산 값 중심, '
+                       "신뢰도 low면 모델 한계를 언급, 매수·매도 권유 금지.")
+        if items:
+            req.append('- "news": 번역할 기사마다 {"id": 그대로, "title": 자연스러운 한국어 제목, '
+                       '"summary": 한국어 한 줄 요약(40자 안팎)}')
+        lines.append("[작성할 항목]\n" + "\n".join(req))
+        if ask_move and ai_result:
+            vr = ""
+            if stock_data.get("volume") and stock_data.get("avg_volume"):
+                vr = f", 거래량 평균의 {stock_data['volume'] / stock_data['avg_volume']:.1f}배"
+            lines.append(f"[기술 지표] 판단 {ai_result.get('verdict')}, 추세 {ai_result.get('trend')}, "
+                         f"RSI {ai_result.get('rsi')}{vr}")
+            heads = [n.get("title_orig") or n["title"] for n in news[:6]]
+            if heads:
+                lines.append("[최근 헤드라인]\n" + "\n".join(f"- {h}" for h in heads))
+        if ask_val:
+            lines.append("[DCF] " + _dcf_brief(dcf))
+        if items:
+            lines.append("[번역할 기사]\n" + json.dumps(
+                [{"id": nid, "t": n.get("title_orig") or n["title"], "s": _lead(n.get("desc"))} for nid, n in items],
+                ensure_ascii=False))
+        lines.append('출력: JSON 객체 하나 {"move_reason": ..., "valuation_comment": ..., "news": [...]} '
+                     "— 요청하지 않은 항목은 null.")
+        max_tok = 120 + (220 if ask_move else 0) + (240 if ask_val else 0) + 70 * len(items)
+        if items:
+            _NEWS_ONLY_LAST[ticker] = time.time()
+        out = _ai_json(
+            "당신은 한국 개인 투자자를 위한 증권 애널리스트입니다. 순수 한글로 쓰고 한자는 쓰지 않습니다. "
+            "영문 약어·회사명·티커는 그대로 둡니다. 반드시 JSON 객체 하나만 출력합니다.",
+            "\n\n".join(lines), max_tokens=max_tok, label="daily_insight", ticker=ticker)
+        if not out:
+            _INSIGHT_FAIL[ticker] = time.time()
+            return ins
+        model = getattr(_AI_LAST_MODEL, "v", None)
+        # 기사 번역: 기사별 영구 캐시
+        valid = {nid for nid, _ in items}
+        for o in (out.get("news") or []):
+            if isinstance(o, dict) and o.get("id") in valid and o.get("title"):
+                val = {"title": _strip_hanja(str(o["title"]).strip()),
+                       "summary": _strip_hanja(str(o.get("summary") or "").strip())}
+                tr[o["id"]] = val
+                ai_cache.put(f"news_translation:{o['id']}", ticker, "news_translation", val, model, None)
+        if need_ins:
+            new = dict(ins or {})
+            if ask_move and out.get("move_reason"):
+                new["move_reason"] = _strip_hanja(str(out["move_reason"]).strip())
+            if ask_val and out.get("valuation_comment"):
+                new["valuation_comment"] = _strip_hanja(str(out["valuation_comment"]).strip())
+            new["chg"] = chg
+            if new.get("move_reason") or new.get("valuation_comment"):
+                ai_cache.put(key, ticker, "daily_insight", new, model, _INSIGHT_TTL)
+                ins = new
+        return ins
+
+    try:
+        res = ai_cache.single_flight(f"insight:{ticker}", _make, wait_timeout=25)
+    except Exception as e:
+        app.logger.warning(f"[AI] ticker={ticker} task=daily_insight 실패: {e}")
+        res = ins
+    # 다른 요청이 만든 결과를 기다렸다면 번역도 캐시에서 다시 읽는다
+    for nid, _ in pending:
+        if nid not in tr:
+            h = ai_cache.get(f"news_translation:{nid}")
+            if h:
+                tr[nid] = h[0]
+    return _result(res, bool(res))
+
+
 # ── 느린 부가 섹션 (뉴스·애널리스트·AI 기업 소개·AI 급등락 사유) ─────────────────
 _EXTRA_CACHE = {}          # ticker → (ts, payload)
-_MOVE_REASON_CACHE = {}    # ticker → (ts, text)  급등락 사유 (AI, 10분)
 _EXTRA_TTL = 300
 
 
@@ -3552,10 +3560,12 @@ def analyze_extra():
     is_kr = ticker.endswith((".KS", ".KQ"))
     stock = yf.Ticker(ticker)
 
-    out = {"news": [], "analysts": None, "move_reason": None, "company_overview": None}
+    out = {"news": [], "analysts": None, "move_reason": None, "company_overview": None,
+           "valuation_comment": None}
 
-    # 네 가지를 동시에 돌리고 10초 시간 예산 안에 끝난 것만 돌려준다 (뉴스·애널리스트는 보통 수 초).
-    # 늦은 AI 작업도 백그라운드에서 끝까지 돌아 캐시를 채우므로 다음 요청에서는 바로 나온다.
+    # 뉴스·애널리스트(외부 데이터)와 AI 2종(기업 소개 30일 캐시 / 종목 인사이트 1회 통합 호출)을
+    # 동시에 돌리고, 뉴스·애널리스트가 준비되면 AI 는 3초만 더 기다린다. 늦은 AI 는 백그라운드에서 끝까지 돌아
+    # DB 캐시를 채우고, 화면이 다시 받아 채운다.
     def _news():
         return fetch_kr_news(ticker.split(".")[0]) if is_kr else fetch_news(stock)
 
@@ -3565,15 +3575,6 @@ def analyze_extra():
     def _overview():
         return fetch_company_overview(ticker, name, info, stock_data.get("revenue_quarters", []),
                                       stock_data.get("currency", "USD"))
-
-    def _move(news_items):
-        hit = _MOVE_REASON_CACHE.get(ticker)
-        if hit and (time.time() - hit[0]) < 600:
-            return hit[1]
-        text = analyze_move_reason(ticker, name, stock_data.get("price_change_pct"), news_items,
-                                   stock_data=stock_data, ai_result=ai_result)
-        _MOVE_REASON_CACHE[ticker] = (time.time(), text)
-        return text
 
     deadline = time.time() + 10
     f_news, f_an, f_ov = _BG_EXEC.submit(_news), _BG_EXEC.submit(_analysts), _BG_EXEC.submit(_overview)
@@ -3590,19 +3591,39 @@ def analyze_extra():
             return True
 
     done_news = _take(f_news, "news", [])
-    # 급등락 사유는 뉴스 제목을 쓰므로 뉴스 뒤에 시작
-    f_mv = _BG_EXEC.submit(_move, out["news"] or [])
+    news_list = out["news"] or []
+    f_ins = _BG_EXEC.submit(get_stock_insight, ticker, name, stock_data, ai_result, news_list, is_kr)
     done_an = _take(f_an, "analysts", None)
-    # 뉴스·애널리스트가 준비되면 AI 결과는 3초만 더 기다린다 (나머지는 화면이 나중에 다시 받아 채움)
     deadline = min(deadline, time.time() + 3)
-    done = [done_news, done_an, _take(f_ov, "company_overview", None), _take(f_mv, "move_reason", None)]
+    done_ov = _take(f_ov, "company_overview", None)
+    ins = None
+    try:
+        ins = f_ins.result(timeout=max(0.1, deadline - time.time()))
+        done_ins = True
+    except Exception:
+        done_ins = f_ins.done()
+    if ins:
+        out["move_reason"] = ins.get("move_reason")
+        out["valuation_comment"] = ins.get("valuation_comment")
+        tr = ins.get("news_tr") or {}
+        for n in news_list:
+            t = tr.get(_news_id(n))
+            if t:
+                n["title_orig"] = n.get("title_orig") or n["title"]
+                n["title"] = t.get("title") or n["title"]
+                if t.get("summary"):
+                    n["desc"] = t["summary"]
+    else:
+        out["move_reason"] = _move_reason_fallback(stock_data.get("price_change_pct"), news_list)
+    done = [done_news, done_an, done_ov, done_ins]
     partial = not all(done)
     out["partial"] = partial
     out["ai_status"] = _ai_status()
     out = json.loads(json.dumps(out, cls=NumpyEncoder, ensure_ascii=False))
     with _ANALYZE_LOCK:
-        # 부분 결과는 짧게(20초)만 캐시 → 화면이 다시 요청하면 그 사이 끝난 AI 결과로 채워진다
-        _EXTRA_CACHE[ticker] = (time.time() - (_EXTRA_TTL - 20 if partial else 0), out)
+        # 부분 결과는 캐시하지 않는다 → 화면이 다시 요청하면 그 사이 끝난 AI 결과(DB 캐시)로 채워진다
+        if not partial:
+            _EXTRA_CACHE[ticker] = (time.time(), out)
         if len(_EXTRA_CACHE) > 200:   # 오래된 것 정리
             for k, _ in sorted(list(_EXTRA_CACHE.items()), key=lambda kv: kv[1][0])[:50]:
                 _EXTRA_CACHE.pop(k, None)
@@ -5434,84 +5455,20 @@ def trading_coach():
 
 # ── AI DCF 해설 ────────────────────────────────────────────
 # 숫자는 valuation.py 가 결정적으로 계산. AI는 '해석'만 한다.
-_DCF_COMMENT_CACHE = {}        # ticker -> {"text", "ts"}
-_DCF_COMMENT_TTL = 60 * 60 * 6 # 6시간 (종목별 1회 → 무료 한도 보호)
 
 
 @app.route("/api/dcf/comment")
 def dcf_comment():
-    """DCF 결과 해설. 분석 응답과 분리해 페이지 로딩을 막지 않는다."""
+    """밸류에이션 AI 해설. 이제 종목 인사이트 통합 호출(/api/analyze/extra)이 만들어 캐시에 둔 것을 돌려준다.
+    (예전처럼 여기서 따로 AI 를 부르지 않는다 → 종목당 호출 1회 절약)"""
     ticker = (request.args.get("ticker") or "").strip().upper()
     if not ticker:
         return jsonify({"error": "ticker 필요"}), 400
-
-    now = time.time()
-    c = _DCF_COMMENT_CACHE.get(ticker)
-    if c and (now - c["ts"]) < _DCF_COMMENT_TTL:
-        return jsonify({"ok": True, "comment": c["text"], "cached": True})
-
-    # 캐시된 재무제표로 DCF 재계산 (실시간 가격 반영)
-    try:
-        stock = yf.Ticker(ticker)
-        info = stock.info or {}
-        currency = info.get("currency", "USD")
-        price = _fetch_current_price(ticker) or safe_float(info.get("currentPrice"))
-        dcf = compute_dcf(
-            ticker, info, *_get_financials(ticker, stock),
-            price, currency, risk_free_rate=_get_risk_free_rate(currency),
-        )
-    except Exception as e:
-        app.logger.warning(f"[dcf_comment] {ticker}: {e}")
-        return jsonify({"error": "밸류에이션 계산 실패"}), 503
-    if not dcf:
-        return jsonify({"error": "이 종목은 DCF 산출이 어렵습니다"}), 404
-
-    a = dcf["assumptions"]
-    name = info.get("longName") or info.get("shortName") or ticker
-    cur_unit = "원" if currency == "KRW" else "달러"
-    stats = f"""[계산 결과]
-종목: {name} ({ticker})
-현재가: {dcf['current_price']:,.2f} {cur_unit}
-DCF 적정주가(기본): {dcf['fair_value']:,.2f} — 현재가 대비 {dcf['upside_pct']:+.1f}%
-시나리오: 비관 {dcf['scenarios']['bear']['fair_value']} / 기본 {dcf['scenarios']['base']['fair_value']} / 낙관 {dcf['scenarios']['bull']['fair_value']}
-현재가가 반영 중인 매출성장률(역산, 이익률 고정): {dcf['implied_growth_pct']}%
-현재가가 반영 중인 영업이익률(역산, 성장률 고정): {dcf['implied_margin_pct']}%
-  (현재 영업이익률 {a['ebit_margin_pct']}% → 위 수치로 개선돼야 현재가 정당화)
-애널리스트 평균 목표가: {dcf.get('analyst_target')}
-[가정]
-WACC {a['wacc_pct']}% (베타 {a['beta']}, 무위험 {a['risk_free_pct']}%)
-적용 매출성장률 {a['base_growth_pct']}% (컨센서스 {a['consensus_growth_pct']}%, 과거 {a['hist_cagr_pct']}%)
-영업이익률 {a['ebit_margin_pct']}%, 영구성장률 {a['terminal_g_pct']}%, 예측기간 {a['years']}년
-터미널 비중 {a['terminal_share_pct']}%
-신뢰도: {dcf['reliability']}"""
-
-    system_msg = (
-        "당신은 한국 개인 투자자에게 밸류에이션을 설명하는 애널리스트입니다. "
-        "반드시 순수 한글로만 답하며 한자는 절대 쓰지 않습니다. "
-        "영문 약어(DCF, WACC, EBIT)와 종목명·티커만 영문 허용."
-    )
-    user_msg = f"""{stats}
-
-위 DCF 계산 결과를 한국 개인 투자자에게 3~4문장으로 해설해줘.
-
-[규칙]
-1) 숫자를 새로 계산하지 마라. 위에 주어진 값만 인용한다.
-2) 역산 값을 중심으로 설명하라 — 현재 주가가 어떤 성장/수익성을 전제하는지,
-   그게 컨센서스·과거 대비 공격적인지 보수적인지.
-   역산 매출성장률이 None이면, 대신 "역산 영업이익률"로 설명하라
-   (예: 현재 이익률 12%가 30%까지 올라야 현재 주가가 설명된다는 뜻).
-3) 신뢰도가 low면 "과거 재무 기반 DCF의 한계"를 반드시 언급하고,
-   적정주가를 단정적으로 말하지 마라.
-4) "매수하세요/파세요" 같은 투자 권유 금지. 판단 근거만 제시.
-5) 서론 없이 바로 본문. 모호한 표현("주의가 필요합니다") 금지."""
-
-    text = _ai_chat(system_msg, user_msg, max_tokens=500, temperature=0.35,
-                    label=f"dcf:{ticker}")
+    hit = ai_cache.get(f"daily_insight:{ticker}")
+    text = (hit[0] or {}).get("valuation_comment") if hit else None
     if not text:
-        return jsonify({"error": "AI 해설 생성 실패"}), 503
-    text = _COACH_FOREIGN_RE.sub("", text).strip()
-    _DCF_COMMENT_CACHE[ticker] = {"text": text, "ts": now}
-    return jsonify({"ok": True, "comment": text, "cached": False})
+        return jsonify({"error": "아직 해설이 없습니다"}), 404
+    return jsonify({"ok": True, "comment": text, "cached": True})
 
 
 # ── AI 포트폴리오 점검 ──────────────────────────────────────
