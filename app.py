@@ -65,7 +65,8 @@ from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
-                    BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification)
+                    BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
+                    BotPosition)
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -377,21 +378,31 @@ def fetch_naver_realtime_price(krx_code: str):
         if r.status_code != 200:
             return None
         data = r.json() or {}
-        areas = (data.get("result") or {}).get("areas") or []
-        if not areas:
-            return None
-        datas = areas[0].get("datas") or []
-        if not datas:
-            return None
-        d = datas[0]
-        current = safe_float(d.get("nv"))    # 현재가
-        prev    = safe_float(d.get("pcv"))   # 전일 종가
+        # 2026-11 확인: 응답이 {"datas": [...]} (새 형식)으로 바뀌어 예전 파서가 늘 None 을 돌려줬다.
+        # 새 형식: closePrice(현재가), compareToPreviousClosePrice(전일 대비), marketStatus. 예전 형식도 계속 지원.
+        def _n(v):
+            return safe_float(str(v).replace(",", "")) if v not in (None, "") else None
+        if data.get("datas"):
+            d = data["datas"][0]
+            current = _n(d.get("closePrice"))
+            diff    = _n(d.get("compareToPreviousClosePrice"))
+            prev    = (current - diff) if (current is not None and diff is not None) else None
+            status  = d.get("marketStatus")
+        else:
+            areas = (data.get("result") or {}).get("areas") or []
+            datas = (areas[0].get("datas") or []) if areas else []
+            if not datas:
+                return None
+            d = datas[0]
+            current = safe_float(d.get("nv"))    # 현재가
+            prev    = safe_float(d.get("pcv"))   # 전일 종가
+            status  = d.get("ms")
         if not current:
             return None
         result = {
             "current_price":  current,
             "previous_close": prev,
-            "market_status":  d.get("ms"),   # "OPEN" / "CLOSE"
+            "market_status":  status,   # "OPEN" / "CLOSE"
             "source":         "naver",
         }
         _NAVER_RT_CACHE[krx_code] = (now_ts, result)
@@ -1420,11 +1431,17 @@ def fetch_naver_fundamentals(krx_code):
         if not confirmed:
             return {}
         latest_key = sorted([t["key"] for t in confirmed], reverse=True)[0]
+        # 확정 다음 해 컨센서스(추정) 컬럼 → 선행 EPS (기준 연도가 분명해 Yahoo forwardPE 대신 쓴다)
+        cns = sorted([t["key"] for t in title_list if t.get("isConsensus") == "Y" and t["key"] > latest_key])
 
         result = {}
         for row in row_list:
             title  = row.get("title", "")
             cols   = row.get("columns", {})
+            if title == "EPS" and cns:
+                ce = _clean_num((cols.get(cns[0]) or {}).get("value"))
+                if ce and ce > 0:
+                    result["cns_eps"], result["cns_year"] = ce, cns[0][:4]
             latest = cols.get(latest_key, {})
             val    = _clean_num(latest.get("value"))
             if val is None or val == 0:
@@ -3757,6 +3774,14 @@ def analyze():
                 if naver.get("bps"):
                     info["bookValue"]   = naver["bps"]
                     info["priceToBook"] = round(ref_price / naver["bps"], 2)
+                # 선행PER: Yahoo forwardPE 는 어느 해 추정치인지 불분명하고(삼성전자 2.4x 등) 네이버와 어긋난다.
+                # 네이버 컨센서스(확정 다음 해) EPS 로 계산하고 기준 연도를 같이 내려준다.
+                if naver.get("cns_eps"):
+                    info["forwardPE"] = round(ref_price / naver["cns_eps"], 2)
+                    info["_fwd_pe_year"] = naver["cns_year"][2:]
+                    info["_fwd_pe_basis"] = f"네이버 컨센서스 {naver['cns_year']}년 추정 EPS {naver['cns_eps']:,.0f}원 기준"
+                else:
+                    info["forwardPE"] = None       # 출처가 불분명한 값은 표시하지 않음
 
             # 배당수익률: 네이버 DPS / 현재가로 직접 계산
             if naver.get("dps") and ref_price:
@@ -4226,6 +4251,8 @@ def analyze():
             "year_low": year_low,
             "pe_ratio": safe_float(info.get("trailingPE")),
             "forward_pe": safe_float(info.get("forwardPE")),
+            "forward_pe_year": info.get("_fwd_pe_year"),
+            "forward_pe_basis": info.get("_fwd_pe_basis") or ("Yahoo 애널리스트 추정 EPS 기준" if info.get("forwardPE") else None),
             "pb_ratio": safe_float(info.get("priceToBook")),
             "eps": safe_float(info.get("trailingEps")),
             "dividend_yield": _calc_dividend_yield(info, current_price),
@@ -5178,6 +5205,94 @@ def realtime_price():
     })
 
 
+PAPER_FEE_RATE = 0.001        # 사용자 모의투자 수수료 0.1% (봇은 0.15%를 따로 넘긴다)
+
+
+def _stock_db_name(ticker, fallback):
+    for s in STOCK_DB:
+        if s.get("symbol") == ticker:
+            return s.get("name") or fallback
+    return fallback
+
+
+def paper_buy(user, ticker, name, qty, price, fee_rate=PAPER_FEE_RATE, note=None, fx=None, commit=True):
+    """모의투자 매수 공용 로직 (사용자 화면 매수 · AI 봇 자동 매수가 함께 쓴다).
+    price 는 호출 측이 정한 체결가(사용자: 서버 실시간가, 봇: 신호 체결가). → (Transaction, None) | (None, 오류 문구)"""
+    if user.cash_balance is None:
+        user.cash_balance = INITIAL_CAPITAL_KRW
+    currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else "USD"
+    if name == ticker:
+        name = _stock_db_name(ticker, name)
+    fx = fx or _get_usd_krw_rate()
+    amount_native = price * qty
+    amount_krw    = amount_native * (fx if currency == "USD" else 1)
+    fee_krw       = round(amount_krw * fee_rate)
+    total_krw     = amount_krw + fee_krw
+    if user.cash_balance < total_krw:
+        return None, f"현금 부족 (필요 {round(total_krw):,}원, 보유 {round(user.cash_balance):,}원)"
+
+    user.cash_balance -= total_krw
+    existing = PaperHolding.query.filter_by(user_id=user.id, ticker=ticker).first()
+    if existing:
+        new_qty = existing.quantity + qty
+        avg     = (existing.purchase_price * existing.quantity + price * qty) / new_qty
+        existing.quantity       = round(new_qty, 6)
+        existing.purchase_price = round(avg, 6)
+        existing.name           = name
+        existing.currency       = currency
+    else:
+        db.session.add(PaperHolding(user_id=user.id, ticker=ticker, name=name,
+                                    quantity=qty, purchase_price=price, currency=currency))
+    tx = Transaction(
+        user_id=user.id, ticker=ticker, name=name,
+        type="buy", price=price, quantity=qty,
+        currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
+        fee_krw=fee_krw, amount_krw=round(amount_krw),
+        realized_pnl_krw=0, note=note,
+    )
+    db.session.add(tx)
+    if commit:
+        db.session.commit()
+    return tx, None
+
+
+def paper_sell(user, ticker, qty, price, fee_rate=PAPER_FEE_RATE, note=None, fx=None, commit=True):
+    """모의투자 매도 공용 로직. → (Transaction, None) | (None, 오류 문구)"""
+    if user.cash_balance is None:
+        user.cash_balance = INITIAL_CAPITAL_KRW
+    holding = PaperHolding.query.filter_by(user_id=user.id, ticker=ticker).first()
+    if not holding:
+        return None, "보유하지 않은 종목입니다"
+    if qty > holding.quantity:
+        return None, f"보유 수량 초과 (보유 {holding.quantity}, 매도 시도 {qty})"
+    currency = holding.currency or "USD"
+    fx = fx or _get_usd_krw_rate()
+    amount_native = price * qty
+    amount_krw    = amount_native * (fx if currency == "USD" else 1)
+    fee_krw       = round(amount_krw * fee_rate)
+    proceeds_krw  = amount_krw - fee_krw
+    # 실현 손익 = (매도가 - 매입가) * 수량 (KRW 환산)
+    pnl_native = (price - holding.purchase_price) * qty
+    pnl_krw    = pnl_native * (fx if currency == "USD" else 1)
+    user.cash_balance += proceeds_krw
+    hold_name = holding.name
+    if qty >= holding.quantity:
+        db.session.delete(holding)
+    else:
+        holding.quantity = round(holding.quantity - qty, 6)
+    tx = Transaction(
+        user_id=user.id, ticker=ticker, name=hold_name or ticker,
+        type="sell", price=price, quantity=qty,
+        currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
+        fee_krw=fee_krw, amount_krw=round(amount_krw),
+        realized_pnl_krw=round(pnl_krw), note=note,
+    )
+    db.session.add(tx)
+    if commit:
+        db.session.commit()
+    return tx, None
+
+
 @app.route("/api/trading/buy", methods=["POST"])
 @login_required
 def trading_buy():
@@ -5198,66 +5313,14 @@ def trading_buy():
     price = _fetch_current_price(ticker)
     if not price or price <= 0:
         return jsonify({"error": "현재가를 가져올 수 없어 매수할 수 없습니다. 잠시 후 다시 시도해주세요"}), 503
-    price = float(price)
 
-    user = current_user
-    if user.cash_balance is None:
-        user.cash_balance = INITIAL_CAPITAL_KRW
-
-    currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else "USD"
-
-    # 이름 보강 (STOCK_DB lookup)
-    if name == ticker:
-        for s in STOCK_DB:
-            if s.get("symbol") == ticker:
-                name = s.get("name") or name
-                break
-
-    fx = _get_usd_krw_rate()
-    amount_native = price * qty
-    amount_krw    = amount_native * (fx if currency == "USD" else 1)
-    fee_krw       = round(amount_krw * 0.001)   # 수수료 0.1%
-    total_krw     = amount_krw + fee_krw
-
-    if user.cash_balance < total_krw:
-        return jsonify({
-            "error": f"현금 부족 (필요 {round(total_krw):,}원, 보유 {round(user.cash_balance):,}원)"
-        }), 400
-
-    # 현금 차감
-    user.cash_balance -= total_krw
-
-    # 모의투자 보유 추가 또는 평균단가 업데이트
-    existing = PaperHolding.query.filter_by(user_id=user.id, ticker=ticker).first()
-    if existing:
-        new_qty = existing.quantity + qty
-        avg     = (existing.purchase_price * existing.quantity + price * qty) / new_qty
-        existing.quantity       = round(new_qty, 6)
-        existing.purchase_price = round(avg, 6)
-        existing.name           = name
-        existing.currency       = currency
-    else:
-        h = PaperHolding(
-            user_id=user.id, ticker=ticker, name=name,
-            quantity=qty, purchase_price=price, currency=currency,
-        )
-        db.session.add(h)
-
-    # Transaction 기록
-    tx = Transaction(
-        user_id=user.id, ticker=ticker, name=name,
-        type="buy", price=price, quantity=qty,
-        currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
-        fee_krw=fee_krw, amount_krw=round(amount_krw),
-        realized_pnl_krw=0, note=note,
-    )
-    db.session.add(tx)
-    db.session.commit()
-
+    tx, err = paper_buy(current_user, ticker, name, qty, float(price), note=note)
+    if err:
+        return jsonify({"error": err}), 400
     return jsonify({
         "ok": True,
         "transaction": tx.to_dict(),
-        "cash_balance": round(user.cash_balance),
+        "cash_balance": round(current_user.cash_balance),
     })
 
 
@@ -5276,11 +5339,7 @@ def trading_sell():
     if not ticker or qty <= 0:
         return jsonify({"error": "티커/수량을 올바르게 입력해주세요"}), 400
 
-    user = current_user
-    if user.cash_balance is None:
-        user.cash_balance = INITIAL_CAPITAL_KRW
-
-    holding = PaperHolding.query.filter_by(user_id=user.id, ticker=ticker).first()
+    holding = PaperHolding.query.filter_by(user_id=current_user.id, ticker=ticker).first()
     if not holding:
         return jsonify({"error": "보유하지 않은 종목입니다"}), 400
     if qty > holding.quantity:
@@ -5292,46 +5351,15 @@ def trading_sell():
     price = _fetch_current_price(ticker)
     if not price or price <= 0:
         return jsonify({"error": "현재가를 가져올 수 없어 매도할 수 없습니다. 잠시 후 다시 시도해주세요"}), 503
-    price = float(price)
 
-    currency = holding.currency or "USD"
-    fx = _get_usd_krw_rate()
-
-    # 매도 금액 KRW 환산
-    amount_native = price * qty
-    amount_krw    = amount_native * (fx if currency == "USD" else 1)
-    fee_krw       = round(amount_krw * 0.001)
-    proceeds_krw  = amount_krw - fee_krw
-
-    # 실현 손익 = (매도가 - 매입가) * 수량 (KRW 환산)
-    pnl_native = (price - holding.purchase_price) * qty
-    pnl_krw    = pnl_native * (fx if currency == "USD" else 1)
-
-    # 현금 증가
-    user.cash_balance += proceeds_krw
-
-    # Holding 수량 감소 또는 삭제
-    if qty >= holding.quantity:
-        db.session.delete(holding)
-    else:
-        holding.quantity = round(holding.quantity - qty, 6)
-
-    # Transaction 기록
-    tx = Transaction(
-        user_id=user.id, ticker=ticker, name=holding.name if holding else ticker,
-        type="sell", price=price, quantity=qty,
-        currency=currency, exchange_rate=(fx if currency == "USD" else 1.0),
-        fee_krw=fee_krw, amount_krw=round(amount_krw),
-        realized_pnl_krw=round(pnl_krw), note=note,
-    )
-    db.session.add(tx)
-    db.session.commit()
-
+    tx, err = paper_sell(current_user, ticker, qty, float(price), note=note)
+    if err:
+        return jsonify({"error": err}), 400
     return jsonify({
         "ok": True,
         "transaction": tx.to_dict(),
-        "cash_balance": round(user.cash_balance),
-        "realized_pnl_krw": round(pnl_krw),
+        "cash_balance": round(current_user.cash_balance),
+        "realized_pnl_krw": tx.realized_pnl_krw,
     })
 
 
@@ -5811,6 +5839,7 @@ def leaderboard():
     limit  = min(int(request.args.get("limit", 50)), 100)
     if metric not in ("total", "7d", "30d"):
         metric = "total"
+    include_bots = (request.args.get("bots", "1") != "0")     # AI 봇 포함(기본) / 유저만
 
     # 닉네임 설정 + 공개 유저만
     users = User.query.filter(
@@ -5828,8 +5857,11 @@ def leaderboard():
             continue
         cur_total = info["total"]
         initial = u.initial_capital or INITIAL_CAPITAL_KRW
-        # 보유 종목 없고 초기금(1억) 그대로면 = 사실상 미참여 → 랭킹 제외
-        if not info["has_holdings"] and abs(cur_total - initial) < 1:
+        is_bot = (u.provider == "bot")
+        if is_bot and not include_bots:
+            continue
+        # 보유 종목 없고 초기금(1억) 그대로면 = 사실상 미참여 → 랭킹 제외 (AI 봇은 첫 거래 전에도 표시)
+        if not is_bot and not info["has_holdings"] and abs(cur_total - initial) < 1:
             continue
         if metric == "total":
             ret_pct = (cur_total / initial - 1) * 100 if initial > 0 else 0
@@ -5842,6 +5874,8 @@ def leaderboard():
                 AssetSnapshot.user_id == u.id,
                 AssetSnapshot.date >= cutoff,
             ).order_by(AssetSnapshot.date.asc()).first()
+            if not start_snap and is_bot:
+                start_snap = type("S", (), {"total_assets_krw": initial})()   # 봇은 스냅샷이 쌓이기 전이면 시작 자본 기준
             if not start_snap:
                 continue
             start_v = start_snap.total_assets_krw
@@ -5864,6 +5898,8 @@ def leaderboard():
             "return_pct":       round(ret_pct, 2),
             "total_assets_krw": round(total_krw),
             "reset_count":      u.reset_count or 0,
+            "is_bot":           is_bot,
+            "bot_key":          u.provider_id if is_bot else None,
         })
 
     # 정렬 + 랭크 부여
@@ -5879,6 +5915,7 @@ def leaderboard():
         "metric": metric,
         "ranks":  rows[:limit],
         "total_participants": len(rows),
+        "include_bots": include_bots,
     })
 
 
@@ -5987,6 +6024,7 @@ def debug_toss():
 
 # ── AI 매매 신호 봇 (Step 1: 신호 생성 파이프라인, Step 2: 관심종목·구독·알림) ──────────
 import bot_engine
+import bot_trader
 import notifier
 
 notifier.init({
@@ -6001,12 +6039,21 @@ bot_engine.init({
     "compute_dcf": compute_dcf, "get_financials": _get_financials, "get_risk_free_rate": _get_risk_free_rate,
     "fetch_upcoming_events": fetch_upcoming_events, "fetch_kr_news": fetch_kr_news, "fetch_news": fetch_news,
     "notify": notifier.dispatch,
+    "sync": bot_trader.sync, "snapshot": bot_trader.snapshot_all, "day_change": bot_trader.day_change_pct,
+})
+bot_trader.init({
+    "app": app, "db": db, "User": User, "PaperHolding": PaperHolding, "AssetSnapshot": AssetSnapshot,
+    "BotStrategy": BotStrategy, "AiSignal": AiSignal, "BotPosition": BotPosition,
+    "paper_buy": paper_buy, "paper_sell": paper_sell, "fx": _get_usd_krw_rate, "price": _fetch_current_price,
+    "save_snapshot": _save_today_snapshot,
 })
 with app.app_context():
     try:
         bot_engine.seed_strategies()
+        bot_trader.ensure_accounts()          # 전략마다 1억 원 봇 계좌
     except Exception as e:
-        app.logger.warning(f"[BOT] 전략 초기화 실패: {e}")
+        db.session.rollback()
+        app.logger.warning(f"[BOT] 전략·계좌 초기화 실패: {e}")
 bot_engine.start_scheduler()
 
 
@@ -6162,6 +6209,48 @@ def watchlist_remove(ticker):
     return jsonify({"ok": True})
 
 
+_QUOTE_CACHE = {}            # ticker → (ts, {"price", "prev_close", "change_pct"})
+_QUOTE_TTL = 30
+
+
+def _quote(ticker):
+    """현재가 + 전일 대비 등락률. 한국: 토스 현재가(가능할 때) + 네이버 전일 종가, 그 외 yfinance. 30초 캐시."""
+    hit = _QUOTE_CACHE.get(ticker)
+    if hit and time.time() - hit[0] < _QUOTE_TTL:
+        return hit[1]
+    price = prev = None
+    try:
+        if ticker.endswith((".KS", ".KQ")):
+            nv = fetch_naver_realtime_price(ticker.split(".")[0]) or {}
+            price, prev = nv.get("current_price"), nv.get("previous_close")
+            if toss_api.is_enabled() and toss_api.is_eligible(ticker):
+                price = _fetch_current_price(ticker) or price
+        else:
+            fi = yf.Ticker(ticker).fast_info
+            price = getattr(fi, "last_price", None)
+            prev = getattr(fi, "previous_close", None)
+    except Exception:
+        pass
+    out = {"price": float(price) if price else None, "prev_close": float(prev) if prev else None,
+           "change_pct": round((price / prev - 1) * 100, 2) if (price and prev) else None}
+    if price:
+        _QUOTE_CACHE[ticker] = (time.time(), out)
+    return out
+
+
+@app.route("/api/watchlist/quotes")
+@login_required
+def watchlist_quotes():
+    """관심종목 현재가·등락률 (목록은 /api/watchlist 로 먼저 그리고, 시세는 이걸로 채운다)."""
+    rows = WatchlistItem.query.filter_by(user_id=current_user.id).all()
+    tickers = [r.ticker for r in rows]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        quotes = dict(zip(tickers, ex.map(_quote, tickers)))
+    return jsonify({"quotes": {t: {**q, "currency": "KRW" if t.endswith((".KS", ".KQ")) else "USD"}
+                               for t, q in quotes.items()}})
+
+
 # ── 신호 알림 구독 ─────────────────────────────────────────────────────────────
 def _strategies_public():
     return [{"key": s.key, "name": s.name, "emoji": s.emoji, "kind": s.kind, "use_ai": s.use_ai}
@@ -6234,6 +6323,166 @@ def notifications_read():
     n = q.update({"is_read": True}, synchronize_session=False)
     db.session.commit()
     return jsonify({"ok": True, "updated": n})
+
+
+
+# ── AI 봇 검증 대시보드 (Step 3) ─────────────────────────────────────────────
+BOT_DISCLAIMER = "AI 매매 신호 및 가상 봇 수익률은 알고리즘 검증용 모의 데이터이며 실제 투자 권유가 아닙니다."
+BOT_COLORS = {"aggressive_momentum": "#3987e5", "balanced_swing": "#d95926",
+              "conservative_value": "#199e70", "baseline_quant": "#c98500"}
+BENCH_COLORS = {"KOSPI": "#d55181", "S&P 500": "#9085e9"}
+
+
+def _bot_summary(st, p):
+    ex, r = p.get("exit", {}), p.get("risk", {})
+    lim = (f"종목당 최대 {int(r.get('max_weight', 0) * 100)}% · 최대 {r.get('max_positions')}종목 · "
+           f"하루 신규 {r.get('max_new_per_day')}건 · 하루 손실 -{r.get('daily_loss_limit_pct')}%면 신규 중단")
+    if st.key == "aggressive_momentum":
+        rule = (f"단기 상승 돌파: 5일선>20일선, 구름대 위, 거래량 평균의 {p['entry']['vol_ratio_min']}배 이상, MACD 상승, "
+                f"RSI {p['entry']['rsi_min']}~{p['entry']['rsi_max']} + AI 단기 호재 확인(신뢰도 {p['ai_conf_min']}↑)")
+        exit_ = (f"손절 -{ex['stop_pct']:g}% 또는 1.5ATR 중 가까운 쪽 · 목표 +{ex['target_pct_min']:g}~{ex['target_pct_max']:g}% · "
+                 f"+{ex['trail_trigger_pct']:g}% 이후 고점 대비 -{ex['trail_pct']:g}% 트레일링 · 최대 {ex['time_stop_days']}거래일")
+    elif st.kind == "swing":
+        ai = f" + AI 검증(신뢰도 {p['ai_conf_min']}↑)" if st.use_ai else " (AI 검증 없음 · 균형형과 같은 규칙의 대조군)"
+        rule = f"추세 돌파 또는 과매도 반등 + 펀더멘탈 {p['fund_min']}점↑{ai}"
+        exit_ = (f"손절 {ex['stop_pct_min']:g}~{ex['stop_pct_max']:g}% · 목표 {ex.get('target_rr', ex['rr_min']):g}R(저항선 우선) · "
+                 f"+{ex['trail_trigger_pct']:g}% 이후 -{ex['trail_pct']:g}% 트레일링 · 추세 이탈 · 최대 {ex['time_stop_days']}거래일")
+    else:
+        rule = (f"펀더멘탈 {p['fund_min']}점↑ + 적정가·목표가 대비 {p['upside_min_pct']:g}%↑ 저평가 + 하단 반등 확인 + "
+                f"AI 구조적 악재 없음(신뢰도 {p['ai_conf_min']}↑) · VIX {p['vix_max']} 이상이면 신규 보류")
+        exit_ = f"손절 -{ex['stop_pct']:g}% · 목표 +{ex['target_pct_min']:g}~{ex['target_pct_max']:g}% · 최대 {ex['time_stop_days']}거래일"
+    return {"rule": rule, "exit": exit_, "limits": lim, "fee": f"매수·매도 수수료 각 {p.get('fee_pct', 0.15)}%"}
+
+
+def _bot_account(u, fx=None):
+    tot, cash, pos = bot_trader.equity(u, fx=fx)
+    init = u.initial_capital or bot_trader.INITIAL
+    return {"total_krw": round(tot), "cash_krw": round(cash), "positions_krw": round(pos),
+            "initial_krw": round(init), "return_pct": round((tot / init - 1) * 100, 2) if init else 0}
+
+
+@app.route("/ai-bots")
+def ai_bots_page():
+    return render_template("ai_bots.html")
+
+
+@app.route("/api/ai-bots/overview")
+def ai_bots_overview():
+    users = bot_trader.bot_users()
+    fx = _get_usd_krw_rate()
+    bots = []
+    for st in BotStrategy.query.order_by(BotStrategy.id).all():
+        p = json.loads(st.params_json)
+        u = users.get(st.key)
+        sig_counts = dict(db.session.query(AiSignal.status, db.func.count(AiSignal.id))
+                          .filter(AiSignal.strategy_key == st.key).group_by(AiSignal.status).all())
+        bots.append({
+            "key": st.key, "name": st.name, "emoji": st.emoji, "kind": st.kind, "use_ai": st.use_ai,
+            "enabled": st.enabled, "color": BOT_COLORS.get(st.key, "#3987e5"),
+            "nickname": u.nickname if u else None, "summary": _bot_summary(st, p),
+            "account": _bot_account(u, fx) if u else None, "stats": bot_trader.stats(st.key),
+            "signals": {"total": sum(sig_counts.values()), "pending": sig_counts.get("PENDING", 0),
+                        "active": sig_counts.get("ACTIVE", 0), "cancelled": sig_counts.get("CANCELLED", 0)},
+        })
+    by = {b["key"]: b for b in bots}
+    cmp_ = None
+    if "balanced_swing" in by and "baseline_quant" in by:
+        def pick(b):
+            st = b["stats"]
+            return {"key": b["key"], "name": b["name"], "emoji": b["emoji"],
+                    "return_pct": (b["account"] or {}).get("return_pct"), "win_rate": st["win_rate"],
+                    "mdd_pct": st["mdd_pct"], "payoff": st["payoff"], "trades": st["trades"]}
+        cmp_ = {"ai": pick(by["balanced_swing"]), "baseline": pick(by["baseline_quant"])}
+    runs = []
+    for r in AiCache.query.filter_by(cache_type="bot_run").order_by(AiCache.created_at.desc()).limit(4).all():
+        try:
+            d = json.loads(r.payload_json)
+            runs.append({"market": d.get("market"), "as_of": d.get("as_of"), "tickers": d.get("tickers"),
+                         "signals": sum(len(v) for v in (d.get("signals") or {}).values()),
+                         "ai_calls": d.get("ai_calls_used"), "skipped": d.get("skipped")})
+        except Exception:
+            pass
+    return jsonify({"bots": bots, "comparison": cmp_, "next_batch": bot_engine.next_batch_times(),
+                    "initial_capital": bot_trader.INITIAL, "recent_runs": runs,
+                    "ai_budget_limit": bot_engine.ai_budget_limit(), "kr_earnings_filter": "skipped",
+                    "disclaimer": BOT_DISCLAIMER})
+
+
+@app.route("/api/ai-bots/chart")
+def ai_bots_chart():
+    """봇 4개 + KOSPI + S&P 500 수익률(%) 곡선. 기간 시작일을 0%로 맞춘다. ?period=7D|30D|90D|ALL"""
+    from datetime import date as _date, timedelta as _td
+    period = (request.args.get("period") or "ALL").upper()
+    days = {"7D": 7, "30D": 30, "90D": 90}.get(period)
+    users = bot_trader.bot_users()
+    today = datetime.now(bot_engine._tz("KR")).date()
+    starts = [u.created_at.date() for u in users.values() if u.created_at]
+    first = min(starts) if starts else today
+    start = max(first, today - _td(days=days)) if days else first
+    fx = _get_usd_krw_rate()
+    series = []
+    for st in BotStrategy.query.order_by(BotStrategy.id).all():
+        u = users.get(st.key)
+        if not u:
+            continue
+        init = u.initial_capital or bot_trader.INITIAL
+        pts = {(u.created_at.date() if u.created_at else first): init}
+        for snp in AssetSnapshot.query.filter_by(user_id=u.id).order_by(AssetSnapshot.date).all():
+            pts[snp.date] = snp.total_assets_krw
+        pts[today] = bot_trader.equity(u, fx=fx)[0]          # 마지막 점은 실시간 평가
+        ordered = sorted(pts.items())
+        base = next((v for d_, v in reversed(ordered) if d_ <= start), ordered[0][1])
+        data = [{"date": d_.isoformat(), "return_pct": round((v / base - 1) * 100, 3)}
+                for d_, v in ordered if d_ >= start]
+        series.append({"key": st.key, "name": f"{st.emoji} {st.name}", "color": BOT_COLORS.get(st.key),
+                       "kind": "bot", "data": data})
+    for label, sym in (("KOSPI", "^KS11"), ("S&P 500", "^GSPC")):
+        hist = _fetch_benchmark_history(sym, lookback_days=max(30, (today - start).days + 10))
+        # 시작일 직전 거래일 종가를 0%로 (시작일이 휴장일이어도 기준이 생기게)
+        prior = [h for h in hist if h["date"] <= start.isoformat()]
+        base_date = prior[-1]["date"] if prior else start.isoformat()
+        data = [{"date": x["date"], "return_pct": x["return_pct"]} for x in _normalize_benchmark(hist, base_date)]
+        series.append({"key": label, "name": label, "color": BENCH_COLORS[label], "kind": "benchmark", "data": data})
+    return jsonify({"period": period, "start": start.isoformat(), "series": series,
+                    "points": max((len(s["data"]) for s in series if s["kind"] == "bot"), default=0)})
+
+
+@app.route("/api/ai-bots/<key>")
+def ai_bots_detail(key):
+    st = BotStrategy.query.filter_by(key=key).first_or_404()
+    u = bot_trader.bot_users().get(key)
+    p = json.loads(st.params_json)
+    fx = _get_usd_krw_rate()
+    positions = []
+    if u:
+        for pos in BotPosition.query.filter_by(user_id=u.id, status="OPEN").all():
+            sig = AiSignal.query.get(pos.signal_id)
+            cur = _fetch_current_price(pos.ticker) or pos.entry_price
+            positions.append({
+                "ticker": pos.ticker, "name": pos.name, "currency": pos.currency, "quantity": pos.quantity,
+                "entry_price": pos.entry_price, "current_price": cur,
+                "return_pct": round((cur / pos.entry_price - 1) * 100, 2) if pos.entry_price else None,
+                "target_price": sig.target_price if sig else None, "stop_price": sig.stop_price if sig else None,
+                "to_target_pct": round((sig.target_price / cur - 1) * 100, 2) if (sig and cur) else None,
+                "to_stop_pct": round((sig.stop_price / cur - 1) * 100, 2) if (sig and cur) else None,
+                "value_krw": round(cur * pos.quantity * (fx if pos.currency == "USD" else 1)),
+                "filled_date": sig.filled_date.isoformat() if (sig and sig.filled_date) else None,
+                "holding_days": sig.holding_days if sig else None, "signal_id": pos.signal_id,
+            })
+    acct = {p_.signal_id: p_ for p_ in BotPosition.query.filter_by(strategy_key=key).all()}
+    log_rows = AiSignal.query.filter_by(strategy_key=key).order_by(AiSignal.signal_date.desc(), AiSignal.id.desc()).limit(100).all()
+    log = []
+    for s_ in log_rows:
+        d = _signal_dict(s_)
+        a = acct.get(s_.id)
+        d["account"] = ({"status": a.status, "quantity": a.quantity, "skip_reason": a.skip_reason,
+                         "realized_pnl_krw": a.realized_pnl_krw, "pnl_pct": a.pnl_pct} if a else None)
+        d["has_ai"] = bool(s_.assessment_id)
+        log.append(d)
+    return jsonify({"key": st.key, "name": st.name, "emoji": st.emoji, "kind": st.kind, "use_ai": st.use_ai,
+                    "color": BOT_COLORS.get(st.key), "summary": _bot_summary(st, p),
+                    "account": _bot_account(u, fx) if u else None, "stats": bot_trader.stats(key),
+                    "positions": positions, "signals": log, "disclaimer": BOT_DISCLAIMER})
 
 
 if __name__ == "__main__":

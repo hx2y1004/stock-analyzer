@@ -311,7 +311,7 @@ function _pfCardHTML(h, rank, compact = false) {
   const retIcon  = retPct > 0 ? '▲' : retPct < 0 ? '▼' : '';
   const cur      = h.currency || 'USD';
   const fmtPrice = (v, noRound = false) => v == null ? '—' : cur === 'KRW'
-    ? (noRound ? Number(v) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
+    ? (noRound ? Math.round(Number(v)) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
     : '$' + Number(v).toLocaleString();
 
   // 순위 + 메달 (수익률 양수일 때만 메달)
@@ -1184,7 +1184,7 @@ function renderPositionCard(position, stock) {
   // 보유 중 — 비주얼 강조된 카드
   const cur = position.currency || 'USD';
   const fmtP = (v, noRound = false) => v == null ? '—' : cur === 'KRW'
-    ? (noRound ? Number(v) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
+    ? (noRound ? Math.round(Number(v)) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
     : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const rec      = position.recommendation;
   const pct      = rec ? rec.return_pct : null;
@@ -1269,7 +1269,7 @@ function openSellModal() {
   const p = currentPositionData;
   const cur = p.currency || 'USD';
   document.getElementById('sellModalDesc').textContent =
-    `${p.name || p.ticker} 보유 ${p.quantity}주 · 평균매입가 ${Number(p.purchase_price).toLocaleString()}`;
+    `${p.name || p.ticker} 보유 ${p.quantity}주 · 평균매입가 ${cur === 'KRW' ? Math.round(Number(p.purchase_price)).toLocaleString('ko-KR') + '원' : '$' + Number(p.purchase_price).toFixed(2)}`;
   document.getElementById('sellCurrencyLabel').textContent = `(${cur})`;
   document.getElementById('sellPrice').value = '';
   document.getElementById('sellQty').value   = '';
@@ -1953,8 +1953,13 @@ function renderMetrics(stock, analysis) {
   document.getElementById('peRatio').textContent =
     stock.pe_ratio != null ? stock.pe_ratio.toFixed(1) + 'x' : '—';
 
-  document.getElementById('forwardPeRatio').textContent =
+  const fpeEl = document.getElementById('forwardPeRatio');
+  fpeEl.textContent =
     stock.forward_pe != null && stock.forward_pe > 0 ? stock.forward_pe.toFixed(1) + 'x' : '—';
+  // 한국 종목은 네이버 컨센서스(기준 연도 표기), 그 외는 Yahoo 추정치
+  fpeEl.title = stock.forward_pe_basis || '';
+  const fpeLbl = document.getElementById('forwardPeLabel');
+  if (fpeLbl) fpeLbl.textContent = stock.forward_pe_year ? `선행PER(${stock.forward_pe_year}E)` : '선행PER';
 
   document.getElementById('pbRatio').textContent =
     stock.pb_ratio != null ? stock.pb_ratio.toFixed(2) + 'x' : '—';

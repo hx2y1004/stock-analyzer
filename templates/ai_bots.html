@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>AI 봇 검증 — StockAnalyzer</title>
+  <meta name="description" content="AI 매매 신호 봇 4개의 가상 모의 매매 성적과 신호 사후 검증" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0d1117" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=64" />
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+          .catch(err => console.warn('SW register failed:', err));
+      });
+    }
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">📈 StockAnalyzer</div>
+      <nav class="nav">
+        <a href="/" class="nav-link">분석</a>
+        <a href="/trading" class="nav-link">모의투자</a>
+        <a href="/leaderboard" class="nav-link">랭킹</a>
+        <a href="/ai-bots" class="nav-link active">AI 봇</a>
+      </nav>
+      {% set login_action = "location.href='/auth/google'" %}{% include "_auth_area.html" %}
+    </div>
+  </header>
+
+  <main class="ab-main">
+    <section class="card ab-hero">
+      <div class="ab-hero-top">
+        <div>
+          <h1 class="ab-title">AI 봇 검증</h1>
+          <p class="ab-sub">전략이 다른 봇 4개가 각자 <strong>1억 원</strong> 가상 계좌로 신호대로 사고팝니다. 수수료는 매수·매도 각 0.15%입니다.</p>
+        </div>
+        <button type="button" class="ab-alert-btn" onclick="window.SANotify ? SANotify.openSettings() : (location.href='/auth/google')">🔔 신호 알림 받기</button>
+      </div>
+      <p class="ab-disclaimer" role="note">⚠️ AI 매매 신호 및 가상 봇 수익률은 알고리즘 검증용 모의 데이터이며 실제 투자 권유가 아닙니다.</p>
+      <div id="abSchedule" class="ab-schedule"></div>
+    </section>
+
+    <section class="ab-cards" id="abCards" aria-label="봇 성적표">
+      <div class="card ab-skel">불러오는 중...</div>
+    </section>
+
+    <section class="card ab-chart-card" aria-labelledby="abChartTitle">
+      <div class="ab-chart-head">
+        <h2 class="card-title" id="abChartTitle">누적 수익률 비교</h2>
+        <div class="ab-periods" role="group" aria-label="기간">
+          <button type="button" class="ab-period" data-p="7D">7D</button>
+          <button type="button" class="ab-period" data-p="30D">30D</button>
+          <button type="button" class="ab-period" data-p="90D">90D</button>
+          <button type="button" class="ab-period active" data-p="ALL">전체</button>
+        </div>
+      </div>
+      <div id="abLegend" class="ab-legend"></div>
+      <div id="abChartWrap" class="ab-chart-wrap"><div id="abChart" class="ab-chart"></div></div>
+      <div id="abChartNote" class="ab-note"></div>
+    </section>
+
+    <section class="card ab-compare" id="abCompare" aria-labelledby="abCmpTitle"></section>
+
+    <section class="card ab-detail hidden" id="abDetail" aria-live="polite"></section>
+  </main>
+
+  <!-- AI 근거 모달 -->
+  <div id="abModal" class="modal-overlay hidden">
+    <div class="modal-box ab-modal" role="dialog" aria-modal="true" aria-labelledby="abModalTitle">
+      <button class="modal-close" aria-label="닫기" data-close><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg></button>
+      <h2 class="modal-title" id="abModalTitle">진입 근거</h2>
+      <div id="abModalBody"></div>
+      <div class="sub-actions"><button type="button" class="sub-cancel" data-close style="flex:1">닫기</button></div>
+    </div>
+  </div>
+
+  {% include "_footer.html" %}
+  <script src="/static/js/notify.js?v=2"></script>
+  <script src="/static/js/ai_bots.js?v=1"></script>
+</body>
+</html>

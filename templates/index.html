@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=63" />
+  <link rel="stylesheet" href="/static/css/style.css?v=64" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -45,6 +45,7 @@
         <a href="/" class="nav-link active">분석</a>
         <a href="/trading" class="nav-link">모의투자</a>
         <a href="/leaderboard" class="nav-link">랭킹</a>
+        <a href="/ai-bots" class="nav-link">AI 봇</a>
       </nav>
       <!-- 로그인/프로필 -->
       {% set login_action = "openLoginModal()" %}{% include "_auth_area.html" %}
@@ -340,7 +341,7 @@
             <div class="metric-item"><div class="metric-label">RSI (14)</div><div id="rsiValue" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">볼린저밴드 위치</div><div id="bbPosition" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">PER</div><div id="peRatio" class="metric-value"></div></div>
-            <div class="metric-item"><div class="metric-label">선행PER</div><div id="forwardPeRatio" class="metric-value"></div></div>
+            <div class="metric-item"><div class="metric-label" id="forwardPeLabel">선행PER</div><div id="forwardPeRatio" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">PBR</div><div id="pbRatio" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">EPS</div><div id="epsValue" class="metric-value"></div></div>
             <div class="metric-item"><div class="metric-label">배당수익률</div><div id="dividendYield" class="metric-value"></div></div>
@@ -644,7 +645,7 @@
 
   {% include "_footer.html" %}
   <script src="/static/js/chart.js"></script>
-  <script src="/static/js/notify.js?v=1"></script>
-  <script src="/static/js/main.js?v=66"></script>
+  <script src="/static/js/notify.js?v=2"></script>
+  <script src="/static/js/main.js?v=67"></script>
 </body>
 </html>

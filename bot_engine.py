@@ -96,12 +96,29 @@ def seed_strategies():
     Model, db = D["BotStrategy"], D["db"]
     by_key = {s["key"]: s for s in DEFAULT_STRATEGIES}
     for s in DEFAULT_STRATEGIES:
-        if Model.query.filter_by(key=s["key"]).first():
-            continue
         params = s["params"] or by_key["balanced_swing"]["params"]
+        row = Model.query.filter_by(key=s["key"]).first()
+        if row:
+            # 새로 생긴 파라미터 키만 채운다 (이미 있는 값은 튜닝값일 수 있어 그대로 둠)
+            cur = json.loads(row.params_json or "{}")
+            if _fill_missing(cur, params):
+                row.params_json = json.dumps(cur, ensure_ascii=False)
+                log(f"전략 {s['key']} 에 새 파라미터 추가")
+            continue
         db.session.add(Model(key=s["key"], name=s["name"], emoji=s["emoji"], kind=s["kind"],
                              use_ai=s["use_ai"], enabled=True, params_json=json.dumps(params, ensure_ascii=False)))
     db.session.commit()
+
+
+def _fill_missing(cur, default):
+    changed = False
+    for k, v in default.items():
+        if k not in cur:
+            cur[k] = json.loads(json.dumps(v))
+            changed = True
+        elif isinstance(v, dict) and isinstance(cur[k], dict):
+            changed |= _fill_missing(cur[k], v)
+    return changed
 
 
 def load_strategies():
@@ -504,18 +521,7 @@ def track_signals(market, data, strategies, commit=True):
         if sig.status == "PENDING":
             if bars.empty:
                 continue
-            nb = bars.iloc[0]
-            op = float(nb["Open"])
-            # B 방식: 신호 다음 장 시가로 체결. 시가가 계획을 깨뜨리면 취소
-            if op <= sig.stop_price:
-                sig.status, sig.status_reason = "CANCELLED", f"다음 장 시가 {op:.2f}가 손절가 이하"
-            else:
-                rr = (sig.target_price - op) / (op - sig.stop_price) if op < sig.target_price else 0
-                if rr < ex["rr_min"]:
-                    sig.status, sig.status_reason = "CANCELLED", f"갭 상승으로 손익비 {rr:.2f} < {ex['rr_min']}"
-                else:
-                    sig.status, sig.fill_price, sig.filled_date = "ACTIVE", op, bars.index[0].date()
-                    sig.peak_price, sig.holding_days = op, 0
+            _try_fill(sig, float(bars.iloc[0]["Open"]), bars.index[0].date(), ex)
             changed += 1
             if sig.status != "ACTIVE":
                 continue
@@ -528,6 +534,44 @@ def track_signals(market, data, strategies, commit=True):
     return changed
 
 
+def _try_fill(sig, op, day, ex):
+    """B 방식 체결: 신호 다음 장 시가로 체결. 시가가 손절가 이하이거나 갭 상승으로 손익비가 기준 미만이면 취소."""
+    if op <= sig.stop_price:
+        sig.status, sig.status_reason = "CANCELLED", f"다음 장 시가 {op:.2f}가 손절가 이하"
+        return False
+    rr = (sig.target_price - op) / (op - sig.stop_price) if op < sig.target_price else 0
+    if rr < ex["rr_min"]:
+        sig.status, sig.status_reason = "CANCELLED", f"갭 상승으로 손익비 {rr:.2f} < {ex['rr_min']}"
+        return False
+    sig.status, sig.fill_price, sig.filled_date = "ACTIVE", op, day
+    sig.peak_price, sig.holding_days = op, 0
+    return True
+
+
+def _bar_exit(sig, ex, o, h, l, first_bar):
+    """봉 하나로 손절·트레일링·목표 판정 (고점은 이 봉 이전까지의 값). → (상태, 청산가) | (None, None)"""
+    stop = sig.stop_price
+    # 트레일링 스탑: 수익이 기준 이상이면 고점 대비 일정 % 아래로 손절선을 올린다
+    if ex.get("trail_trigger_pct") and sig.peak_price:
+        if sig.peak_price >= sig.fill_price * (1 + ex["trail_trigger_pct"] / 100):
+            stop = max(stop, sig.peak_price * (1 - ex["trail_pct"] / 100))
+    stop_status = "TRAILING_STOP" if stop > sig.stop_price else "STOP_LOSS"
+    if not first_bar and o <= stop:
+        return stop_status, o
+    if not first_bar and o >= sig.target_price:
+        return "TARGET_HIT", o
+    if l <= stop:                         # 같은 봉에서 손절·목표 모두 닿으면 보수적으로 손절 먼저
+        return stop_status, stop
+    if h >= sig.target_price:
+        return "TARGET_HIT", sig.target_price
+    return None, None
+
+
+def _close(sig, status, px, day, fee):
+    sig.status, sig.exit_price, sig.exit_date = status, px, day
+    sig.pnl_pct = round(_fee_adj_pnl(sig.fill_price, px, fee), 2)
+
+
 def _advance_active(sig, bars, st, fee):
     ex = st["params"]["exit"]
     for idx, b in bars.iterrows():
@@ -537,27 +581,12 @@ def _advance_active(sig, bars, st, fee):
         if d != sig.filled_date:
             sig.holding_days = (sig.holding_days or 0) + 1
         o, h, l, c = float(b["Open"]), float(b["High"]), float(b["Low"]), float(b["Close"])
-        stop = sig.stop_price
-        # 트레일링 스탑: 수익이 기준 이상이면 고점 대비 일정 % 아래로 손절선을 올린다
-        if ex.get("trail_trigger_pct") and sig.peak_price:
-            if sig.peak_price >= sig.fill_price * (1 + ex["trail_trigger_pct"] / 100):
-                stop = max(stop, sig.peak_price * (1 - ex["trail_pct"] / 100))
-        exit_px, status = None, None
-        first_bar = (d == sig.filled_date)
-        if not first_bar and o <= stop:
-            exit_px, status = o, ("TRAILING_STOP" if stop > sig.stop_price else "STOP_LOSS")
-        elif not first_bar and o >= sig.target_price:
-            exit_px, status = o, "TARGET_HIT"
-        elif l <= stop:                         # 같은 봉에서 손절·목표 모두 닿으면 보수적으로 손절 먼저
-            exit_px, status = stop, ("TRAILING_STOP" if stop > sig.stop_price else "STOP_LOSS")
-        elif h >= sig.target_price:
-            exit_px, status = sig.target_price, "TARGET_HIT"
-        elif (sig.holding_days or 0) >= ex["time_stop_days"]:
-            exit_px, status = c, "TIME_STOP"
+        status, exit_px = _bar_exit(sig, ex, o, h, l, d == sig.filled_date)
+        if not status and (sig.holding_days or 0) >= ex["time_stop_days"]:
+            status, exit_px = "TIME_STOP", c
         sig.peak_price = max(sig.peak_price or h, h)
         if status:
-            sig.status, sig.exit_price, sig.exit_date = status, exit_px, d
-            sig.pnl_pct = round(_fee_adj_pnl(sig.fill_price, exit_px, fee), 2)
+            _close(sig, status, exit_px, d, fee)
             return
 
 
@@ -630,12 +659,16 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                 db.session.rollback()
             else:
                 _notify([], open_before)
+                summary["account"] = _sync_accounts(data)
             return summary
 
         # 3)~4) 공통 필터 + 정량 1차
         cooldown_from = datetime.utcnow() - timedelta(hours=COMMON["cooldown_hours"])
         recent = {(r.strategy_key, r.ticker) for r in
                   S.query.filter(S.market == market, S.created_at >= cooldown_from).all()}
+        # 이미 대기·보유 중인 종목은 같은 봇이 다시 사지 않음 (물타기·중복 포지션 방지)
+        recent |= {(r.strategy_key, r.ticker) for r in
+                   S.query.filter(S.market == market, S.status.in_(["PENDING", "ACTIVE"])).all()}
         cand = {}          # ticker → [(strat, path, qscore, ev)]
         for t, x in feats.items():
             if x["date"] != as_of:                       # 오늘 봉이 없는 종목(거래정지 등)
@@ -712,7 +745,14 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
         for st in strategies:
             r = st["params"]["risk"]
             slots = max(0, min(market_slots(st, market, as_of), r["max_positions"] - open_count.get(st["key"], 0)))
-            dl = day_loss_pct(st["key"], st, data, as_of)
+            dl = None
+            if D.get("day_change"):
+                try:
+                    dl = D["day_change"](st["key"], _last_closes(data))       # 실제 봇 계좌 자산 변화
+                except Exception as e:
+                    log(f"계좌 손익 계산 실패 {st['key']}: {e}")
+            if dl is None:
+                dl = day_loss_pct(st["key"], st, data, as_of)                 # 계좌가 없을 때만 근사치
             summary.setdefault("day_pnl_pct", {})[st["key"]] = dl
             if dl <= -r["daily_loss_limit_pct"]:
                 if proposals[st["key"]]:
@@ -746,6 +786,7 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
             f"ai_calls={summary['ai_calls_used']} {summary['seconds']}s")
         if not dry_run:
             summary["notified"] = _notify(new_objs, open_before)
+            summary["account"] = _sync_accounts(data)
             D["ai_cache"].put(f"bot_run:{market}:{as_of}", None, "bot_run", json.loads(json.dumps(summary, default=str)),
                               None, 30 * 86400)
         return summary
@@ -772,6 +813,27 @@ def market_slots(st, market, as_of):
     used_all = q.count()
     used_mkt = q.filter(S.market == market).count()
     return max(0, min(caps.get(market, total) - used_mkt, total - used_all))
+
+
+def _last_closes(data):
+    return {t: float(df["Close"].iloc[-1]) for t, df in data.items() if len(df)}
+
+
+def _sync_accounts(data=None, prices=None):
+    """신호 상태를 봇 계좌에 반영(매수·매도)하고 오늘 자산 스냅샷을 남긴다. 실패해도 배치는 계속."""
+    if not D.get("sync"):
+        return None
+    try:
+        px = dict(prices or {})
+        if data:
+            px.update(_last_closes(data))
+        res = D["sync"](px)
+        D["snapshot"](px)
+        return res
+    except Exception as e:
+        D["db"].session.rollback()
+        log(f"계좌 동기화 실패: {e}")
+        return {"error": str(e)[:200]}
 
 
 def _notify(new_objs, open_before_ids):
@@ -898,12 +960,106 @@ def _claim(market, day):
         return False
 
 
+SESSION = {"KR": ((9, 0), (15, 30)), "US": ((9, 30), (16, 0))}
+INTRADAY_EVERY = 300          # 장중 체크 간격(초)
+
+
+def in_session(market, now=None):
+    now = now or datetime.now(_tz(market))
+    (oh, om), (ch, cm) = SESSION[market]
+    return now.weekday() < 5 and (oh, om) <= (now.hour, now.minute) < (ch, cm)
+
+
+def download_intraday(tickers, market):
+    """오늘(시장 날짜) 5분봉 → {ticker: (시가, 고가, 저가, 현재가, 날짜)}. 오늘 봉이 없으면 빠진다.
+    Yahoo 장중 시세는 시장에 따라 15~20분 늦을 수 있다."""
+    import yfinance as yf
+    if not tickers:
+        return {}
+    tz = _tz(market)
+    today = datetime.now(tz).date()
+    out = {}
+    for i in range(0, len(tickers), 40):
+        part = tickers[i:i + 40]
+        try:
+            raw = yf.download(part, period="2d", interval="5m", group_by="ticker", auto_adjust=False,
+                              threads=True, progress=False)
+        except Exception as e:
+            log(f"intraday 다운로드 실패: {e}")
+            continue
+        for t in part:
+            try:
+                df = (raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw)[["Open", "High", "Low", "Close"]].dropna()
+                idx = df.index.tz_convert(tz) if df.index.tz is not None else df.index.tz_localize(tz)
+                df = df[idx.date == today]
+                if len(df):
+                    out[t] = (float(df["Open"].iloc[0]), float(df["High"].max()), float(df["Low"].min()),
+                              float(df["Close"].iloc[-1]), today)
+            except Exception:
+                pass
+    return out
+
+
+def intraday_check(market, quotes=None):
+    """장중: 대기 신호를 오늘 시가로 체결(B 방식), 보유 신호는 오늘 고가·저가로 손절·트레일링·익절 판정 후
+    봇 계좌에 반영. 시간 청산·추세 이탈·AI 악재는 장 마감 배치에서 판정한다. quotes 는 테스트용."""
+    S, db = D["AiSignal"], D["db"]
+    today = market_today(market)
+    rows = S.query.filter(S.market == market, S.status.in_(["PENDING", "ACTIVE"])).all()
+    rows = [r for r in rows if not (r.status == "PENDING" and r.signal_date >= today)]
+    if not rows:
+        return {"checked": 0}
+    if quotes is None:
+        quotes = download_intraday(sorted({r.ticker for r in rows}), market)
+    strat = {s["key"]: s for s in load_strategies()}
+    open_before = [r.id for r in rows]
+    filled = closed = 0
+    for sig in rows:
+        q, st = quotes.get(sig.ticker), strat.get(sig.strategy_key)
+        if not q or not st:
+            continue
+        o, h, l, c, day = q
+        ex, fee = st["params"]["exit"], st["params"].get("fee_pct", 0.15)
+        if sig.status == "PENDING":
+            if not _try_fill(sig, o, day, ex):
+                continue
+            filled += 1
+        if sig.filled_date and day < sig.filled_date:
+            continue
+        status, px = _bar_exit(sig, ex, o, h, l, day == sig.filled_date)
+        if status:
+            _close(sig, status, px, day, fee)
+            closed += 1
+    db.session.commit()
+    res = {"checked": len(rows), "filled": filled, "closed": closed}
+    if filled or closed:
+        _notify([], open_before)
+        res["account"] = _sync_accounts(prices={t: q[3] for t, q in quotes.items()})
+        log(f"intraday {market} {res}")
+    return res
+
+
 def _scheduler_loop():
     time.sleep(30)
+    last_intraday = {"KR": 0.0, "US": 0.0}
     while True:
         try:
             with D["app"].app_context():
                 for market in ("KR", "US"):
+                    # 장중: 5분마다 체결·청산 확인 (DB 잠금 없이도 판정이 멱등이라 중복 실행돼도 결과 같음)
+                    if in_session(market) and time.time() - last_intraday[market] >= INTRADAY_EVERY:
+                        last_intraday[market] = time.time()
+                        try:
+                            if _RUN_LOCK.acquire(blocking=False):
+                                try:
+                                    intraday_check(market)
+                                finally:
+                                    _RUN_LOCK.release()
+                        except Exception as e:
+                            D["db"].session.rollback()
+                            log(f"scheduler: {market} 장중 체크 실패: {e}")
+                        finally:
+                            D["db"].session.remove()
                     now = datetime.now(_tz(market))
                     hh, mm = RUN_AFTER[market]
                     if now.weekday() >= 5 or (now.hour, now.minute) < (hh, mm):
@@ -931,3 +1087,18 @@ def start_scheduler():
     _started = True
     threading.Thread(target=_scheduler_loop, daemon=True, name="bot-scheduler").start()
     log("scheduler 시작 (BOT_SCHEDULER=0 으로 끌 수 있음)")
+
+
+def next_batch_times():
+    """시장별 다음 장 마감 배치 예정 시각 (현지 시각 ISO 문자열). 공휴일은 고려하지 않음."""
+    out = {}
+    for market, (hh, mm) in RUN_AFTER.items():
+        tz = _tz(market)
+        now = datetime.now(tz)
+        cand = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if now >= cand:
+            cand += timedelta(days=1)
+        while cand.weekday() >= 5:
+            cand += timedelta(days=1)
+        out[market] = cand.isoformat()
+    return out

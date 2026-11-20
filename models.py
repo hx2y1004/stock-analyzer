@@ -288,3 +288,28 @@ class Notification(db.Model):
     is_read    = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     __table_args__ = (db.UniqueConstraint("user_id", "signal_id", "kind", name="uq_notif_user_signal_kind"),)
+
+
+class BotPosition(db.Model):
+    """봇 신호 ↔ 봇 모의투자 계좌 거래 연결 (Step 3).
+    신호 1건당 1행. 신호가 체결(ACTIVE)되면 봇 계좌로 매수하고, 청산되면 매도한다.
+    status: OPEN(보유) | CLOSED(청산) | SKIPPED(계좌 사정으로 매수 안 함: 현금·비중·보유 수 한도)"""
+    __tablename__ = "bot_positions"
+    id               = db.Column(db.Integer, primary_key=True)
+    signal_id        = db.Column(db.Integer, db.ForeignKey("ai_signals.id"), nullable=False, unique=True)
+    strategy_key     = db.Column(db.String(40), nullable=False, index=True)
+    user_id          = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    ticker           = db.Column(db.String(30), nullable=False)
+    name             = db.Column(db.String(200))
+    currency         = db.Column(db.String(10))
+    quantity         = db.Column(db.Float, default=0)
+    entry_price      = db.Column(db.Float)
+    entry_fx         = db.Column(db.Float)
+    exit_price       = db.Column(db.Float)
+    exit_fx          = db.Column(db.Float)
+    status           = db.Column(db.String(10), nullable=False, default="OPEN", index=True)
+    skip_reason      = db.Column(db.String(200))
+    realized_pnl_krw = db.Column(db.Float)
+    pnl_pct          = db.Column(db.Float)          # 수수료 반영, 원화 기준
+    opened_at        = db.Column(db.DateTime, default=datetime.utcnow)
+    closed_at        = db.Column(db.DateTime)
