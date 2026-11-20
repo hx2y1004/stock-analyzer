@@ -46,7 +46,7 @@ try:
 except ImportError:
     def _translate_ko(text, max_chars=2000, timeout=4): return text
     def _translate_batch(texts): return texts
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, redirect
 from flask_cors import CORS
 from flask_login import LoginManager, login_required, current_user
 
@@ -1400,7 +1400,16 @@ def index():
 @app.route("/stock/<path:ticker>")
 def stock_page(ticker):
     """종목 분석 전용 페이지. 같은 템플릿을 쓰고 JS가 URL 경로를 보고
-    홈(시황 대시보드) / 분석 모드를 전환한다."""
+    홈(시황 대시보드) / 분석 모드를 전환한다.
+    /stock/삼성전자 처럼 종목명으로 들어오면 STOCK_DB 에서 티커를 찾아 넘겨준다."""
+    if not ticker.isascii():
+        q = ticker.replace(" ", "")
+        names = [(s.get("name", "").replace(" ", ""), s.get("symbol")) for s in STOCK_DB if s.get("symbol")]
+        sym = next((sy for nm, sy in names if nm == q), None) \
+           or next((sy for nm, sy in names if nm.startswith(q)), None)
+        if sym:
+            from urllib.parse import quote
+            return redirect("/stock/" + quote(sym), code=302)
     return render_template("index.html")
 
 

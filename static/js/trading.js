@@ -104,7 +104,7 @@ async function loadDashboard() {
     loadCoachCached();
     loadReviewCached(_reviewMode);
     // 닉네임 미설정 → 자동 안내 모달
-    if (!data.nickname && !_nicknamePromptShown) {
+    if (!data.nickname && !_nicknamePromptShown && !_nickPromptSnoozed()) {
       _nicknamePromptShown = true;
       setTimeout(() => openNicknameModal(true), 800);
     }
@@ -415,6 +415,9 @@ function setupQuickBuyAC() {
   input.addEventListener('input', () => {
     document.getElementById('qbBadge').textContent = '';
     selected = null;
+    // 직접 고치면 이전에 고른 종목을 버린다 (안 그러면 다른 종목으로 매수창이 열렸다)
+    delete input.dataset.symbol;
+    delete input.dataset.name;
     const q = input.value.trim();
     if (timer) clearTimeout(timer);
     if (q.length < 1) { list.classList.add('hidden'); return; }
@@ -435,6 +438,25 @@ function setupQuickBuyAC() {
     }, 200);
   });
   input.addEventListener('blur', () => setTimeout(() => list.classList.add('hidden'), 200));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); list.classList.add('hidden'); openQuickBuy(); }
+  });
+}
+
+function _qbNotice(msg) {
+  const el = document.getElementById('qbBadge');
+  if (el) { el.textContent = msg; el.style.color = 'var(--red)'; }
+}
+
+// 목록에서 고르지 않고 입력만 한 경우: 티커/종목명이 정확히 맞거나 결과가 하나뿐이면 그 종목으로
+async function _qbResolve(q) {
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const items = (await r.json()) || [];
+    const norm = (s) => (s || '').replace(/\s/g, '').toUpperCase();
+    const exact = items.find(it => norm(it.symbol) === norm(q) || norm(it.name) === norm(q));
+    return exact || (items.length === 1 ? items[0] : null);
+  } catch { return null; }
 }
 
 function selectQbAC(i) {
@@ -445,15 +467,23 @@ function selectQbAC(i) {
   document.getElementById('qbTicker').dataset.name   = item.name;
   document.getElementById('qbAcList').classList.add('hidden');
   const cur = /\.(KS|KQ)$/i.test(item.symbol) ? 'KRW' : 'USD';
-  document.getElementById('qbBadge').innerHTML =
-    `✅ <strong>${item.symbol}</strong> · ${cur === 'KRW' ? '원화(KRW)' : '달러(USD)'}`;
+  const badge = document.getElementById('qbBadge');
+  badge.style.color = '';
+  badge.innerHTML = `✅ <strong>${item.symbol}</strong> · ${cur === 'KRW' ? '원화(KRW)' : '달러(USD)'}`;
 }
 
 async function openQuickBuy() {
   const inp = document.getElementById('qbTicker');
-  const sym = inp.dataset.symbol;
-  const nm  = inp.dataset.name;
-  if (!sym) { alert('종목을 검색해서 선택해주세요'); return; }
+  let sym = inp.dataset.symbol;
+  let nm  = inp.dataset.name;
+  if (!sym) {
+    const q = inp.value.trim();
+    if (!q) { _qbNotice('종목명이나 티커를 입력해 주세요.'); inp.focus(); return; }
+    const hit = await _qbResolve(q);
+    if (!hit) { _qbNotice(`'${q}' 종목을 정확히 찾지 못했어요. 자동완성 목록에서 골라 주세요.`); return; }
+    sym = hit.symbol; nm = hit.name;
+    inp.dataset.symbol = sym; inp.dataset.name = nm;
+  }
   // 현재가 fetch
   const price = await fetchCurrentPrice(sym);
   const cur = /\.(KS|KQ)$/i.test(sym) ? 'KRW' : 'USD';
@@ -927,6 +957,19 @@ function openNicknameModal(isFirstTime) {
 function closeNicknameModal() {
   const modal = document.getElementById('nicknameModal');
   if (modal) modal.classList.add('hidden');
+}
+
+// "나중에": 7일 동안 자동 안내 모달을 다시 띄우지 않는다 (브라우저별 저장, 실패해도 무시)
+const _NICK_SNOOZE_KEY = 'nickPromptSnoozedAt';
+function _nickPromptSnoozed() {
+  try {
+    const t = Number(localStorage.getItem(_NICK_SNOOZE_KEY) || 0);
+    return t > 0 && (Date.now() - t) < 7 * 24 * 3600 * 1000;
+  } catch { return false; }
+}
+function snoozeNicknamePrompt() {
+  try { localStorage.setItem(_NICK_SNOOZE_KEY, String(Date.now())); } catch {}
+  closeNicknameModal();
 }
 
 async function submitNickname() {

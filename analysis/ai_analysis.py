@@ -30,6 +30,27 @@ def _f(v):
         return None
 
 
+def _dividend_yield_fraction(df, info):
+    """배당수익률을 소수(0.0089 = 0.89%)로. 상단 주요 지표(app._calc_dividend_yield)와 같은 순서.
+
+    yfinance 의 dividendYield 는 이미 % 값(0.89 = 0.89%)이라 그대로 *100 하면
+    945% 처럼 100배 커진다. 그래서 1) 네이버 DPS/가격 2) dividendRate/가격
+    3) dividendYield/100 순으로 쓴다.
+    """
+    naver = _f(info.get("_naver_div_yield"))
+    if naver:
+        return naver
+    try:
+        price = float(df["Close"].iloc[-1])
+    except Exception:
+        price = None
+    rate = _f(info.get("dividendRate"))
+    if rate and rate > 0 and price and price > 0:
+        return rate / price
+    dy = _f(info.get("dividendYield"))
+    return dy / 100 if dy is not None else None
+
+
 def _analyze_fundamental(df, info):
     """밸류에이션·수급·시장위치·재무 기반 투자 판단"""
     details = []
@@ -109,6 +130,9 @@ def _analyze_fundamental(df, info):
     beta      = _f(info.get("beta"))
 
     sup_items, sup_parts, sup_score = [], [], 0
+    sup_tip = None
+    if vol_ratio is not None:
+        sup_tip = "vol_high" if vol_ratio >= 150 else ("vol_normal" if vol_ratio >= 80 else "vol_low")
 
     if vol_ratio is not None:
         sup_items.append({"label": f"당일거래량: {vol_ratio:.0f}% (평균대비)", "up": vol_ratio >= 120})
@@ -156,6 +180,7 @@ def _analyze_fundamental(df, info):
     details.append({
         "indicator": "수급 & 거래량",
         "state": sup_state, "color": sup_color,
+        "tip_key": sup_tip,   # 쉬운 설명은 거래량 비율로 고른다
         "desc": sup_desc, "items": sup_items,
     })
 
@@ -222,7 +247,7 @@ def _analyze_fundamental(df, info):
     roe = _f(info.get("returnOnEquity"))
     de  = _f(info.get("debtToEquity"))
     cr  = _f(info.get("currentRatio"))
-    div = _f(info.get("dividendYield"))
+    div = _dividend_yield_fraction(df, info)
     rev_growth = _f(info.get("revenueGrowth"))
     earn_growth = _f(info.get("earningsGrowth"))
 
@@ -399,6 +424,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             signals.append({"type": "bearish", "text": "볼린저밴드 상단 돌파 — 과매수 주의"})
             score -= 10
             bb_state, bb_color = "상단 돌파 (과매수)", "bearish"
+            bb_tip = "upper_break"
             bb_desc = (
                 f"현재가({_fp(close)})가 볼린저밴드 상단({_fp(bb_upper)})을 돌파했습니다. "
                 f"통계적으로 상단 이탈은 전체의 약 5%로 단기 과매수 가능성이 높습니다. "
@@ -408,6 +434,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             signals.append({"type": "bullish", "text": "볼린저밴드 하단 이탈 — 반등 가능성"})
             score += 10
             bb_state, bb_color = "하단 이탈 (과매도)", "bullish"
+            bb_tip = "lower_break"
             bb_desc = (
                 f"현재가({_fp(close)})가 볼린저밴드 하단({_fp(bb_lower)})을 이탈했습니다. "
                 f"과매도 구간으로 기술적 반등 가능성이 있습니다. "
@@ -418,6 +445,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             signals.append({"type": "bullish", "text": "볼린저밴드 중심선 위 — 상승 모멘텀"})
             score += 5
             bb_state, bb_color = "중심선 위 (상승 우위)", "bullish"
+            bb_tip = "above_mid"
             bb_desc = (
                 f"현재가({_fp(close)})가 볼린저밴드 중심선({_fp(bb_mid)}) 위에 위치합니다. "
                 f"밴드 내 상위 {bb_position:.1f}% 구간으로 상승 모멘텀이 우세합니다. "
@@ -426,6 +454,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             )
         else:
             bb_state, bb_color = "중심선 아래 (하락 우위)", "bearish"
+            bb_tip = "below_mid"
             bb_desc = (
                 f"현재가({_fp(close)})가 볼린저밴드 중심선({_fp(bb_mid)}) 아래에 위치합니다. "
                 f"밴드 내 하위 {bb_position:.1f}% 구간으로 하락 압력이 우세합니다. "
@@ -436,11 +465,13 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         bb_position  = None
         bb_width_pct = 0
         bb_state, bb_color = "데이터 부족", "neutral"
+        bb_tip = None
         bb_desc = "볼린저밴드 데이터가 충분하지 않습니다."
 
     details.append({
         "indicator": "볼린저밴드 (BB)",
         "state": bb_state, "color": bb_color, "desc": bb_desc,
+        "tip_key": bb_tip,   # 쉬운 설명은 색(판단)이 아니라 실제 위치로 고른다
         "items": [
             {"label": f"상단  {_fp(bb_upper)}" if not np.isnan(bb_upper) else "상단 —", "up": None},
             {"label": f"중심  {_fp(bb_mid)}"   if not np.isnan(bb_mid)   else "중심 —", "up": None},
