@@ -2,306 +2,206 @@
 
 # 📈 StockAnalyzer
 
-**한국·미국 주식 통합 분석 플랫폼**
-*월가 스타일 트레이딩 시그널 · 추세 상승 종목 자동 감지 · 모의투자 · AI 코치 · 모바일 PWA*
+**한국·미국 주식 통합 분석 웹앱**
+*종목 종합 분석 · 시총가중 섹터맵 · 모의투자와 랭킹 · 멀티 AI 봇 가상 매매 · PWA 모바일 푸시*
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.1-000000?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
-[![Railway](https://img.shields.io/badge/Deploy-Railway-0B0D0E?logo=railway&logoColor=white)](https://railway.app)
 [![PWA](https://img.shields.io/badge/PWA-Ready-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 
 </div>
 
+> ⚠️ 이 서비스의 분석, AI 해설, 매수·매도 구간, AI 봇 신호와 가상 수익률은 참고·알고리즘 검증용 정보이며 투자 권유가 아닙니다.
+
 ---
 
-## 🎯 한눈에 보기
-
-StockAnalyzer는 **한국·미국 주식**을 동일한 인터페이스에서 분석·매매할 수 있는 웹 애플리케이션입니다.
-
-### ✨ 핵심 기능
+## 주요 기능
 
 | 기능 | 설명 |
 |---|---|
-| 🔍 **개별 종목 분석** | 캔들·볼린저·일목·MA·RSI·MACD + 펀더멘털 + AI 인사이트 |
-| 🎯 **Plan D 트레이드 추천** | 추세 점수(0~100) → 진입가·목표가·손절가 + R:R 1:3 보장 |
-| 📈 **추세 상승 감지** | 887 종목 자동 스캔 · 기술(50)+모멘텀(30)+펀더(20) 점수 |
-| 📱 **모의투자** | 매수·매도·수익률 추적 + FIFO 손익 + 포지션 노트 |
-| 🏦 **실제 포트폴리오** | 토스증권 계좌 연동 → 실시간 보유 종목 가져오기 |
-| 🤖 **AI 매매 코치** | FIFO 통계 기반 맞춤형 매매 습관 피드백 (Gemini) |
-| 📊 **AI 포트폴리오 점검** | 비중·집중도·통화 분산 분석 + 리밸런싱 의견 (Gemini) |
-| 🏢 **AI 기업 분석** | 기업소개·주요사업·투자 포인트 한국어 요약 (Gemini) |
-| 🌍 **시장 컨텍스트** | S&P/Nasdaq/VIX 또는 KOSPI/KOSDAQ/환율 실시간 |
-| 📅 **이벤트 캘린더** | 실적 발표·배당락일 D-N 표시 |
+| 🔍 **종목 종합 분석** | 캔들·볼린저·일목·이동평균·RSI·MACD, 매수/손절/목표 구간, 4팩터 점수(퀄리티·가치·성장·모멘텀), DCF 적정가, 애널리스트 의견, 다가오는 실적·배당 일정 |
+| 🤖 **AI 해설 (통합 호출 + 캐싱)** | 종목당 한 번의 AI 호출로 등락 사유·밸류에이션 코멘트·영문 뉴스 번역을 함께 생성. 결과는 DB(`ai_cache`)와 메모리에 캐시. Gemini(가벼운 모델 우선 자동 선택) → 한도 초과 시 Groq → 선택적 백업 공급자 순으로 폴백 |
+| 🗺 **시황 대시보드** | KOSPI·KOSDAQ·환율·S&P 500·나스닥·VIX, 오늘의 급등락 |
+| 🧩 **시총가중 섹터맵** | 한국 약 350 / 미국 약 537종목 전체를 섹터별 **시가총액 가중 등락률**로 집계, 트리맵 면적 = 섹터 시총 비중, 섹터별 상승/하락/보합 종목 수, 클릭하면 구성 종목(시총순·상승순·하락순) |
+| 📈 **추세 상승 감지** | 전체 유니버스 백그라운드 스캔 (기술·모멘텀·펀더멘털 점수) |
+| 💼 **포트폴리오 · 관심종목** | 실제 보유 종목(토스증권 계좌 불러오기, 소유자 전용), 관심종목과 현재가·등락률 |
+| 🎮 **모의투자 · 랭킹** | 1억 원 가상 계좌, 서버 실시간가 체결, 수수료 0.1%, 자산 곡선, 배지, 닉네임 랭킹(7일·30일·전체) |
+| 🤖 **멀티 AI 봇 4종** | 공격형 모멘텀 · 균형형 스윙 · 안정형 가치 · 기준선 정량(AI 미사용 대조군). 장 마감 후 신호 생성 → 다음 장 시가 체결 → 장중 손절·익절 확인. 봇마다 1억 원 가상 계좌, `/ai-bots`에서 수익률 비교 차트, AI 검증 효과, 보유 포지션, **매매 이력**, 신호 사후 검증 |
+| 🔔 **성향별 신호 알림** | 받을 봇·종목 범위(전체/보유/관심종목)·최소 신뢰도를 고르면 헤더 종 아이콘으로 알림. **PWA 웹 푸시**를 켜면 앱을 닫아도 휴대폰·PC로 알림 (한 번에 4건 이상이면 요약 1건) |
+| 📱 **PWA** | 홈 화면에 설치해 앱처럼 실행. 서비스워커 캐시와 푸시 처리 |
 
 ---
 
-## 🛠 기술 스택
+## 운영 환경
 
-### Backend
 ```
-Flask 3.1                       웹 프레임워크
-Flask-Login                     인증
-Flask-SQLAlchemy + PostgreSQL   DB (Railway Managed)
-Gunicorn (gthread)              WSGI 서버 (1 worker × 8 threads)
-yfinance 1.3                    주가 데이터
-pandas / numpy                  데이터 처리
-BeautifulSoup4 + requests       네이버 금융 크롤링
-Gemini API (gemini-2.5-flash)   AI 기업분석 · 코치 · 포트폴리오 점검
-Groq API (Llama)                AI 폴백 (Gemini 한도 초과 시 자동 전환)
+사용자 ─ HTTPS ─ <your-subdomain>.duckdns.org:<PORT>
+                    │
+            Oracle Cloud VM (메모리 1GB + 스왑)
+            ├─ gunicorn: 워커 1개 × gthread 스레드 8개, timeout 120초
+            ├─ 백그라운드 스레드: 추세 스캔 · 섹터맵 스냅샷 · AI 봇 스케줄러
+            └─ PostgreSQL (DATABASE_URL)
 ```
 
-### Frontend
-```
-Vanilla JavaScript (ES2020+)
-Lightweight Charts v4           차트 라이브러리
-Service Worker (v38)            PWA, 캐시 정책 (network-first JS/CSS)
-CSS Grid + Flexbox              반응형 레이아웃 (다크 테마)
-```
+- **자동 배포**: `main`에 push하면 서버가 약 5분 안에 가져가 재시작합니다. 재시작 후 응답이 없으면 직전 커밋으로 자동 롤백합니다. 그래서 `main`은 항상 배포 가능한 상태로 둡니다(push 전 최소 `python -c "import app"`).
+- **워커는 1개만**: 메모리 캐시와 백그라운드 스레드가 단일 프로세스를 전제로 합니다.
+- **메모리를 아끼는 구조**: 섹터맵·AI 결과는 미리 만든 스냅샷/캐시를 돌려주고, 무거운 라이브러리(웹 푸시 등)는 실제로 쓸 때만 불러옵니다.
+- **DB 마이그레이션 도구 없음**: 새 테이블은 앱 시작 시 `db.create_all()`이 만듭니다. 기존 테이블 구조를 바꿀 때는 운영 데이터 호환을 따로 챙겨야 합니다.
+- 토스증권 Open API는 허용 IP 제한이 있어 운영 서버에서만 동작합니다(`TOSS_PROXY_SETUP.md`). 그 밖의 환경에서는 yfinance·네이버로 폴백합니다.
+- `Procfile`, `railway.toml`은 예전 Railway 배포용으로 지금은 쓰지 않습니다.
 
-### 인프라
-```
-Railway         호스팅 (GitHub 연동 자동 배포)
-PostgreSQL      Railway Managed DB
-GitHub          소스 저장소
-Oracle VM       토스 프록시 서버 (고정 IP → 토스 API 화이트리스트)
-```
+### 데이터 출처
+Yahoo Finance(yfinance), 네이버 증권(국내 시세·업종·시가총액·지수·뉴스·리포트), 토스증권 Open API, 금융감독원 DART, S&P 500 GICS 공개 데이터셋. 시세는 제공처 사정에 따라 지연될 수 있습니다.
 
 ---
 
-## 📊 주요 기능 상세
-
-### 1️⃣ Plan D 트레이드 추천
-
-**추세 점수(0~100)** 기반 강도별 진입 전략:
-
-```
-+30점  MA20 > MA50 > MA200 (정배열)
-+20점  현재가 > MA20
-+20점  RSI 50~70 (강세 모멘텀)
-+10점  52주 신고가 5% 이내
-+20점  거래량 평균 ×1.5 이상
-```
-
-| 등급 | 점수 | R:R |
-|---|---|---|
-| 🔥 Strong | ≥60 | 1:3 |
-| ⚖️ Neutral | 30~59 | 1:2 |
-| ⚠️ Avoid | <30 | 비추천 |
-
-### 2️⃣ 추세 상승 감지 (Trend Scanner)
-
-887개 종목(KR 350 + US 537) 자동 스캔:
-- 2-pass 구조: 전체 기술+모멘텀 → 상위 50개만 펀더 보강
-- 30분 메모리 캐시, 백그라운드 스레드 + 1초 폴링 진행률 표시
-
-### 3️⃣ 모의투자 시스템
-
-- `PaperHolding` 모델로 가상 매수/매도 기록
-- **FIFO 손익 계산**: 매도 시 선입선출 방식으로 평균단가·실현 PnL 자동 계산
-- **포지션 노트**: 매수/매도 시 메모 입력 → 보유카드·거래내역에 표시
-- **📊 분석 바로가기**: 보유 종목 카드에서 클릭 시 메인 분석 페이지로 이동
-
-### 4️⃣ 실제 포트폴리오 (토스증권 연동)
-
-- `RealHolding` 모델로 토스 보유 종목 저장
-- 토스 API → Railway 프록시 → 앱 서버 경로 (고정 IP 우회)
-- **오너 게이팅**: `TOSS_OWNER_EMAIL` / `TOSS_OWNER_USER_IDS` 환경변수로 특정 계정만 접근 허용
-- 한국 종목 심볼 자동 변환 (토스 `A005930` → yfinance `005930.KS`)
-
-### 5️⃣ AI 기능 (Gemini 우선 / Groq 폴백)
-
-모든 AI 기능은 `_ai_chat()` 통합 인터페이스를 통해 동작:
-
-```
-GEMINI_API_KEY 있음 → gemini-2.5-flash 시도
-                     → 실패 시 gemini-2.5-flash-lite 시도
-                     → 실패(429 등) 시 Groq 폴백
-GEMINI_API_KEY 없음 → Groq 직접 사용
-```
-
-**AI 매매 코치**
-- FIFO 통계 블록(승률·평균 보유일·최고/최악 매매·종목별 PnL)을 Python에서 선계산
-- 계산된 통계를 프롬프트에 주입 → "모니터링 필요" 같은 모호한 답변 방지
-- 비한국어 문자 자동 제거 (`_COACH_FOREIGN_RE`)
-- 10분 쿨다운 + 서버 사이드 캐시
-
-**AI 포트폴리오 점검**
-- 모의/실제 포트폴리오 모드 전환
-- 종목별 비중·집중도·통화(KRW/USD) 분산 분석
-- 비중 확대/축소 추천 포함
-
-### 6️⃣ PWA
-
-- `display: standalone` → 홈 화면 아이콘에서 네이티브 앱처럼 실행
-- Service Worker v38: JS/CSS network-first, 정적 자산 cache-first
-- iOS Safari + Android Chrome 지원
-
----
-
-## 🔐 보안
-
-- `.env` 파일은 gitignore (자격증명 로컬 전용)
-- `FLASK_SECRET_KEY` 미설정 시 운영 환경 기동 차단 (fail-fast)
-- 토스 API 디버그 엔드포인트 오너 게이팅 (비오너 → 404)
-- `holdings_import_*.sql` gitignore (개인 보유종목 보호)
-
----
-
-## 🚀 Quick Start
-
-### 1. 클론 & 환경 준비
+## 빠른 시작 (로컬)
 
 ```bash
-git clone https://github.com/hx2y1004/stock-analyzer.git
+git clone https://github.com/<OWNER>/stock-analyzer.git
 cd stock-analyzer
-
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env               # 필요한 값만 채움 (비워 두면 해당 기능은 폴백)
+python app.py                      # http://127.0.0.1:5000
 ```
 
-### 2. 환경변수 설정
+- `DATABASE_URL`을 비워 두면 SQLite(`instance/portfolio.db`)를 씁니다.
+- API 키가 없어도 화면과 대부분의 로직은 확인할 수 있습니다(AI는 비활성 또는 대체 문구, 시세는 yfinance).
+- 로컬 개발 중 백그라운드 작업을 끄려면 `BOT_SCHEDULER=0`, `SECTORMAP_SCHEDULER=0`.
 
-`.env.example`을 `.env`로 복사하고 값 채우기:
-
-```env
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
-FLASK_SECRET_KEY=your-secret-key
-
-# AI (둘 중 하나만 있어도 동작, 둘 다 있으면 Gemini 우선)
-GEMINI_API_KEY=AIza...
-GROQ_API_KEY=gsk_...
-
-# 토스 연동 (선택)
-TOSS_PROXY_URL=http://your-oracle-vm:port
-TOSS_OWNER_EMAIL=your@email.com
-TOSS_OWNER_USER_IDS=123,456
-```
-
-### 3. 종목 DB 빌드 (첫 실행 시)
+### 데이터 파일 다시 만들기 (가끔)
 
 ```bash
-python build_stock_db.py
-# → stock_db.json 생성 (KR 350 + US 537 종목)
-```
-
-### 4. 로컬 실행
-
-```bash
-python app.py
-# http://localhost:5000
-```
-
-### 5. Railway 배포
-
-```bash
-git push origin main
-# Railway GitHub 연동으로 자동 배포
-```
-
-`Procfile`:
-```
-web: gunicorn app:app --workers 1 --threads 8 --worker-class gthread --timeout 120
+python build_stock_db.py          # stock_db.json: 검색·스캔 유니버스 (KOSPI·KOSDAQ·S&P 500·NASDAQ)
+python build_sector_universe.py   # sector_universe.json: 섹터 분류 + 미국 발행주식수 (분기 1회 권장, 수 분 소요)
 ```
 
 ---
 
-## 📁 프로젝트 구조
+## 환경변수 (`.env.example` 참고)
+
+실제 값은 서버의 `.env`에만 둡니다. 저장소·문서·커밋에는 절대 넣지 않습니다.
+
+| 구분 | 변수 | 설명 |
+|---|---|---|
+| 기본 | `FLASK_SECRET_KEY` | 세션 서명 키. 운영에서 없으면 재시작 때마다 로그인이 풀림 |
+| | `DATABASE_URL` | PostgreSQL 접속 주소. 비우면 로컬 SQLite |
+| | `BASE_URL` | OAuth 콜백 기준 주소 (예: `https://<your-subdomain>.duckdns.org:<PORT>`) |
+| 로그인 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET` | Google·카카오 OAuth |
+| AI | `GEMINI_API_KEY`, `GROQ_API_KEY` | 둘 중 하나만 있어도 동작. 둘 다 있으면 Gemini 우선 |
+| | `AI_BACKUP_BASE_URL`, `AI_BACKUP_API_KEY`, `AI_BACKUP_MODEL` | (선택) OpenAI 호환 백업 공급자 |
+| | `GEMINI_MODELS`, `GROQ_MODELS` | (선택) 모델 고정. 비우면 공급자 모델 목록에서 자동 선택 |
+| 토스·공시 | `TOSS_CLIENT_ID`, `TOSS_CLIENT_SECRET`, `TOSS_PROXY_URL` | (선택) 토스증권 시세·계좌 |
+| | `TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS` | 소유자 전용 기능(계좌 불러오기, 진단 화면, 봇 수동 실행) 허용 계정 |
+| | `DART_API_KEY` | (선택) 국내 분기 실적 |
+| AI 봇 | `AI_DAILY_BUDGET` (기본 60), `BOT_AI_INTERVAL` (기본 4초), `BOT_SCHEDULER` | 봇 AI 평가 하루 상한·호출 간격·스케줄러 끄기 |
+| 섹터맵 | `SECTORMAP_SCHEDULER` | `0`이면 섹터맵 백그라운드 갱신 끔 |
+| 알림 | `NOTIFY_PROVIDERS` | 기본 `inapp` (사이트 안 알림) |
+| 웹 푸시 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (선택) PWA 푸시. 비워 두면 푸시만 꺼지고 나머지는 정상. 키 만드는 한 줄 명령은 `.env.example`에 있음 |
+
+운영 설정 상태는 소유자 계정으로 로그인한 뒤 `/api/debug/ai`에서 값 없이 **설정됨(true)/미설정(false)**으로 확인할 수 있습니다.
+
+---
+
+## 백그라운드 작업 (운영 단일 프로세스)
+
+| 작업 | 시각 (시장 현지) | 내용 |
+|---|---|---|
+| AI 봇 장 마감 배치 | 한국 평일 15:45 · 미국 평일 16:30 | 전체 유니버스 정량 필터 → 후보 펀더멘털 → 종목당 하루 1회 AI 평가(봇 공유) → 봇별 판정·손익비 기각·하루 한도 → 신호 저장, 신호 추적, 봇 계좌 동기화, 알림·푸시 |
+| AI 봇 장중 체크 | 장중 매 5분 정각 | 대기 신호를 다음 장 시가로 체결, 보유 신호 손절·트레일링·익절, 봇 계좌 매매 |
+| 섹터맵 스냅샷 | 장중 매시 7·22·37·52분, 마감 후 한국 15:40 · 미국 16:20 | 시세 받아 시총가중 집계 후 `ai_cache`에 저장. 주말·휴장일 스킵 |
+| 추세 스캔 | 요청 시 | 전체 종목 점수 계산 |
+
+---
+
+## 프로젝트 구조
 
 ```
 stock-analyzer/
-├── app.py                      # Flask 메인 (라우트 + 분석 + AI 엔드포인트)
-├── models.py                   # SQLAlchemy 모델
-│                               #   User, Transaction, PaperHolding, RealHolding
-├── toss_api.py                 # 토스증권 API 연동 (프록시 경유)
-├── trends_scanner.py           # 추세 상승 감지 (백그라운드 스캔)
-├── auth.py                     # 로그인/회원가입 블루프린트
-├── build_stock_db.py           # KR/US 종목 DB 빌드 스크립트
-├── stock_db.json               # 자동완성용 종목 DB (887개)
-├── Procfile                    # Gunicorn 설정
-├── requirements.txt
-│
+├── app.py                    # Flask 본체: 페이지 라우트와 /api/* (분석, 시황, 섹터맵, 포트폴리오, 모의투자, 랭킹, AI 봇, 알림, 푸시)
+├── auth.py                   # Google·카카오 OAuth
+├── models.py                 # SQLAlchemy 모델 (아래 표)
+├── ai_cache.py               # AI 결과 영구 캐시 (메모리 LRU + DB), 동시 호출 1회로 합치기
+├── bot_engine.py             # AI 봇 신호 엔진: 전략 정의, 배치, 신호 추적, 장중 체크, 스케줄러
+├── bot_trader.py             # 봇 가상 계좌: 신호 ↔ 모의투자 매매 동기화, 성적(승률·손익비·MDD)
+├── notifier.py               # 신호 알림 발송 (사이트 안 알림 + 웹 푸시 묶음 발송)
+├── webpush.py                # 웹 푸시: VAPID 확인, 구독 저장, 발송, 만료 구독 정리
+├── sector_map.py             # 시총가중 섹터맵 집계와 백그라운드 스냅샷
+├── trends_scanner.py         # 추세 상승 감지 스캔
+├── toss_api.py               # 토스증권 Open API
+├── badges.py                 # 모의투자 배지
 ├── analysis/
-│   ├── ai_analysis.py          # Plan D 트레이드 추천 + 점수 산출
-│   └── indicators.py           # MA / BB / 일목 / RSI / MACD 계산
-│
-├── templates/
-│   ├── index.html              # 메인 분석 페이지
-│   └── trading.html            # 모의투자 + 실제 포트폴리오 페이지
-│
+│   ├── indicators.py         # 기술 지표
+│   ├── advanced.py           # 펀더멘털 지표와 4팩터 점수
+│   ├── ai_analysis.py        # 종합 판단, 매수·손절·목표 구간
+│   └── valuation.py          # DCF 적정가
+├── build_stock_db.py         # → stock_db.json (종목 유니버스)
+├── build_sector_universe.py  # → sector_universe.json (섹터 분류·발행주식수)
+├── templates/                # index(분석·시황), trading(모의투자), leaderboard(랭킹), ai_bots(AI 봇) + 공통 헤더·푸터
 ├── static/
-│   ├── css/style.css           # 전체 스타일 (다크 테마)
-│   ├── js/main.js              # 분석 페이지 클라이언트 로직
-│   ├── js/trading.js           # 모의투자 페이지 클라이언트 로직
-│   ├── manifest.json           # PWA 매니페스트
-│   ├── service-worker.js       # SW (캐시 정책 v38)
-│   └── icons/                  # PWA 아이콘 (180/192/512)
-│
-└── TOSS_PROXY_SETUP.md         # 토스 프록시 서버 구축 가이드
+│   ├── js/                   # main · trading · leaderboard · ai_bots · notify(알림 종·설정·푸시·관심종목) · chart
+│   ├── css/style.css         # 다크 테마
+│   ├── service-worker.js     # 캐시 정책 + push / notificationclick
+│   ├── manifest.json, icons/ # PWA
+├── scripts/                  # 아이콘 생성, 토스 보유종목 SQL 변환
+├── HANDOFF.md                # 작업 기록 (세션별 변경, 운영 확인 사항)
+├── CLAUDE.md                 # 작업 규칙 요약
+└── TOSS_PROXY_SETUP.md       # 토스 고정 IP 프록시 구성
 ```
 
----
+### 주요 테이블
 
-## 🌐 주요 API 엔드포인트
-
-### 분석
-| Method | Path | 설명 |
-|---|---|---|
-| `GET` | `/analyze?ticker=AAPL` | 종목 종합 분석 |
-| `GET` | `/api/chart?ticker=AAPL&interval=1d` | 캔들 데이터 |
-| `GET` | `/api/search?q=apple` | 종목 자동완성 |
-
-### 추세 스캔
-| Method | Path | 설명 |
-|---|---|---|
-| `POST` | `/api/trends/scan?market=ALL\|KR\|US` | 스캔 시작 |
-| `GET` | `/api/trends/status?market=X` | 진행 상태/결과 폴링 |
-| `POST` | `/api/trends/abort?market=X` | 스캔 중단 |
-
-### 모의투자 (로그인 필요)
-| Method | Path | 설명 |
-|---|---|---|
-| `GET` | `/trading` | 모의투자 페이지 |
-| `GET` | `/api/trading/dashboard` | 보유 종목 + 거래 내역 |
-| `POST` | `/api/trading/buy` | 모의 매수 (note 포함) |
-| `POST` | `/api/trading/sell` | 모의 매도 (note 포함) |
-
-### 실제 포트폴리오 (오너 전용)
-| Method | Path | 설명 |
-|---|---|---|
-| `POST` | `/api/import-toss` | 토스 보유종목 가져오기 |
-| `GET` | `/api/real-portfolio` | 실제 보유 종목 조회 |
-
-### AI 기능 (로그인 필요)
-| Method | Path | 설명 |
-|---|---|---|
-| `GET/POST` | `/api/trading/coach` | AI 매매 코치 (10분 캐시) |
-| `GET/POST` | `/api/portfolio/review` | AI 포트폴리오 점검 (10분 캐시) |
-
----
-
-## 🗺 향후 계획
-
-| 기능 | 설명 |
+| 테이블 | 용도 |
 |---|---|
-| 📰 DART 임원 매매 | DART API 연동으로 임원 매수/매도 신호 표시 |
-| 🏆 랭킹 시즌제 | 월/분기 시즌 리셋 + 시즌 배지 |
-| 📉 백테스트 | 전략별 과거 수익률 시뮬레이션 |
-| 🛑 자동 손절 | 목표가/손절가 도달 시 백그라운드 알림 |
+| `users` | 사용자(OAuth)와 AI 봇 계좌(`provider='bot'`), 모의투자 현금·초기 자본, 닉네임 |
+| `holdings` / `paper_holdings` / `transactions` | 실제 보유 / 모의투자 보유 / 모의투자 거래 내역 |
+| `asset_snapshots`, `user_badges` | 일별 자산, 배지 |
+| `ai_cache` | AI 결과·섹터맵 스냅샷·봇 배치 요약·잠금 |
+| `bot_strategies`, `ai_stock_assessments`, `ai_signals`, `bot_positions` | 봇 전략 파라미터, 종목별 AI 평가, 신호와 사후 추적, 신호 ↔ 봇 계좌 거래 |
+| `user_signal_subscriptions`, `watchlist_items`, `notifications`, `push_subscriptions` | 알림 구독 조건, 관심종목, 사이트 안 알림, 기기별 웹 푸시 구독 |
 
 ---
 
-## 📜 라이선스
+## 주요 API
 
-MIT License — 자유롭게 사용·수정 가능합니다.
+| 구분 | 경로 |
+|---|---|
+| 분석 | `GET /api/analyze?ticker=`, `GET /api/analyze/extra`, `GET /api/chart`, `GET /api/search?q=` |
+| 시황 | `GET /api/market/overview`, `GET /api/market/sectormap?market=KR\|US`, `GET /api/market/movers` |
+| 추세 스캔 | `POST /api/trends/scan`, `GET /api/trends/status`, `POST /api/trends/abort` |
+| 포트폴리오 | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/<id>`, `POST /api/portfolio/import-toss` (소유자) |
+| 관심종목 | `GET/POST /api/watchlist`, `DELETE /api/watchlist/<ticker>`, `GET /api/watchlist/quotes` |
+| 모의투자 | `GET /api/trading/dashboard`, `POST /api/trading/buy`, `POST /api/trading/sell`, `GET /api/trading/transactions`, `GET /api/trading/history` |
+| 랭킹 | `GET /api/leaderboard?metric=total\|7d\|30d&bots=1\|0` |
+| AI 봇 | `GET /api/ai-bots/overview`, `GET /api/ai-bots/chart?period=`, `GET /api/ai-bots/<봇>`, `GET /api/ai-bots/<봇>/trades`, `GET /api/bots/signals`, `GET /api/bots/signals/<id>`, `POST /api/admin/bots/run` (소유자) |
+| 알림 | `GET/PUT /api/signal-subscription`, `GET /api/notifications`, `POST /api/notifications/read` |
+| 웹 푸시 | `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `POST /api/push/test` |
+| 진단 (소유자) | `GET /api/debug/ai`, `GET /api/debug/toss` |
 
 ---
 
-<div align="center">
+## PWA 웹 푸시 켜기
 
-**Made with ❤️ for retail traders**
+1. 운영 서버에서 키를 만듭니다 (`pywebpush` 설치 후 한 줄 명령, `.env.example` 참고).
+2. 출력된 `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`와 `VAPID_SUBJECT=mailto:<연락 받을 주소>`를 서버 `.env`에 넣고 앱을 재시작합니다.
+3. 사이트에서 헤더 종 → **알림 설정** → **이 기기에서 푸시 받기** → **테스트 푸시 보내기**.
+   - Android·PC 크롬/엣지/삼성 인터넷/파이어폭스 지원
+   - iPhone·iPad는 Safari에서 **홈 화면에 추가**한 앱으로 열었을 때만 가능 (iOS 16.4 이상)
+4. 키를 바꾸면 기존 기기 구독은 다시 켜야 합니다.
 
-*Disclaimer: 본 도구는 교육·연구 목적이며, 투자 손실에 대한 책임은 사용자에게 있습니다.*
+---
 
-</div>
+## 보안
+
+- 비밀 값은 환경변수로만 읽고, `.env`와 `ssh-key-*`는 `.gitignore` 대상입니다.
+- 모의투자 체결가는 클라이언트 값이 아니라 서버 실시간가로 강제합니다.
+- 소유자 전용 기능과 진단 화면은 다른 사용자에게 404를 돌려줍니다.
+- 웹 푸시 구독은 본인 기기만 저장·해제할 수 있고, 만료된 구독은 발송 중 자동 삭제됩니다.
+
+---
+
+## 라이선스
+
+MIT License

@@ -139,7 +139,7 @@
         rightPriceScale: { borderVisible: false },
         timeScale: { borderVisible: false },
         crosshair: { mode: 0 },
-        localization: { priceFormatter: (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%` },
+        localization: { priceFormatter: (v) => (v == null || !isFinite(v)) ? '' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%` },
       });
       chart.subscribeCrosshairMove((p) => paintLegend(p));
     }

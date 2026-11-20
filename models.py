@@ -313,3 +313,17 @@ class BotPosition(db.Model):
     pnl_pct          = db.Column(db.Float)          # 수수료 반영, 원화 기준
     opened_at        = db.Column(db.DateTime, default=datetime.utcnow)
     closed_at        = db.Column(db.DateTime)
+
+
+class PushSubscription(db.Model):
+    """기기별 웹 푸시 구독 (PC·휴대폰 등 한 사용자가 여러 기기 등록 가능).
+    endpoint 는 브라우저 푸시 서비스 주소라 기기마다 고유. 만료(404/410)되면 발송 때 자동 삭제."""
+    __tablename__ = "push_subscriptions"
+    id           = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    endpoint     = db.Column(db.String(1000), nullable=False, unique=True)
+    p256dh       = db.Column(db.String(200), nullable=False)
+    auth         = db.Column(db.String(100), nullable=False)
+    user_agent   = db.Column(db.String(80))           # 짧은 기기 이름 (예: "Android · Chrome")
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    last_used_at = db.Column(db.DateTime)

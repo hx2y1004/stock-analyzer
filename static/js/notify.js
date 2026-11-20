@@ -192,6 +192,16 @@
         <input type="range" id="subConf" min="50" max="95" step="5" value="${sub.min_confidence}" />
         <div class="sub-hint">AI 봇은 AI 확신도와 정량 점수를 합친 값, 기준선 봇은 정량 점수입니다.</div>
       </div>
+      <div class="sub-group push-box" id="pushBox">
+        <div class="sub-legend">모바일/브라우저 푸시 알림</div>
+        <div class="push-row">
+          <span class="push-state" id="pushState">확인 중...</span>
+          <button type="button" class="push-toggle" id="pushToggle" hidden>이 기기에서 푸시 받기</button>
+          <button type="button" class="push-test" id="pushTest" hidden>테스트 푸시 보내기</button>
+        </div>
+        <div class="sub-hint" id="pushHint">앱을 닫아 두어도 이 기기로 신호 알림이 옵니다. 위에서 고른 봇·범위·신뢰도 조건을 따릅니다.</div>
+        <div class="sub-msg" id="pushMsg" role="status"></div>
+      </div>
       <div class="sub-msg" id="subMsg" role="status"></div>
       <div class="sub-actions">
         <button type="button" class="sub-cancel" data-act="close2">닫기</button>
@@ -199,6 +209,7 @@
       </div>
       <p class="sub-disclaimer">장 마감 후 하루 한 번 만들어지는 가상 신호입니다. 알고리즘 검증용 모의 데이터이며 실제 투자 권유가 아닙니다.</p>`;
     box.querySelector('[data-act="close2"]').onclick = closeModal;
+    initPush(box);
     const conf = box.querySelector('#subConf');
     conf.oninput = () => { box.querySelector('#subConfVal').textContent = conf.value; };
     box.querySelector('#subSave').onclick = async () => {
@@ -218,6 +229,90 @@
         }
       } catch (e) { msg.textContent = e.message || '저장 실패'; msg.className = 'sub-msg err'; }
     };
+  }
+
+  // ── 웹 푸시 (이 기기) ───────────────────────────────────────────────────
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  function b64ToBytes(b64) {
+    const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  }
+  async function swReg() {
+    // 페이지가 이미 서비스워커를 등록해 두므로 준비될 때까지 기다린다 (최대 5초)
+    return Promise.race([navigator.serviceWorker.ready, new Promise((_, rej) => setTimeout(() => rej(new Error('sw')), 5000))]);
+  }
+
+  async function initPush(box) {
+    const st = box.querySelector('#pushState'), tg = box.querySelector('#pushToggle'),
+      tb = box.querySelector('#pushTest'), msg = box.querySelector('#pushMsg'), hint = box.querySelector('#pushHint');
+    const say = (t, cls) => { msg.textContent = t || ''; msg.className = 'sub-msg' + (cls ? ' ' + cls : ''); };
+    const paint = (state, label) => { st.textContent = label; st.className = 'push-state ' + state; };
+    if (!pushSupported()) {
+      paint('off', '이 환경은 푸시 미지원');
+      hint.textContent = isIOS()
+        ? 'iPhone·iPad는 Safari에서 "홈 화면에 추가"한 앱으로 열었을 때만 푸시를 받을 수 있어요 (iOS 16.4 이상).'
+        : '이 브라우저는 웹 푸시를 지원하지 않아요. 크롬·엣지·삼성 인터넷·파이어폭스 최신 버전에서 이용해 주세요.';
+      return;
+    }
+    let cfg;
+    try { cfg = await api('/api/push/vapid-public-key'); } catch (e) { paint('off', '상태 확인 실패'); return; }
+    if (!cfg.enabled) { paint('off', '서버 미설정'); hint.textContent = cfg.reason || '서버에 푸시 알림이 아직 설정되지 않았습니다.'; return; }
+    if (isIOS() && !isStandalone()) hint.textContent = 'iPhone은 Safari 공유 버튼 → "홈 화면에 추가" 후 그 앱에서 켜야 푸시가 와요.';
+
+    let reg, sub;
+    const refresh = async () => {
+      say('');
+      if (Notification.permission === 'denied') {
+        paint('blocked', '브라우저 알림 차단됨');
+        tg.hidden = true; tb.hidden = true;
+        hint.textContent = '주소창 왼쪽 자물쇠(사이트 설정) → 알림을 "허용"으로 바꾼 뒤 다시 열어 주세요.';
+        return;
+      }
+      try { reg = await swReg(); sub = await reg.pushManager.getSubscription(); }
+      catch (e) { paint('off', '서비스워커 준비 안 됨'); tg.hidden = true; tb.hidden = true; return; }
+      // 서버 공개키가 바뀌었으면 예전 구독은 쓸 수 없음 → 꺼진 것으로 표시
+      const keyOk = sub && sub.options && sub.options.applicationServerKey
+        ? btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') === cfg.public_key
+        : !!sub;
+      const on = !!sub && keyOk;
+      paint(on ? 'on' : 'off', on ? '켜짐' : '꺼짐');
+      tg.hidden = false; tg.textContent = on ? '이 기기 푸시 끄기' : '이 기기에서 푸시 받기';
+      tg.setAttribute('aria-pressed', on ? 'true' : 'false');
+      tb.hidden = !on;
+    };
+    tg.onclick = async () => {
+      tg.disabled = true;
+      try {
+        if (sub && tg.getAttribute('aria-pressed') === 'true') {
+          await api('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+          await sub.unsubscribe();
+          sub = null;
+          await refresh(); say('이 기기의 푸시를 껐습니다.', 'ok');
+        } else {
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') { await refresh(); if (perm !== 'denied') say('알림 권한을 허용해야 푸시를 받을 수 있어요.', 'err'); return; }
+          if (sub) { try { await sub.unsubscribe(); } catch (e) {} }        // 예전 키로 만든 구독 정리
+          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.public_key) });
+          const r = await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON() }) });
+          await refresh(); say(`켜졌습니다 (${r.device || '이 기기'}). '테스트 푸시 보내기'로 확인해 보세요.`, 'ok');
+        }
+      } catch (e) {
+        say(e.code === 401 ? '로그인이 필요합니다.' : `푸시를 켜지 못했습니다: ${e.message || e}`, 'err');
+      } finally { tg.disabled = false; }
+    };
+    tb.onclick = async () => {
+      tb.disabled = true; say('보내는 중...');
+      try {
+        const r = await api('/api/push/test', { method: 'POST' });
+        say(r.sent ? `테스트 푸시를 보냈습니다 (성공 ${r.sent}${r.failed ? ` · 실패 ${r.failed}` : ''}${r.removed ? ` · 만료 정리 ${r.removed}` : ''}). 몇 초 안에 도착해요.`
+          : `보내지 못했습니다 (실패 ${r.failed}, 만료 정리 ${r.removed}).`, r.sent ? 'ok' : 'err');
+      } catch (e) { say(e.message || '테스트 푸시 실패', 'err'); }
+      finally { tb.disabled = false; }
+    };
+    await refresh();
   }
 
   // ── 관심종목 ─────────────────────────────────────────────────────────────
