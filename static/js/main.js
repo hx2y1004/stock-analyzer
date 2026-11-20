@@ -165,13 +165,13 @@ async function loadSectorMap() {
       const c = g.change_pct;
       // 큰 타일에는 대표 종목 등락 미리보기
       const preview = (g.weight >= 6 ? g.members.slice(0, 2) : []).map(m =>
-        `<div class="hm-mini"><span>${escapeHtmlMain(m.name)}</span><span>${m.change_pct > 0 ? '+' : ''}${m.change_pct}%</span></div>`
+        `<div class="hm-mini"><span>${escapeHtmlMain(m.name)}</span><span>${fmtPct(m.change_pct)}</span></div>`
       ).join('');
       return `
         <div class="hm-tile ${colorCls(c)} ${sizeCls(g.weight)}" onclick="toggleSectorDrill('${g.key}')"
-             title="${escapeHtmlMain(g.name)} ${c > 0 ? '+' : ''}${c}%">
+             title="${escapeHtmlMain(g.name)} ${fmtPct(c)}">
           <div class="hm-name">${escapeHtmlMain(g.name)}</div>
-          <div class="hm-chg">${c > 0 ? '+' : ''}${c}%</div>
+          <div class="hm-chg">${fmtPct(c)}</div>
           ${preview}
         </div>`;
     }).join('')}</div>`;
@@ -200,7 +200,7 @@ function toggleSectorDrill(key) {
     return `<button class="sector-modal-item" onclick="gotoStock('${m.ticker}')">
         <span class="smi-name">${escapeHtmlMain(m.name)}</span>
         <span class="smi-price">${cur}</span>
-        <span class="smi-chg ${cls}">${m.change_pct > 0 ? '+' : ''}${m.change_pct}%</span>
+        <span class="smi-chg ${cls}">${fmtPct(m.change_pct)}</span>
       </button>`;
   }).join('');
   document.getElementById('sectorModal').classList.remove('hidden');
@@ -229,7 +229,7 @@ function renderMovers() {
     const cls = s.change_pct > 0 ? 'up' : s.change_pct < 0 ? 'down' : '';
     return `<button class="md-mover" onclick="gotoStock('${s.ticker}')">
         <span class="md-mover-name">${escapeHtmlMain(s.name)}</span>
-        <span class="md-mover-chg ${cls}">${s.change_pct > 0 ? '+' : ''}${s.change_pct}%</span>
+        <span class="md-mover-chg ${cls}">${fmtPct(s.change_pct)}</span>
       </button>`;
   };
   const g = document.getElementById('mdGainers');
@@ -255,12 +255,12 @@ function renderAuthArea() {
     return;
   }
   const img = currentUser.profile_image
-    ? `<img class="profile-img" src="${currentUser.profile_image}" />`
+    ? `<img class="profile-img" src="${escapeHtmlMain(currentUser.profile_image)}" />`
     : `<div class="profile-img" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
   area.innerHTML = `
     <div class="profile-area">
       ${img}
-      <span class="profile-name">${currentUser.name || '사용자'}</span>
+      <span class="profile-name">${escapeHtmlMain(currentUser.name || '사용자')}</span>
     </div>
     <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
 }
@@ -1474,7 +1474,7 @@ function renderStockInfo(stock) {
   const changeEl = document.getElementById('priceChange');
   if (stock.price_change != null) {
     const sign = stock.price_change >= 0 ? '+' : '';
-    changeEl.innerHTML = `<span class="price-change-label">어제보다</span> ${sign}${fmt(stock.price_change, cur)} (${sign}${stock.price_change_pct}%)`;
+    changeEl.innerHTML = `<span class="price-change-label">어제보다</span> ${sign}${fmt(stock.price_change, cur)} (${fmtPct(stock.price_change_pct)})`;
     changeEl.className = 'price-change ' + (stock.price_change >= 0 ? 'up' : 'down');
   }
 
@@ -1804,6 +1804,13 @@ function renderDcf(stock) {
 
   // 6) AI 해설 (비동기 — 페이지 로딩 막지 않음)
   loadDcfComment(stock.ticker);
+}
+
+// 등락률 표기 통일: 부호 + 소수 둘째 자리 (+2.80%, -1.61%)
+function fmtPct(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = Number(v);
+  return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
 }
 
 function escapeHtmlMain(s) {
@@ -3084,6 +3091,14 @@ function chartPriceFormatter(kind) {
     : (v) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// 보조지표 차트 왼쪽 위 범례 (지표명·파라미터)
+function _addChartLegend(el, html) {
+  const lg = document.createElement('div');
+  lg.className = 'chart-legend';
+  lg.innerHTML = html;
+  el.appendChild(lg);
+}
+
 function makeChart(el, height, showTimeAxis = true, kind = 'price') {
   const width = el.clientWidth || el.parentElement.clientWidth || 900;
   const chart = LightweightCharts.createChart(el, {
@@ -3101,6 +3116,7 @@ function makeChart(el, height, showTimeAxis = true, kind = 'price') {
       borderColor: '#30363d',
       timeVisible: showTimeAxis,
       visible: showTimeAxis,        // 시간축 자체를 숨김 (공간 절약)
+      rightOffset: 3,               // 마지막 봉 오른쪽 여백 → 끝 날짜 라벨이 가격축에 잘리지 않게
     },
     handleScroll: true,
     handleScale: true,
@@ -3185,6 +3201,7 @@ function renderRSIChart(data) {
   const el = document.getElementById('rsiChart');
   el.innerHTML = '';
   const chart = makeChart(el, getChartHeights().sub, false, 'osc');   // 시간축 숨김 (가운데 차트)
+  _addChartLegend(el, `<b>RSI(14)</b> <span style="color:#bc8cff">━</span> RSI · 점선 70 과매수 / 30 과매도`);
 
   chart.addLineSeries({ color: '#bc8cff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.rsi));
@@ -3204,6 +3221,7 @@ function renderMACDChart(data) {
   const el = document.getElementById('macdChart');
   el.innerHTML = '';
   const chart = makeChart(el, getChartHeights().last, true);   // 마지막 차트 — 시간축 표시
+  _addChartLegend(el, `<b>MACD(12,26,9)</b> <span style="color:#58a6ff">━</span> MACD <span style="color:#f0a500">━</span> 시그널 <span style="color:var(--text2)">▮</span> 히스토그램`);
 
   chart.addLineSeries({ color: '#58a6ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false })
     .setData(toSeries(data.dates, data.macd));

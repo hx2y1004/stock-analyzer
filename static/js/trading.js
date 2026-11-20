@@ -64,12 +64,12 @@ async function checkAuthAndLoad() {
     // 인라인 style 로 강제 크기 (CSS 캐시 등 우회)
     const imgStyle = 'width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--border);flex-shrink:0;';
     const img = u.profile_image
-      ? `<img class="profile-img" src="${u.profile_image}" style="${imgStyle}" />`
+      ? `<img class="profile-img" src="${_escName(u.profile_image)}" style="${imgStyle}" />`
       : `<div class="profile-img" style="${imgStyle};display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
     document.getElementById('authArea').innerHTML = `
       <div class="profile-area">
         ${img}
-        <span class="profile-name">${u.name || '사용자'}</span>
+        <span class="profile-name">${_escName(u.name || '사용자')}</span>
       </div>
       <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
     document.getElementById('loginRequired').classList.add('hidden');
@@ -192,11 +192,11 @@ function renderAssetHistoryChart(data) {
         priceFormatter: (p) => (p >= 0 ? '+' : '') + p.toFixed(2) + '%',
       },
     });
-    _ahSeriesMe    = _ahChart.addLineSeries({ color: '#22c55e', lineWidth: 2, title: '내 자산',
+    _ahSeriesMe    = _ahChart.addLineSeries({ color: '#22c55e', lineWidth: 2, title: '',   // 이름은 위 요약줄에 같은 색으로 표시 (축 라벨 겹침 방지)
                                               priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
-    _ahSeriesKospi = _ahChart.addLineSeries({ color: '#3b82f6', lineWidth: 1, title: 'KOSPI',
+    _ahSeriesKospi = _ahChart.addLineSeries({ color: '#3b82f6', lineWidth: 1, title: '', lastValueVisible: false,
                                               priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
-    _ahSeriesSp    = _ahChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, title: 'S&P500',
+    _ahSeriesSp    = _ahChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, title: '', lastValueVisible: false,
                                               priceFormat: { type: 'custom', formatter: (p) => (p>=0?'+':'')+p.toFixed(2)+'%' } });
 
     // baseline 0% 가로선 추가
@@ -1029,4 +1029,9 @@ async function submitNickname() {
   } catch (e) {
     err.textContent = '네트워크 오류';
   }
+}
+
+// 외부(OAuth) 이름을 HTML 에 넣기 전 이스케이프
+function _escName(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

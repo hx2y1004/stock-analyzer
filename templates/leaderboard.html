@@ -12,7 +12,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=59" />
+  <link rel="stylesheet" href="/static/css/style.css?v=60" />
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -32,9 +32,7 @@
         <a href="/trading" class="nav-link">모의투자</a>
         <a href="/leaderboard" class="nav-link active">랭킹</a>
       </nav>
-      <div id="authArea" class="auth-area">
-        <button class="login-btn" onclick="location.href='/auth/google'">로그인</button>
-      </div>
+      {% set login_action = "location.href='/auth/google'" %}{% include "_auth_area.html" %}
     </div>
   </header>
 
@@ -72,6 +70,7 @@
 
   </main>
 
-  <script src="/static/js/leaderboard.js?v=53"></script>
+  {% include "_footer.html" %}
+  <script src="/static/js/leaderboard.js?v=54"></script>
 </body>
 </html>
