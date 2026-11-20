@@ -315,8 +315,21 @@ def fundamentals(ticker, df):
                     break
         except Exception:
             pass
+    out["missing"] = [k for k in ("fund_score", "dcf_fair", "analyst_target") if out.get(k) is None]
     out["info"] = info
     return out
+
+
+def value_refs(fd):
+    """안정형 목표가 근거: 애널리스트 평균 목표가 + DCF 적정가(신뢰도 '낮음'이면 제외).
+    Yahoo 가 막혀 목표가가 비면 DCF 만, 둘 다 없으면 빈 목록 → 판정 단계에서 '상승 여력 확인 불가'로 기각."""
+    fd = fd or {}
+    refs = []
+    if fd.get("analyst_target"):
+        refs.append(fd["analyst_target"])
+    if fd.get("dcf_fair") and fd.get("dcf_reliability") != "low":
+        refs.append(fd["dcf_fair"])
+    return refs
 
 
 def _num(v):
@@ -350,6 +363,24 @@ def ai_budget_limit():
         return 60
 
 
+_AI_PACE_LOCK = threading.Lock()
+_AI_LAST_CALL = [0.0]
+
+
+def _ai_pace():
+    """무료 티어 분당 한도(429) 예방: 봇의 실제 AI 호출 사이에 최소 간격을 둔다 (기본 4초, BOT_AI_INTERVAL).
+    이미 저장된 평가를 재사용할 때는 호출이 없으니 기다리지 않는다."""
+    try:
+        gap = float(os.environ.get("BOT_AI_INTERVAL", "4"))
+    except ValueError:
+        gap = 4.0
+    with _AI_PACE_LOCK:
+        wait = _AI_LAST_CALL[0] + gap - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        _AI_LAST_CALL[0] = time.time()
+
+
 def get_or_create_assessment(ticker, name, as_of, x, fund, news):
     """같은 종목·날짜 평가가 있으면 재사용. 없으면 예산 안에서 1회 생성. 예산 초과·실패면 None."""
     Model, db = D["AiStockAssessment"], D["db"]
@@ -379,6 +410,7 @@ def get_or_create_assessment(ticker, name, as_of, x, fund, news):
                 '"catalyst": 단기 호재·모멘텀 근거가 뉴스에 있으면 true, "fatal_risk": 상장폐지·분식·대규모 소송·급격한 실적 붕괴 등 치명적 악재면 true, '
                 '"structural_risk": 사업 구조적 악화(점유율 상실·규제·장기 역성장)면 true, '
                 '"summary": 한국어 한 줄 근거(60자 안팎), "positives": [최대 3개 짧은 문장], "risks": [최대 3개 짧은 문장]}')
+        _ai_pace()
         out = D["ai_json"]("당신은 리스크 관리가 엄격한 증권 애널리스트입니다. 순수 한글로 쓰고 한자는 쓰지 않습니다. "
                            "반드시 JSON 객체 하나만 출력합니다.", user, max_tokens=500, label="bot_assess", ticker=ticker)
         _budget_add(kst_day)
@@ -437,7 +469,7 @@ def plan_levels(strat, path, x, fund):
     else:  # value
         stop = e * (1 - ex["stop_pct"] / 100)
         risk = e - stop
-        refs = [v for v in ((fund or {}).get("dcf_fair"), (fund or {}).get("analyst_target")) if v]
+        refs = value_refs(fund)
         cap = e * (1 + ex["target_pct_max"] / 100)
         target = min(max(refs), cap) if refs else e * (1 + ex["target_pct_min"] / 100)
         if target < e * (1 + ex["target_pct_min"] / 100):
@@ -673,8 +705,7 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
         created = []
         for st in strategies:
             r = st["params"]["risk"]
-            made_today = S.query.filter(S.strategy_key == st["key"], S.signal_date == as_of).count()   # 두 시장 합산
-            slots = max(0, min(r["max_new_per_day"] - made_today, r["max_positions"] - open_count.get(st["key"], 0)))
+            slots = max(0, min(market_slots(st, market, as_of), r["max_positions"] - open_count.get(st["key"], 0)))
             dl = day_loss_pct(st["key"], st, data, as_of)
             summary.setdefault("day_pnl_pct", {})[st["key"]] = dl
             if dl <= -r["daily_loss_limit_pct"]:
@@ -712,6 +743,27 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
         return summary
     finally:
         _RUN_LOCK.release()
+
+
+def market_new_caps(st):
+    """하루 신규 매수 상한의 시장별 배분. 한국장이 먼저 끝나므로 한국은 '전체 - 1'까지만 써서
+    미국 몫을 최소 1건 남긴다 (3건 → 한국 2·미국 1~3, 2건 → 한국 1·미국 1~2).
+    params.risk.market_max_new = {"KR": n, "US": n} 로 바꿀 수 있다."""
+    r = st["params"]["risk"]
+    total = r["max_new_per_day"]
+    caps = {"KR": max(1, total - 1), "US": total}
+    caps.update(r.get("market_max_new") or {})
+    return total, caps
+
+
+def market_slots(st, market, as_of):
+    """오늘(as_of) 이 시장에서 더 만들 수 있는 신규 신호 수 = min(시장 상한 - 시장 사용, 전체 상한 - 전체 사용)."""
+    S = D["AiSignal"]
+    total, caps = market_new_caps(st)
+    q = S.query.filter(S.strategy_key == st["key"], S.signal_date == as_of)
+    used_all = q.count()
+    used_mkt = q.filter(S.market == market).count()
+    return max(0, min(caps.get(market, total) - used_mkt, total - used_all))
 
 
 def _drop_unfinished_bar(market, data):
@@ -772,10 +824,12 @@ def _final_check(st, path, x, fd, a, vix, as_of):
     if st["kind"] == "value":
         if fs is None or fs < p["fund_min"]:
             return f"펀더멘탈 {fs} < {p['fund_min']}"
-        refs = [v for v in (fd.get("dcf_fair"), fd.get("analyst_target")) if v]
-        up = (max(refs) / x["close"] - 1) * 100 if refs else None
-        if up is None or up < p["upside_min_pct"]:
-            return f"상승 여력 {None if up is None else round(up, 1)}% < {p['upside_min_pct']}%"
+        refs = value_refs(fd)
+        if not refs:
+            return "상승 여력 확인 불가 (애널리스트 목표가·신뢰할 만한 DCF 없음)"
+        up = (max(refs) / x["close"] - 1) * 100
+        if up < p["upside_min_pct"]:
+            return f"상승 여력 {round(up, 1)}% < {p['upside_min_pct']}%"
         if vix is not None and vix >= p["vix_max"]:
             return f"VIX {vix:.1f} ≥ {p['vix_max']} (신규 진입 보류)"
     if st["use_ai"]:
