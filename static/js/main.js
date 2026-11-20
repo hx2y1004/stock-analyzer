@@ -2882,7 +2882,7 @@ function renderPriceMoveBanner(stock, moveReason) {
         <span class="move-badge">${badge}</span>
       </div>
     </div>
-    <div class="move-reason-text">${moveReason.replace(/\n/g, '<br>')}</div>
+    <div class="move-reason-text">${escapeHtmlMain(moveReason).replace(/\n/g, '<br>')}</div>
   `;
   el.classList.remove('hidden');
 }
@@ -2893,14 +2893,17 @@ function renderNews(news) {
     el.innerHTML = '<p class="no-data">최근 뉴스를 찾을 수 없습니다.</p>';
     return;
   }
+  // 외부 기사 텍스트는 이스케이프, 링크는 http(s)만 허용
+  const esc = escapeHtmlMain;
+  const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? esc(u) : '#');
   el.innerHTML = news.map(n => `
-    <a class="news-item" href="${n.url || '#'}" target="_blank" rel="noopener">
+    <a class="news-item" href="${safeUrl(n.url)}" target="_blank" rel="noopener">
       <div class="news-body">
-        <div class="news-title">${n.title}</div>
-        ${n.desc ? `<div class="news-desc">${n.desc}</div>` : ''}
+        <div class="news-title">${esc(n.title || '')}</div>
+        ${n.desc ? `<div class="news-desc">${esc(n.desc)}</div>` : ''}
         <div class="news-meta">
-          ${n.provider ? `<span class="news-provider">${n.provider}</span>` : ''}
-          ${n.pub ? `<span>${n.pub}</span>` : ''}
+          ${n.provider ? `<span class="news-provider">${esc(n.provider)}</span>` : ''}
+          ${n.pub ? `<span>${esc(n.pub)}</span>` : ''}
         </div>
       </div>
     </a>
