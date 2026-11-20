@@ -1,6 +1,15 @@
 {#- 헤더 우측 로그인/프로필. 서버가 로그인 상태로 바로 그려서, 페이지 이동 때
     '로그인' 버튼이 잠깐 보였다가 프로필로 바뀌는 깜빡임을 없앤다.
     각 페이지 JS 가 /api/me 를 받은 뒤 같은 모양으로 다시 그린다. -#}
+<div class="header-right">
+{%- if current_user.is_authenticated %}
+<div class="notify-wrap">
+  <button type="button" id="notifyBell" class="notify-bell" aria-label="알림" aria-haspopup="dialog" aria-expanded="false">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span id="notifyBadge" class="notify-badge hidden"></span>
+  </button>
+</div>
+{%- endif %}
 <div id="authArea" class="auth-area">
   {%- if current_user.is_authenticated %}
   <div class="profile-area">
@@ -15,4 +24,5 @@
   {%- else %}
   <button class="login-btn" onclick="{{ login_action }}">로그인</button>
   {%- endif %}
+</div>
 </div>

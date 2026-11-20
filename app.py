@@ -65,7 +65,7 @@ from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
-                    BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription)
+                    BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification)
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -5985,8 +5985,14 @@ def debug_toss():
         out["toss_fx_usdkrw"] = None
     return jsonify(out)
 
-# ── AI 매매 신호 봇 (Step 1: 신호 생성 파이프라인) ───────────────────────────
+# ── AI 매매 신호 봇 (Step 1: 신호 생성 파이프라인, Step 2: 관심종목·구독·알림) ──────────
 import bot_engine
+import notifier
+
+notifier.init({
+    "app": app, "db": db, "Notification": Notification, "UserSignalSubscription": UserSignalSubscription,
+    "WatchlistItem": WatchlistItem, "Holding": Holding, "PaperHolding": PaperHolding, "BotStrategy": BotStrategy,
+})
 
 bot_engine.init({
     "app": app, "db": db, "ai_cache": ai_cache, "STOCK_DB": STOCK_DB,
@@ -5994,6 +6000,7 @@ bot_engine.init({
     "ai_json": _ai_json, "last_model": lambda: getattr(_AI_LAST_MODEL, "v", None),
     "compute_dcf": compute_dcf, "get_financials": _get_financials, "get_risk_free_rate": _get_risk_free_rate,
     "fetch_upcoming_events": fetch_upcoming_events, "fetch_kr_news": fetch_kr_news, "fetch_news": fetch_news,
+    "notify": notifier.dispatch,
 })
 with app.app_context():
     try:
@@ -6096,6 +6103,137 @@ def admin_bots_run():
     _BG_EXEC.submit(_job)
     return jsonify({"ok": True, "started": market, "dry_run": dry,
                     "note": "결과는 /api/bots/runs 에서 확인 (수 분 소요)"})
+
+
+
+# ── 관심종목 ─────────────────────────────────────────────────────────────────
+_WATCHLIST_MAX = 100
+_WATCH_NAME_MAP = None
+
+
+def _watch_stock_name(ticker):
+    global _WATCH_NAME_MAP
+    if _WATCH_NAME_MAP is None:
+        _WATCH_NAME_MAP = {s.get("symbol", "").upper(): s.get("name") for s in STOCK_DB if s.get("symbol")}
+    return _WATCH_NAME_MAP.get(ticker.upper())
+
+
+def _norm_ticker(raw):
+    t = (raw or "").strip().upper()
+    return t if (1 <= len(t) <= 30 and re.fullmatch(r"[A-Z0-9.\-^=]+", t)) else None
+
+
+@app.route("/api/watchlist")
+@login_required
+def watchlist_list():
+    rows = WatchlistItem.query.filter_by(user_id=current_user.id).order_by(WatchlistItem.created_at.desc()).all()
+    return jsonify({"items": [{"ticker": r.ticker, "name": r.name or r.ticker,
+                               "added": r.created_at.isoformat() if r.created_at else None} for r in rows],
+                    "max": _WATCHLIST_MAX})
+
+
+@app.route("/api/watchlist", methods=["POST"])
+@login_required
+def watchlist_add():
+    body = request.get_json(silent=True) or {}
+    ticker = _norm_ticker(body.get("ticker"))
+    if not ticker:
+        return jsonify({"error": "종목 코드가 올바르지 않습니다"}), 400
+    if WatchlistItem.query.filter_by(user_id=current_user.id, ticker=ticker).first():
+        return jsonify({"ok": True, "ticker": ticker, "already": True})
+    if WatchlistItem.query.filter_by(user_id=current_user.id).count() >= _WATCHLIST_MAX:
+        return jsonify({"error": f"관심종목은 최대 {_WATCHLIST_MAX}개까지 담을 수 있습니다"}), 400
+    name = _watch_stock_name(ticker) or str(body.get("name") or ticker)[:200]
+    db.session.add(WatchlistItem(user_id=current_user.id, ticker=ticker, name=name))
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()          # 동시에 두 번 눌러 유니크 충돌 → 이미 추가된 것
+    return jsonify({"ok": True, "ticker": ticker, "name": name})
+
+
+@app.route("/api/watchlist/<path:ticker>", methods=["DELETE"])
+@login_required
+def watchlist_remove(ticker):
+    t = _norm_ticker(ticker)
+    if t:
+        WatchlistItem.query.filter_by(user_id=current_user.id, ticker=t).delete()
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
+# ── 신호 알림 구독 ─────────────────────────────────────────────────────────────
+def _strategies_public():
+    return [{"key": s.key, "name": s.name, "emoji": s.emoji, "kind": s.kind, "use_ai": s.use_ai}
+            for s in BotStrategy.query.filter_by(enabled=True).order_by(BotStrategy.id).all()]
+
+
+@app.route("/api/signal-subscription")
+@login_required
+def signal_subscription_get():
+    sub = UserSignalSubscription.query.filter_by(user_id=current_user.id).first()
+    cfg = ({"enabled": bool(sub.enabled), "strategies": [k for k in (sub.strategy_keys or "").split(",") if k],
+            "scope": sub.scope, "min_confidence": sub.min_confidence}
+           if sub else {"enabled": False, "strategies": [], "scope": "all", "min_confidence": 70})
+    return jsonify({"subscription": cfg, "strategies": _strategies_public(),
+                    "scopes": [{"key": "all", "label": "전체 종목"}, {"key": "portfolio", "label": "보유 종목 (실제 + 모의투자)"},
+                               {"key": "watchlist", "label": "관심종목"}]})
+
+
+@app.route("/api/signal-subscription", methods=["PUT", "POST"])
+@login_required
+def signal_subscription_put():
+    body = request.get_json(silent=True) or {}
+    valid = {s["key"] for s in _strategies_public()}
+    keys = [k for k in (body.get("strategies") or []) if isinstance(k, str) and k in valid]
+    scope = body.get("scope") if body.get("scope") in ("all", "portfolio", "watchlist") else "all"
+    try:
+        min_conf = max(0, min(100, int(body.get("min_confidence", 70))))
+    except (TypeError, ValueError):
+        min_conf = 70
+    enabled = bool(body.get("enabled", True)) and bool(keys)
+    sub = UserSignalSubscription.query.filter_by(user_id=current_user.id).first()
+    if not sub:
+        sub = UserSignalSubscription(user_id=current_user.id, strategy_keys="")
+        db.session.add(sub)
+    sub.strategy_keys, sub.scope, sub.min_confidence, sub.enabled = ",".join(keys), scope, min_conf, enabled
+    sub.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"ok": True, "subscription": {"enabled": enabled, "strategies": keys, "scope": scope,
+                                                 "min_confidence": min_conf}})
+
+
+# ── 알림 (헤더 종 아이콘) ─────────────────────────────────────────────────────
+@app.route("/api/notifications")
+@login_required
+def notifications_list():
+    try:
+        limit = max(0, min(50, int(request.args.get("limit", 20))))
+    except ValueError:
+        limit = 20
+    q = Notification.query.filter_by(user_id=current_user.id)
+    unread = q.filter_by(is_read=False).count()
+    rows = q.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit).all() if limit else []
+    return jsonify({"unread": unread, "items": [
+        {"id": n.id, "kind": n.kind, "title": n.title, "body": n.body, "link": n.link, "signal_id": n.signal_id,
+         "read": bool(n.is_read), "created_at": n.created_at.isoformat() + "Z" if n.created_at else None}
+        for n in rows]})
+
+
+@app.route("/api/notifications/read", methods=["POST"])
+@login_required
+def notifications_read():
+    """{"ids": [..]} 이면 그것만, {"all": true} 이면 전부 읽음 처리."""
+    body = request.get_json(silent=True) or {}
+    q = Notification.query.filter_by(user_id=current_user.id, is_read=False)
+    if not body.get("all"):
+        ids = [i for i in (body.get("ids") or []) if isinstance(i, int)][:200]
+        if not ids:
+            return jsonify({"ok": True, "updated": 0})
+        q = q.filter(Notification.id.in_(ids))
+    n = q.update({"is_read": True}, synchronize_session=False)
+    db.session.commit()
+    return jsonify({"ok": True, "updated": n})
 
 
 if __name__ == "__main__":

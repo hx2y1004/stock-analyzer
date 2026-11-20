@@ -487,7 +487,7 @@ def _fee_adj_pnl(entry, exit_, fee_pct):
     return ((exit_ * (1 - fee_pct / 100)) / (entry * (1 + fee_pct / 100)) - 1) * 100
 
 
-def track_signals(market, data, strategies):
+def track_signals(market, data, strategies, commit=True):
     """PENDING/ACTIVE 신호를 일봉으로 추적. data: {ticker: df}."""
     S, db = D["AiSignal"], D["db"]
     strat = {s["key"]: s for s in strategies}
@@ -523,7 +523,8 @@ def track_signals(market, data, strategies):
         sig.holding_days, sig.peak_price = 0, sig.fill_price
         _advance_active(sig, df[df.index.date >= sig.filled_date], st, fee)
         changed += 1
-    db.session.commit()
+    if commit:
+        db.session.commit()
     return changed
 
 
@@ -617,13 +618,18 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
         summary = {"market": market, "as_of": str(as_of), "tickers": len(feats), "vix": vix,
                    "tracked": 0, "candidates": {}, "rejected": {}, "signals": {}, "ai_calls_used": 0}
 
-        # 2) 사후 추적
-        summary["tracked"] = track_signals(market, data, strategies)
+        # 2) 사후 추적 (dry_run 이면 저장하지 않음)
+        open_before = [r.id for r in S.query.filter(S.market == market, S.status.in_(["PENDING", "ACTIVE"])).all()]
+        summary["tracked"] = track_signals(market, data, strategies, commit=not dry_run)
         if not external and as_of != market_today(market):
             # 휴장일이거나 장중 수동 실행(오늘 봉 미완성) → 추적만 하고 신규 신호는 만들지 않음
             summary.update(ok=True, skipped="오늘 완성된 봉이 없음 (휴장일 또는 장 마감 전)",
                            seconds=round(time.time() - t0, 1))
             log(f"run {market}: 신규 신호 생략 — as_of={as_of}")
+            if dry_run:
+                db.session.rollback()
+            else:
+                _notify([], open_before)
             return summary
 
         # 3)~4) 공통 필터 + 정량 1차
@@ -702,7 +708,7 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                     continue
                 proposals[st["key"]].append(dict(t=t, st=st, path=path, qs=qs, ev=ev, x=x, fd=fd, a=a,
                                                  e=e, stop=stop, target=target, rr=rr, conf=conf))
-        created = []
+        created, new_objs = [], []
         for st in strategies:
             r = st["params"]["risk"]
             slots = max(0, min(market_slots(st, market, as_of), r["max_positions"] - open_count.get(st["key"], 0)))
@@ -724,6 +730,7 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                         status="PENDING")
                 if not dry_run:
                     db.session.add(sig)
+                    new_objs.append(sig)
                 created.append((st["key"], z["t"]))
             summary["signals"][st["key"]] = [t for k, t in created if k == st["key"]]
             dropped = len(proposals[st["key"]]) - len(picks)
@@ -738,6 +745,7 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
         log(f"run {market} as_of={as_of} tickers={len(feats)} signals={sum(len(v) for v in summary['signals'].values())} "
             f"ai_calls={summary['ai_calls_used']} {summary['seconds']}s")
         if not dry_run:
+            summary["notified"] = _notify(new_objs, open_before)
             D["ai_cache"].put(f"bot_run:{market}:{as_of}", None, "bot_run", json.loads(json.dumps(summary, default=str)),
                               None, 30 * 86400)
         return summary
@@ -764,6 +772,17 @@ def market_slots(st, market, as_of):
     used_all = q.count()
     used_mkt = q.filter(S.market == market).count()
     return max(0, min(caps.get(market, total) - used_mkt, total - used_all))
+
+
+def _notify(new_objs, open_before_ids):
+    """새 신호 + 이번 배치에서 청산·취소된 신호를 알림 모듈로 넘긴다. 알림 실패는 배치에 영향 없음."""
+    fn = D.get("notify")
+    if not fn:
+        return 0
+    S = D["AiSignal"]
+    closed = (S.query.filter(S.id.in_(open_before_ids), S.status.in_(list(FINAL_STATUSES) + ["CANCELLED"])).all()
+              if open_before_ids else [])
+    return fn(new_objs, closed)
 
 
 def _drop_unfinished_bar(market, data):

@@ -261,3 +261,30 @@ class UserSignalSubscription(db.Model):
     enabled        = db.Column(db.Boolean, default=True)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class WatchlistItem(db.Model):
+    """관심종목 (보유와 무관하게 지켜보는 종목). 신호 알림 범위 'watchlist' 에 쓰인다."""
+    __tablename__ = "watchlist_items"
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    ticker     = db.Column(db.String(30), nullable=False)
+    name       = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("user_id", "ticker", name="uq_watchlist_user_ticker"),)
+
+
+class Notification(db.Model):
+    """사용자 알림 (헤더 종 아이콘). 지금은 봇 신호만 쓴다.
+    kind: signal_new(새 매수 신호) | signal_exit(청산) | signal_cancel(체결 전 취소)"""
+    __tablename__ = "notifications"
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    kind       = db.Column(db.String(30), nullable=False)
+    title      = db.Column(db.String(200), nullable=False)
+    body       = db.Column(db.String(500))
+    link       = db.Column(db.String(300))
+    signal_id  = db.Column(db.Integer, db.ForeignKey("ai_signals.id"), nullable=True, index=True)
+    is_read    = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    __table_args__ = (db.UniqueConstraint("user_id", "signal_id", "kind", name="uq_notif_user_signal_kind"),)
