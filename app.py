@@ -248,6 +248,18 @@ with app.app_context():
         # (db.create_all() 가 새 컬럼 만들었으면 OK)
         print(f"[migration] User cash columns: {e}")
 
+    # 모의투자 자동 청산 예약 컬럼 (2026-11). 이미 있으면 건너뛴다 — 운영 PostgreSQL · 로컬 SQLite 모두 무중단
+    try:
+        from sqlalchemy import inspect as _sa_inspect, text as _text_m
+        _cols = {c["name"] for c in _sa_inspect(db.engine).get_columns("paper_holdings")}
+        with db.engine.begin() as _cm:
+            for _col in ("target_price", "stop_loss_price"):
+                if _col not in _cols:
+                    _cm.execute(_text_m(f"ALTER TABLE paper_holdings ADD COLUMN {_col} DOUBLE PRECISION"))
+                    print(f"[migration] paper_holdings.{_col} 추가")
+    except Exception as e:
+        print(f"[migration] paper_holdings 예약 컬럼: {e}")
+
 
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -5253,6 +5265,8 @@ def trading_dashboard():
                 "pnl_krw":        round(pnl_krw),
                 "pnl_pct":        round(pnl_pct, 2),
                 "note":           latest_notes.get(h.ticker),
+                "target_price":   h.target_price,
+                "stop_loss_price": h.stop_loss_price,
             })
 
     total_assets_krw = user.cash_balance + positions_value_krw
@@ -5439,20 +5453,157 @@ def trading_buy():
 
     if not ticker or qty <= 0:
         return jsonify({"error": "티커/수량을 올바르게 입력해주세요"}), 400
+    targets, terr = _parse_exit_targets(data)
+    if terr:
+        return jsonify({"error": terr}), 400
 
     # 체결가 = 서버 실시간가 (클라이언트가 보낸 price 무시 → 조작 차단)
     price = _fetch_current_price(ticker)
     if not price or price <= 0:
         return jsonify({"error": "현재가를 가져올 수 없어 매수할 수 없습니다. 잠시 후 다시 시도해주세요"}), 503
+    # 예약은 체결가 기준으로 검증 (목표가 > 체결가 > 손절가). 어긋나면 매수 자체를 하지 않는다
+    verr = _validate_exit_targets(targets, float(price))
+    if verr:
+        return jsonify({"error": verr, "price": float(price)}), 400
 
-    tx, err = paper_buy(current_user, ticker, name, qty, float(price), note=note)
+    tx, err = paper_buy(current_user, ticker, name, qty, float(price), note=note, commit=False)
     if err:
         return jsonify({"error": err}), 400
+    if targets:
+        db.session.flush()
+        h = PaperHolding.query.filter_by(user_id=current_user.id, ticker=ticker).first()
+        for k, v in targets.items():
+            setattr(h, k, v)
+    db.session.commit()
+    h = PaperHolding.query.filter_by(user_id=current_user.id, ticker=ticker).first()
     return jsonify({
         "ok": True,
         "transaction": tx.to_dict(),
         "cash_balance": round(current_user.cash_balance),
+        "targets": {"target_price": h.target_price, "stop_loss_price": h.stop_loss_price} if h else None,
     })
+
+
+def _parse_exit_targets(data):
+    """body 의 target_price · stop_loss_price → ({필드: 값|None}, 오류). 키가 없으면 그 필드는 건드리지 않는다.
+    빈 문자열·null·0 은 '해제'(None)."""
+    import math
+    out = {}
+    for k in ("target_price", "stop_loss_price"):
+        if k not in data:
+            continue
+        v = data.get(k)
+        if v in (None, "", 0, "0"):
+            out[k] = None
+            continue
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return None, ("목표가" if k == "target_price" else "손절가") + "는 숫자로 입력해 주세요"
+        if not math.isfinite(v) or v <= 0:
+            return None, ("목표가" if k == "target_price" else "손절가") + "는 0보다 커야 합니다"
+        out[k] = round(v, 4)
+    return out, None
+
+
+def _validate_exit_targets(targets, price):
+    """목표가 > 현재가, 손절가 < 현재가. → 오류 문구 | None"""
+    t, s = (targets or {}).get("target_price"), (targets or {}).get("stop_loss_price")
+    if t is not None and not t > price:
+        return f"목표가는 현재가({price:,.2f})보다 높아야 합니다"
+    if s is not None and not s < price:
+        return f"손절가는 현재가({price:,.2f})보다 낮아야 합니다"
+    return None
+
+
+@app.route("/api/trading/holdings/<path:ticker>/targets", methods=["PATCH", "PUT"])
+@login_required
+def trading_holding_targets(ticker):
+    """보유 종목의 목표가·손절가 수정/해제.
+    Body: { target_price?: number|null, stop_loss_price?: number|null }  (보낸 키만 바뀜, null = 해제)"""
+    ticker = (ticker or "").strip().upper()
+    h = PaperHolding.query.filter_by(user_id=current_user.id, ticker=ticker).first()
+    if not h:
+        return jsonify({"error": "보유하지 않은 종목입니다"}), 404
+    targets, terr = _parse_exit_targets(request.get_json(silent=True) or {})
+    if terr:
+        return jsonify({"error": terr}), 400
+    if any(v is not None for v in targets.values()):
+        price = _fetch_current_price(ticker)
+        if not price or price <= 0:
+            return jsonify({"error": "현재가를 가져올 수 없어 예약을 검증하지 못했습니다. 잠시 후 다시 시도해주세요"}), 503
+        verr = _validate_exit_targets({k: v for k, v in targets.items() if v is not None}, float(price))
+        if verr:
+            return jsonify({"error": verr, "price": float(price)}), 400
+    for k, v in targets.items():
+        setattr(h, k, v)
+    db.session.commit()
+    return jsonify({"ok": True, "ticker": ticker, "target_price": h.target_price, "stop_loss_price": h.stop_loss_price})
+
+
+def paper_auto_exits(market, quotes=None):
+    """장중 5분 체크(bot_engine 스케줄러)에서 호출: 목표가·손절가가 예약된 사용자 모의 보유 종목만 시세 확인 → 전량 자동 매도.
+    예약이 하나도 없으면 쿼리 1번 후 바로 끝 (시세 조회 없음). quotes 는 테스트용 {ticker: 현재가}.
+    중복 체결 방지: 체결 직전에 행을 잠그고(PostgreSQL FOR UPDATE) 예약·수량을 다시 확인한 뒤 예약을 지우고 매도한다."""
+    is_kr = lambda t: t.upper().endswith((".KS", ".KQ"))
+    rows = (PaperHolding.query
+            .filter((PaperHolding.target_price.isnot(None)) | (PaperHolding.stop_loss_price.isnot(None)))
+            .with_entities(PaperHolding.id, PaperHolding.ticker).all())
+    rows = [r for r in rows if is_kr(r.ticker) == (market == "KR")]
+    if not rows:
+        return {"checked": 0, "closed": 0}
+    tickers = sorted({r.ticker for r in rows})
+    if quotes is None:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(4, len(tickers))) as ex:
+            quotes = dict(zip(tickers, ex.map(_fetch_current_price, tickers)))
+    fx = _get_usd_krw_rate()
+    closed = []
+    for r in rows:
+        px = quotes.get(r.ticker)
+        if not px or px <= 0:
+            continue
+        try:
+            h = PaperHolding.query.filter_by(id=r.id).with_for_update().first()
+            if not h or not h.quantity or h.quantity <= 0:
+                db.session.rollback()
+                continue
+            kind = None
+            if h.target_price is not None and px >= h.target_price:
+                kind = "익절"
+            elif h.stop_loss_price is not None and px <= h.stop_loss_price:
+                kind = "손절"
+            if not kind:
+                db.session.rollback()
+                continue
+            user = User.query.get(h.user_id)
+            level = h.target_price if kind == "익절" else h.stop_loss_price
+            pnl_pct = (px / h.purchase_price - 1) * 100 if h.purchase_price else 0.0
+            ticker, name, qty, cur = h.ticker, h.name, h.quantity, h.currency or "USD"
+            h.target_price = h.stop_loss_price = None          # 같은 예약으로 두 번 팔지 않게 먼저 지운다
+            fmt = (lambda v: f"{round(v):,}원") if cur == "KRW" else (lambda v: f"${v:,.2f}")
+            tx, err = paper_sell(user, ticker, qty, float(px), fx=fx, commit=False,
+                                 note=f"[자동 {kind}] {'목표가' if kind == '익절' else '손절가'} {fmt(level)} 도달")
+            if err:
+                db.session.rollback()
+                continue
+            db.session.commit()
+            closed.append((user.id, ticker, name, kind, pnl_pct, px, tx.realized_pnl_krw, cur, qty))
+        except Exception as e:
+            db.session.rollback()
+            app.logger.warning(f"[paper_exit] {r.ticker} 실패: {e}")
+    for uid, ticker, name, kind, pnl_pct, px, pnl_krw, cur, qty in closed:
+        fmt_px = f"{round(px):,}원" if cur == "KRW" else f"${px:,.2f}"
+        label = ticker if cur != "KRW" else name
+        try:
+            notifier.notify_user(uid, "paper_exit", f"[모의투자 자동 {kind}] {label} {pnl_pct:+.1f}% 체결",
+                                 f"{name} {qty:g}주 · 체결가 {fmt_px} · 실현 손익 {int(round(pnl_krw or 0)):+,}원",
+                                 "/trading", tag=f"paper-exit-{ticker}")
+        except Exception as e:
+            app.logger.warning(f"[paper_exit] 알림 실패 user={uid}: {e}")
+    if closed:
+        app.logger.info(f"[paper_exit] {market} 자동 청산 {len(closed)}건")
+    return {"checked": len(rows), "closed": len(closed)}
 
 
 @app.route("/api/trading/sell", methods=["POST"])
@@ -6207,6 +6358,7 @@ with app.app_context():
     except Exception as e:
         db.session.rollback()
         app.logger.warning(f"[BOT] 전략·계좌 초기화 실패: {e}")
+bot_engine.D["paper_exit"] = paper_auto_exits           # 장중 5분 체크 → 모의투자 목표가·손절가 자동 청산
 bot_engine.start_scheduler()
 
 import sector_map

@@ -210,6 +210,21 @@ def _dispatch(new_signals, closed_signals):
     return sent
 
 
+def notify_user(user_id, kind, title, body, link, tag=None):
+    """신호와 무관한 개별 알림 (예: 모의투자 자동 청산). 인앱 저장 + 웹 푸시. → 인앱 저장 여부"""
+    N, db = D["Notification"], D["db"]
+    try:
+        db.session.add(N(user_id=user_id, kind=kind, title=title[:200], body=(body or "")[:500], link=(link or "")[:300]))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        log(f"알림 저장 실패 user={user_id}: {e}")
+        return False
+    _send_pushes({user_id: [{"kind": kind, "payload": {"title": title, "body": body or "", "url": link or "/",
+                                                        "tag": tag or f"{kind}-{user_id}"}}]})
+    return True
+
+
 def _send_pushes(pushes):
     """웹 푸시 (VAPID 미설정이면 아무것도 안 함). 실패해도 인앱 알림·배치에는 영향 없음."""
     wp = D.get("webpush")

@@ -47,6 +47,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const open = (id) => { const m = document.getElementById(id); return m && !m.classList.contains('hidden'); };
   if (open('confirmModal')) closeConfirm(false);
+  else if (open('exitModal')) closeExitModal();
   else if (open('nicknameModal')) cancelNicknameModal();
   else if (open('tradeBuyModal')) closeBuyModal();
   else if (open('tradeSellModal')) closeSellModal();
@@ -97,6 +98,7 @@ async function checkAuthAndLoad() {
     document.getElementById('loginRequired').classList.add('hidden');
     document.getElementById('tradingDashboard').classList.remove('hidden');
     await loadDashboard();
+    await openBuyFromUrl();
   } catch (e) {
     console.warn('auth check failed', e);
     document.getElementById('loginRequired').classList.remove('hidden');
@@ -313,6 +315,8 @@ function renderPositions(positions) {
         <div class="pf-meta-row">
           <span class="pf-meta-item">매입 ${_fmtCur(buyConv, _posCur)}</span>
           <span class="pf-meta-item">${p.quantity}주</span>
+          ${_exitBadge(p)}
+          <button type="button" class="trade-action-btn exit" data-act="exit" data-t="${tk}" aria-label="${nm} 목표가·손절가 예약">목표/손절</button>
           <button type="button" class="trade-action-btn buy" data-act="buy" data-t="${tk}">추가매수</button>
           <button type="button" class="trade-action-btn sell" data-act="sell" data-t="${tk}">매도</button>
           <a class="trade-action-btn analyze" href="/stock/${encodeURIComponent(p.ticker)}">분석</a>
@@ -324,6 +328,7 @@ function renderPositions(positions) {
     const p = (dashboardData.positions || []).find(x => x.ticker === b.dataset.t);
     if (!p) return;
     if (b.dataset.act === 'buy') openBuyModalForHolding(p.ticker, p.name, p.currency, p.current_price || 0);
+    else if (b.dataset.act === 'exit') openExitModal(p);
     else openSellModal(p.ticker, p.name, p.currency, p.current_price || 0, p.quantity);
   }));
 }
@@ -380,15 +385,22 @@ function renderTransactions() {
 }
 
 // ── 빠른 매수: 실시간 자동완성 → 고르면 바로 매수 창 ───────────────────────
-let _qbActive = -1;
+let _qbActive = -1, _qbSeq = 0, _qbTimer = null;
 function _qbMarket(sym) { return isKR(sym) ? 'KR' : 'US'; }
+// 목록 닫기 + 아직 안 온 검색 응답 무효화 (늦게 온 응답이 닫은 목록을 다시 열지 않게)
+function _qbCloseList() {
+  clearTimeout(_qbTimer); _qbSeq++;
+  const list = document.getElementById('qbAcList'), input = document.getElementById('qbTicker');
+  if (list) list.classList.add('hidden');
+  if (input) { input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); }
+  _qbActive = -1;
+}
 
 function setupQuickBuyAC() {
   const input = document.getElementById('qbTicker');
   const list = document.getElementById('qbAcList');
   if (!input) return;
-  let timer = null, seq = 0;
-  const close = () => { list.classList.add('hidden'); input.setAttribute('aria-expanded', 'false'); _qbActive = -1; };
+  const close = _qbCloseList;
   const paint = () => list.querySelectorAll('.qb-ac-item').forEach((el, i) => {
     const on = i === _qbActive; el.classList.toggle('active', on); el.setAttribute('aria-selected', on ? 'true' : 'false');
     if (on) { el.scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', el.id); }
@@ -397,14 +409,14 @@ function setupQuickBuyAC() {
     _qbHint('종목을 고르면 바로 매수 창이 열립니다.');
     delete input.dataset.symbol; delete input.dataset.name;
     const q = input.value.trim();
-    clearTimeout(timer);
+    clearTimeout(_qbTimer);
     if (!q) { close(); return; }
-    timer = setTimeout(async () => {
-      const my = ++seq;
+    _qbTimer = setTimeout(async () => {
+      const my = ++_qbSeq;
       try {
         const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
         const items = (await r.json()) || [];
-        if (my !== seq) return;                               // 늦게 온 이전 검색 결과는 버림
+        if (my !== _qbSeq) return;                            // 늦게 온 이전 검색 결과·이미 닫은 목록은 무시
         qbACItems = items.slice(0, 8);
         if (!qbACItems.length) {
           list.innerHTML = '<div class="qb-ac-empty">검색 결과가 없습니다</div>';
@@ -458,8 +470,7 @@ function selectQbAC(i) {
   const inp = document.getElementById('qbTicker');
   inp.value = `${item.name} (${item.symbol})`;
   inp.dataset.symbol = item.symbol; inp.dataset.name = item.name;
-  document.getElementById('qbAcList').classList.add('hidden');
-  inp.setAttribute('aria-expanded', 'false');
+  _qbCloseList();
   openQuickBuy();                                        // 고르자마자 매수 창
 }
 
@@ -478,6 +489,7 @@ async function openQuickBuy() {
   if (_qbBusy) return;                                   // 연타 방지
   const inp = document.getElementById('qbTicker');
   let sym = inp.dataset.symbol, nm = inp.dataset.name;
+  _qbCloseList();
   _qbBusy = true; _qbLoading(true);
   try {
     if (!sym) {
@@ -553,7 +565,8 @@ function _maxBuyQty() {
   return unit > 0 ? Math.max(0, Math.floor(cash / unit)) : 0;
 }
 
-function openBuyModalForHolding(ticker, name, currency, price, marketOpen) {
+function openBuyModalForHolding(ticker, name, currency, price, marketOpen, prefill) {
+  prefill = prefill || {};
   document.getElementById('buyTicker').value = ticker;
   document.getElementById('buyName').value = name;
   document.getElementById('buyCurrency').value = currency;
@@ -564,8 +577,13 @@ function openBuyModalForHolding(ticker, name, currency, price, marketOpen) {
     ? '예: 실적 개선 기대로 매수. 78,000원 도달 시 절반 익절 예정'
     : '예: AI 수요 기대로 매수. $150 도달 시 절반 익절 예정';
   document.getElementById('buyQty').value = '';
-  document.getElementById('buyNote').value = '';
+  document.getElementById('buyNote').value = prefill.memo || '';
   document.getElementById('buyError').textContent = '';
+  document.getElementById('buyTarget').value = prefill.target || '';
+  document.getElementById('buyStop').value = prefill.stop || '';
+  document.getElementById('buyExit').open = !!(prefill.target || prefill.stop);
+  const step = currency === 'KRW' ? '1' : '0.01';
+  document.getElementById('buyTarget').step = step; document.getElementById('buyStop').step = step;
   _setTradePrice('buy', price || 0, marketOpen);
   const m = document.getElementById('tradeBuyModal');
   m.classList.remove('hidden');
@@ -602,16 +620,18 @@ function updateBuySummary() {
     <div class="ts-row total"><span>총 차감액</span><span>${fmtKRW(total)}</span></div>
     <div class="ts-row ${remain < 0 ? 'warn' : ''}"><span>매수 후 현금</span><span>${fmtKRW(remain)}</span></div>`;
   // 유효성: 빈 값 · 0 이하 · 소수 · 현금 초과 · 시세 없음 → 버튼 비활성 + 이유
+  const ex = _exitCalc('buy', price, cur, null);
   let why = '';
   if (!(price > 0)) why = '시세를 불러오는 중입니다';
+  else if (ex.error) why = ex.error;
   else if (raw === '') why = '';
   else if (!_validQty(qty)) why = '수량은 1주 이상의 정수로 입력해 주세요';
   else if (remain < 0) why = `보유 현금을 ${fmtKRW(-remain)} 넘습니다 (최대 ${maxQ}주)`;
-  const ok = price > 0 && _validQty(qty) && remain >= 0;
+  const ok = price > 0 && _validQty(qty) && remain >= 0 && !ex.error;
   const btn = document.getElementById('buySubmit');
   if (!btn.dataset.busy) btn.disabled = !ok;
   document.getElementById('buyError').textContent = why;
-  document.getElementById('buyError').classList.toggle('soft', !(_validQty(qty) && remain < 0));
+  document.getElementById('buyError').classList.toggle('soft', !(ex.error || (_validQty(qty) && remain < 0)));
 }
 
 function _fillPct(pct) {
@@ -627,16 +647,19 @@ async function submitBuy() {
   const name = document.getElementById('buyName').value;
   const qty = Number(document.getElementById('buyQty').value);
   const note = (document.getElementById('buyNote').value || '').trim();
+  const ex = _exitValues('buy');
   btn.disabled = true; btn.dataset.busy = '1'; btn.textContent = '매수 중…';
   try {
     const r = await fetch('/api/trading/buy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, name, quantity: qty, note }),    // 체결가는 서버 실시간가 (가격 미전송)
+      // 체결가는 서버 실시간가 (가격 미전송). 예약은 입력한 것만 보낸다
+      body: JSON.stringify(Object.assign({ ticker, name, quantity: qty, note },
+        ex.target ? { target_price: ex.target } : {}, ex.stop ? { stop_loss_price: ex.stop } : {})),
     });
     const d = await r.json();
     if (!r.ok) { document.getElementById('buyError').textContent = d.error || '매수하지 못했습니다'; document.getElementById('buyError').classList.remove('soft'); return; }
     closeBuyModal();
-    toast(`${name} ${qty}주 매수 완료`);
+    toast(`${name} ${qty}주 매수 완료${ex.target || ex.stop ? ' · 자동 청산 예약' : ''}`);
     await loadDashboard();
   } catch (e) {
     document.getElementById('buyError').textContent = '네트워크 오류: ' + (e.message || e);
@@ -746,6 +769,8 @@ function setupTradeInputs() {
     });
   });
   document.querySelectorAll('#tradeBuyModal [data-pct]').forEach((b) => b.addEventListener('click', () => _fillPct(+b.dataset.pct)));
+  ['buyTarget', 'buyStop'].forEach((id) => document.getElementById(id).addEventListener('input', updateBuySummary));
+  ['exitTarget', 'exitStop'].forEach((id) => document.getElementById(id).addEventListener('input', updateExitCalc));
   document.querySelectorAll('#tradeSellModal [data-spct]').forEach((b) => b.addEventListener('click', () => {
     const p = +b.dataset.spct;
     document.getElementById('sellQty').value = p >= 100 ? Math.floor(_sellMaxQty) : Math.max(1, Math.floor(_sellMaxQty * p / 100));
@@ -1071,4 +1096,124 @@ async function submitNickname() {
     document.querySelectorAll('.profile-name, .pd-name').forEach((el) => { el.textContent = data.nickname; });
     toast(`닉네임을 '${data.nickname}'(으)로 저장했어요`);
   } catch (e) { err.textContent = '네트워크 오류'; }
+}
+
+
+// ── 목표가 · 손절가 자동 청산 예약 ──────────────────────────────────────────
+function _exitValues(prefix) {
+  const num = (id) => { const v = document.getElementById(id).value.trim(); return v === '' ? null : Number(v); };
+  return prefix === 'buy' ? { target: num('buyTarget'), stop: num('buyStop') } : { target: num('exitTarget'), stop: num('exitStop') };
+}
+
+// 기준가(price) 대비 예상 수익률·손실률·손익비. avg 가 있으면 매입가 기준 수익률도
+function _exitCalc(prefix, price, cur, avg) {
+  const { target, stop } = _exitValues(prefix);
+  const el = document.getElementById(prefix === 'buy' ? 'buyExitCalc' : 'exitCalc');
+  const out = { target, stop, error: '' };
+  if (target != null && (!isFinite(target) || target <= 0)) out.error = '목표가는 0보다 큰 숫자로 입력해 주세요';
+  else if (stop != null && (!isFinite(stop) || stop <= 0)) out.error = '손절가는 0보다 큰 숫자로 입력해 주세요';
+  else if (price > 0 && target != null && !(target > price)) out.error = `목표가는 현재가(${fmtNative(price, cur)})보다 높아야 합니다`;
+  else if (price > 0 && stop != null && !(stop < price)) out.error = `손절가는 현재가(${fmtNative(price, cur)})보다 낮아야 합니다`;
+  if (!el) return out;
+  if (target == null && stop == null) { el.innerHTML = '<span class="ab-muted">비워 두면 예약하지 않아요.</span>'; return out; }
+  if (!(price > 0)) { el.innerHTML = ''; return out; }
+  const up = target != null ? (target / price - 1) * 100 : null;
+  const dn = stop != null ? (stop / price - 1) * 100 : null;
+  const rr = up != null && dn != null && dn < 0 && up > 0 ? up / -dn : null;
+  const base = avg ? (v) => ` <span class="ab-muted">(매입가 대비 ${fmtPct((v / avg - 1) * 100)})</span>` : () => '';
+  el.innerHTML = `
+    <div><span>예상 수익률</span><b class="${up > 0 ? 'up' : ''}">${up == null ? '—' : fmtPct(up)}</b>${target != null && avg ? base(target) : ''}</div>
+    <div><span>예상 손실률</span><b class="${dn < 0 ? 'down' : ''}">${dn == null ? '—' : fmtPct(dn)}</b>${stop != null && avg ? base(stop) : ''}</div>
+    <div><span>손익비</span><b>${rr == null ? '—' : '1 : ' + rr.toFixed(2)}</b></div>`;
+  return out;
+}
+
+function _exitBadge(p) {
+  if (p.target_price == null && p.stop_loss_price == null) return '';
+  const parts = [];
+  if (p.target_price != null) parts.push(`<span class="xb-t">익절 ${fmtNative(p.target_price, p.currency)}</span>`);
+  if (p.stop_loss_price != null) parts.push(`<span class="xb-s">손절 ${fmtNative(p.stop_loss_price, p.currency)}</span>`);
+  return `<span class="exit-badge" title="도달하면 전량 자동 매도">${parts.join('<i aria-hidden="true">·</i>')}</span>`;
+}
+
+let _exitPos = null;
+function openExitModal(p) {
+  _exitPos = p;
+  document.getElementById('exitName').textContent = p.name;
+  document.getElementById('exitTicker').textContent = p.ticker;
+  document.getElementById('exitCurrency').value = p.currency;
+  document.getElementById('exitRef').innerHTML =
+    `현재가 <b>${fmtNative(p.current_price, p.currency)}</b> · 매입가 ${fmtNative(p.purchase_price, p.currency)} · ${p.quantity}주`;
+  const step = p.currency === 'KRW' ? '1' : '0.01';
+  const t = document.getElementById('exitTarget'), s = document.getElementById('exitStop');
+  t.step = s.step = step;
+  t.value = p.target_price != null ? p.target_price : '';
+  s.value = p.stop_loss_price != null ? p.stop_loss_price : '';
+  document.getElementById('exitClear').disabled = p.target_price == null && p.stop_loss_price == null;
+  document.getElementById('exitError').textContent = '';
+  updateExitCalc();
+  document.getElementById('exitModal').classList.remove('hidden');
+  setTimeout(() => t.focus(), 50);
+}
+function closeExitModal() { document.getElementById('exitModal').classList.add('hidden'); }
+
+function updateExitCalc() {
+  if (!_exitPos) return;
+  const ex = _exitCalc('exit', _exitPos.current_price, _exitPos.currency, _exitPos.purchase_price);
+  document.getElementById('exitError').textContent = ex.error;
+  document.getElementById('exitSave').disabled = !!ex.error;
+  return ex;
+}
+
+async function _patchTargets(body, okMsg) {
+  const btn = document.getElementById('exitSave');
+  btn.disabled = true; btn.textContent = '저장 중…';
+  try {
+    const r = await fetch(`/api/trading/holdings/${encodeURIComponent(_exitPos.ticker)}/targets`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok) { document.getElementById('exitError').textContent = d.error || '저장하지 못했습니다'; return; }
+    closeExitModal();
+    toast(okMsg);
+    await loadDashboard();
+  } catch (e) {
+    document.getElementById('exitError').textContent = '네트워크 오류: ' + (e.message || e);
+  } finally {
+    btn.textContent = '저장'; if (_exitPos) updateExitCalc();
+  }
+}
+function saveExitTargets() {
+  const ex = updateExitCalc();
+  if (!ex || ex.error) return;
+  const { target, stop } = _exitValues('exit');
+  const msg = target == null && stop == null ? `${_exitPos.name} 자동 청산 예약을 해제했어요` : `${_exitPos.name} 자동 청산 예약을 저장했어요`;
+  _patchTargets({ target_price: target, stop_loss_price: stop }, msg);
+}
+function clearExitTargets() {
+  _patchTargets({ target_price: null, stop_loss_price: null }, `${_exitPos.name} 자동 청산 예약을 해제했어요`);
+}
+
+// ── 다른 페이지에서 원클릭: /trading?buy=AAPL&target=380&stop=320&memo=... ──────────
+async function openBuyFromUrl() {
+  const q = new URLSearchParams(location.search);
+  const sym = (q.get('buy') || '').trim().toUpperCase();
+  if (!sym) return;
+  const num = (k) => { const v = Number(q.get(k)); return q.get(k) && isFinite(v) && v > 0 ? v : null; };
+  const prefill = { target: num('target'), stop: num('stop'), memo: (q.get('memo') || '').slice(0, 300) };
+  history.replaceState(null, '', location.pathname);            // 새로고침해도 다시 열리지 않게 주소 정리
+  if (!/^[A-Z0-9.\-^=]{1,15}$/.test(sym)) { toast('종목 코드를 알 수 없어요', 'err'); return; }
+  _qbLoading(true);
+  try {
+    let name = sym;
+    try {
+      const items = (await (await fetch(`/api/search?q=${encodeURIComponent(sym)}`)).json()) || [];
+      const hit = items.find((it) => (it.symbol || '').toUpperCase() === sym);
+      if (hit) name = hit.name;
+    } catch (e) {}
+    const quote = await fetchQuote(sym);
+    openBuyModalForHolding(sym, name, isKR(sym) ? 'KRW' : 'USD', quote.price || 0, quote.market_open, prefill);
+  } finally {
+    _qbLoading(false);
+  }
 }

@@ -72,6 +72,9 @@ class PaperHolding(db.Model):
     purchase_price  = db.Column(db.Float,  nullable=False)
     currency        = db.Column(db.String(10), default="USD")
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    # 자동 청산 예약 (종목 통화 기준 가격, 없으면 예약 없음). 장중 5분 체크가 도달 시 전량 매도
+    target_price    = db.Column(db.Float, nullable=True)      # 현재가 >= 목표가 → 자동 익절
+    stop_loss_price = db.Column(db.Float, nullable=True)      # 현재가 <= 손절가 → 자동 손절
 
     def to_dict(self):
         return {
@@ -81,6 +84,8 @@ class PaperHolding(db.Model):
             "quantity":       self.quantity,
             "purchase_price": self.purchase_price,
             "currency":       self.currency,
+            "target_price":   self.target_price,
+            "stop_loss_price": self.stop_loss_price,
         }
 
 

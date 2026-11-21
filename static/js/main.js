@@ -1388,6 +1388,28 @@ function _formatBarTimestamp(iso) {
   } catch (e) { return iso.slice(0, 10); }
 }
 
+// 종합 판단 카드의 '모의 매수' → /trading?buy=티커[&target&stop]. 관망이거나 값이 맞지 않으면 목표·손절은 넘기지 않는다
+function _setVerdictPaperBuy(analysis, stock) {
+  const a = document.getElementById('verdictPaperBuy');
+  if (!a || !stock || !stock.ticker) return;
+  const q = new URLSearchParams({ buy: stock.ticker });
+  const krw = stock.currency === 'KRW';
+  const r = (v) => krw ? String(Math.round(v)) : Number(v).toFixed(2);
+  const cp = Number(stock.current_price || stock.price || 0);
+  const t = Number(analysis && analysis.target_price), s = Number(analysis && analysis.stop_loss);
+  const avoid = !analysis || analysis.trade_recommendation === 'avoid';
+  let withPlan = false;
+  if (!avoid && cp > 0 && isFinite(t) && isFinite(s) && t > cp && s > 0 && s < cp) {
+    q.set('target', r(t)); q.set('stop', r(s));
+    q.set('memo', `[종합 분석 ${analysis.verdict || ''}] 목표가·손절가 자동 예약`.replace(/\s+\]/, ']'));
+    withPlan = true;
+  }
+  a.href = '/trading?' + q.toString();
+  document.getElementById('verdictPaperBuySub').textContent = withPlan ? '목표·손절 자동 채움' : '';
+  a.title = withPlan ? '분석의 목표가·손절가를 채운 모의 매수 창을 엽니다' : '모의 매수 창을 엽니다';
+  a.classList.remove('hidden');
+}
+
 function renderVerdict(analysis, stock) {
   const badge = document.getElementById('verdictBadge');
   badge.textContent = analysis.verdict;
@@ -1404,6 +1426,7 @@ function renderVerdict(analysis, stock) {
   document.getElementById('targetPrice').textContent =
     (_noEntry && analysis.target_price == null) ? '관망' : fmt(analysis.target_price, cur);
   document.getElementById('stopLoss').textContent    = fmt(analysis.stop_loss,    cur);
+  _setVerdictPaperBuy(analysis, stock);
 
   // ── Plan D: 추천 등급 + R:R 정보 표시 ──
   const banner = document.getElementById('tradeRecBanner');

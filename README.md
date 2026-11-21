@@ -181,7 +181,7 @@ stock-analyzer/
 | 추세 셋업 | `GET /api/trends/setups?market=ALL\|KR\|US`, `POST /api/trends/refresh` (현시점 갱신, 시장별 60초 쿨다운), `POST /api/trends/scan` (소유자 전체 재스캔), `GET /api/trends/status` |
 | 포트폴리오 | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/<id>`, `POST /api/portfolio/import-toss` (소유자) |
 | 관심종목 | `GET/POST /api/watchlist`, `DELETE /api/watchlist/<ticker>`, `GET /api/watchlist/quotes` |
-| 모의투자 | `GET /api/trading/dashboard`, `POST /api/trading/buy`, `POST /api/trading/sell`, `GET /api/trading/transactions`, `GET /api/trading/history` |
+| 모의투자 | `GET /api/trading/dashboard`, `POST /api/trading/buy` (선택 `target_price`·`stop_loss_price`), `POST /api/trading/sell`, `PATCH /api/trading/holdings/<ticker>/targets`, `GET /api/trading/transactions`, `GET /api/trading/history` |
 | 랭킹 | `GET /api/leaderboard?metric=total\|7d\|30d&bots=1\|0` |
 | AI 봇 | `GET /api/ai-bots/overview`, `GET /api/ai-bots/chart?period=`, `GET /api/ai-bots/<봇>`, `GET /api/ai-bots/<봇>/trades`, `GET /api/bots/signals`, `GET /api/bots/signals/<id>`, `POST /api/admin/bots/run` (소유자) |
 | 알림 | `GET/PUT /api/signal-subscription`, `GET /api/notifications`, `POST /api/notifications/read` |
