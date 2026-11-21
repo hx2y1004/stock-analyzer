@@ -109,7 +109,9 @@ def fetch_kr():
             continue
         rows.append({"ticker": t, "name": univ[t]["name"], "sector": univ[t]["sector"],
                      "market_cap": mv * 1e8 if mv else None,          # 네이버 시총 단위: 억원
-                     "price": price, "change_pct": round(chg, 2)})
+                     "price": price, "change_pct": round(chg, 2),
+                     "volume": _num(s.get("accumulatedTradingVolume")),
+                     "date": (s.get("localTradedAt") or "")[:10] or None})          # 시세 날짜 (장중 돌파 판정용)
     data_date = max(dates, key=dates.get) if dates else None
     return rows, data_date
 
@@ -131,7 +133,8 @@ def fetch_us(chunk=40, pause=1.0):
             continue
         for t in part:
             try:
-                df = (raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw)["Close"].dropna()
+                full = (raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw)[["Close", "Volume"]].dropna()
+                df = full["Close"]
                 if len(df) < 2:
                     continue
                 cur, prev = _num(df.iloc[-1]), _num(df.iloc[-2])
@@ -142,7 +145,8 @@ def fetch_us(chunk=40, pause=1.0):
                 sh = univ[t].get("shares")
                 rows.append({"ticker": t, "name": univ[t]["name"], "sector": univ[t]["sector"],
                              "market_cap": cur * sh if sh else None,
-                             "price": round(cur, 2), "change_pct": round((cur / prev - 1) * 100, 2)})
+                             "price": round(cur, 2), "change_pct": round((cur / prev - 1) * 100, 2),
+                             "volume": _num(full["Volume"].iloc[-1]), "date": d})
             except Exception:
                 continue
         del raw

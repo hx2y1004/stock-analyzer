@@ -13,7 +13,7 @@
 - `main`에 push하면 운영 서버가 약 5분 안에 자동으로 가져가 재시작한다. 재시작 후 응답이 없으면 직전 커밋으로 자동 롤백한다.
 - 그래서 `main`은 항상 배포 가능한 상태여야 한다. push 전에 최소한 `python -c "import app"`이 성공하는지 확인한다.
 - `requirements.txt`가 바뀌면 서버가 패키지를 다시 설치한다. 운영 Python은 3.11이다 (pandas 3, numpy 2.4는 3.11 이상 필요).
-- 운영 실행: gunicorn **워커 1개 + gthread 스레드 8개**, timeout 120초. 메모리 캐시와 백그라운드 스캔 스레드(`trends_scanner.py`)가 단일 프로세스를 전제로 하므로 워커 수를 늘리지 않는다.
+- 운영 실행: gunicorn **워커 1개 + gthread 스레드 8개**, timeout 120초. 메모리 캐시와 백그라운드 스레드(섹터맵, 봇 스케줄러, 스크리너, `trend_setups.py`)가 단일 프로세스를 전제로 하므로 워커 수를 늘리지 않는다.
 - 운영 DB는 PostgreSQL (`DATABASE_URL`). 로컬에서 비워 두면 SQLite(`instance/portfolio.db`)를 쓴다. 모델 변경 시 운영 데이터와 호환되는지 신경 쓴다 (마이그레이션 도구 없음).
 - 운영 서버 메모리가 작다 (1GB + 스왑). 무거운 의존성 추가는 피한다.
 - `Procfile`, `railway.toml`은 예전 Railway 배포용이다. 지금은 쓰지 않는다.
@@ -38,7 +38,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `models.py` | SQLAlchemy 모델 (users, holdings, paper_holdings, transactions, asset_snapshots, user_badges, ai_cache, 봇·알림·푸시 테이블). 전체 목록은 README |
 | `badges.py` | 모의투자 배지 |
 | `toss_api.py` | 토스증권 Open API (실시간 시세, 캔들, 환율). 허용 IP 제한이 있어 운영 서버에서만 동작 |
-| `trends_scanner.py` | 급등, 트렌드 백그라운드 스캔 |
+| `trends_scanner.py`, `trend_setups.py` | 추세 셋업. 점수 계산(일봉 입력, 네트워크 없음)과 저장. 장 마감 배치가 봇 일봉을 재사용해 `trend_setups` 확정, 장중엔 섹터맵 시세로 돌파만 덮어씀. 화면은 `/screener?tab=trends` |
 | `sector_map.py` | 메인 섹터맵: 전체 유니버스 시총가중 집계와 백그라운드 스냅샷. 분류는 `sector_universe.json` (`build_sector_universe.py` 로 생성) |
 | `bot_engine.py`, `bot_trader.py`, `notifier.py` | AI 매매 신호 봇: 신호 생성·추적, 봇 가상 계좌 매매, 알림 |
 | `webpush.py` | PWA 웹 푸시 (VAPID 키가 없으면 자동으로 꺼짐, pywebpush 는 보낼 때만 import) |

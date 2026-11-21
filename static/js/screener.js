@@ -22,13 +22,18 @@
   const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
 
-  const S = { tab: 'screen', market: 'ALL', preset: '', meta: null, basket: store.get('scBasket', []), cmp: [], period: '6M', loggedIn: false };
+  const S = { tab: 'screen', market: 'ALL', preset: '', meta: null, basket: store.get('scBasket', []), cmp: [], period: '6M', loggedIn: false,
+    tMarket: 'ALL', tPattern: 'all', trends: null, trendsLoading: false };
+  const TABS = ['screen', 'trends', 'compare'];
 
   // ── URL ────────────────────────────────────────────────────────────────
   function readUrl() {
     const q = new URLSearchParams(location.search);
-    S.tab = document.body.dataset.tab === 'compare' || q.get('tab') === 'compare' ? 'compare' : 'screen';
-    if (['ALL', 'KR', 'US'].includes((q.get('market') || '').toUpperCase())) S.market = q.get('market').toUpperCase();
+    const bt = document.body.dataset.tab;           // 서버가 ?tab= 으로 미리 정한 첫 탭 (새로고침 깜빡임 방지)
+    S.tab = TABS.includes(bt) ? bt : TABS.includes(q.get('tab')) ? q.get('tab') : 'screen';
+    const qm = (q.get('market') || '').toUpperCase();
+    if (['ALL', 'KR', 'US'].includes(qm)) { if (S.tab === 'trends') S.tMarket = qm; else S.market = qm; }
+    if (S.tab === 'trends' && ['all', 'perfect', 'breakout', 'stage2', 'high52'].includes(q.get('pattern'))) S.tPattern = q.get('pattern');
     if (q.get('preset')) S.preset = q.get('preset');
     const t = (q.get('tickers') || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
     if (t.length) S.cmp = [...new Set(t)].slice(0, 3);
@@ -36,6 +41,7 @@
   function writeUrl() {
     const q = new URLSearchParams();
     if (S.tab === 'compare') { q.set('tab', 'compare'); if (S.cmp.length) q.set('tickers', S.cmp.join(',')); }
+    else if (S.tab === 'trends') { q.set('tab', 'trends'); if (S.tMarket !== 'ALL') q.set('market', S.tMarket); if (S.tPattern !== 'all') q.set('pattern', S.tPattern); }
     else { if (S.market !== 'ALL') q.set('market', S.market); if (S.preset) q.set('preset', S.preset); }
     const u = location.pathname + (q.toString() ? '?' + q.toString().replace(/%2C/g, ',') : '');
     history.replaceState(null, '', u);
@@ -49,11 +55,11 @@
       b.classList.toggle('active', on); b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1;
       if (on && focus) b.focus();
     });
-    $('#scPanel-screen').hidden = t !== 'screen';
-    $('#scPanel-compare').hidden = t !== 'compare';
+    TABS.forEach((x) => { $('#scPanel-' + x).hidden = t !== x; });
     renderBasket();
     writeUrl();
     if (t === 'compare') loadCompare();
+    if (t === 'trends' && !S.trends) loadTrends();
   }
   $$('.sc-tab').forEach((b, i, all) => {
     b.addEventListener('click', () => selectTab(b.dataset.tab));
@@ -172,6 +178,7 @@
       const on = S.basket.some((x) => x.t === b.dataset.t);
       b.innerHTML = on ? `${ICON_CHECK}<span>담김</span>` : `${ICON_PLUS}<span>비교 담기</span>`;
       b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+      b.setAttribute('aria-label', `${b.dataset.n} ${on ? '비교에서 빼기' : '비교 담기'}`);   // 모바일에서 글자를 숨겨도 이름이 남게
     });
     $$('.sc-star').forEach((b) => {
       const on = !!(window.SAWatch && S.loggedIn && SAWatch.has(b.dataset.t));
@@ -198,7 +205,7 @@
   }
   function renderBasket() {
     const el = $('#scBasket');
-    const show = S.tab === 'screen' && S.basket.length > 0;
+    const show = S.tab !== 'compare' && S.basket.length > 0;      // 스크리너·추세 셋업 공용 비교 바구니
     el.classList.toggle('hidden', !show);
     document.body.classList.toggle('has-basket', show);
     if (!show) return;
@@ -418,12 +425,176 @@
     return `<table class="ab-table sc-cmp">${head}<tbody>${body}</tbody></table>`;
   }
 
+  // ── 추세 셋업 (장 마감 확정 + 장중 돌파) ───────────────────────────────
+  const PATTERNS = {
+    all: () => true, perfect: (i) => i.perfect, breakout: (i) => i.breakout,
+    stage2: (i) => i.stage2, high52: (i) => i.new_high,
+  };
+  const MK = { KR: '한국', US: '미국' };
+  const hm = (iso) => new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const md = (d) => { const [, m, dd] = d.split('-'); return `${+m}/${+dd}`; };
+  let trTimer = null;
+
+  function spark(v) {
+    if (!v || v.length < 2) return '';
+    const w = 120, h = 34, p = 2, st = (w - p * 2) / (v.length - 1);
+    const pts = v.map((y, i) => `${(p + i * st).toFixed(1)},${(p + (1 - y) * (h - p * 2)).toFixed(1)}`).join(' ');
+    return `<svg class="tr-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+      <polygon points="${pts} ${w - p},${h - p} ${p},${h - p}" fill="currentColor" opacity=".12"/>
+      <polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+
+  async function loadTrends(opts = {}) {
+    if (S.trendsLoading) return;
+    S.trendsLoading = true;
+    try {
+      const r = await fetch(opts.refresh ? '/api/trends/refresh?market=ALL' : '/api/trends/setups?market=ALL',
+        { method: opts.refresh ? 'POST' : 'GET', cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      S.trends = await r.json();
+      renderTrends();
+      if (opts.refresh) refreshToast(S.trends.refresh || {});
+    } catch (e) {
+      if (!S.trends) $('#trList').innerHTML = '<p class="card ab-empty">불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>';
+      else toast('갱신하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      S.trendsLoading = false;
+    }
+    scheduleTrends();
+  }
+
+  function scheduleTrends() {
+    // 장중에는 섹터맵 15분 시세가 서버에서 덮어써지므로 5분마다 표만 다시 읽는다 (계산·외부 조회 없음). 집계 중이면 10초.
+    clearTimeout(trTimer);
+    const d = S.trends;
+    if (!d) return;
+    const open = Object.values(d.meta || {}).some((m) => m.session_open);
+    const wait = d.building ? 10000 : open ? 300000 : 0;
+    if (wait) trTimer = setTimeout(() => { if (S.tab === 'trends' && !document.hidden) loadTrends(); else scheduleTrends(); }, wait);
+  }
+
+  function refreshToast(res) {
+    const ms = Object.entries(res.markets || {}).filter(([m]) => S.tMarket === 'ALL' || m === S.tMarket);
+    if (res.busy) return toast('다른 갱신이 진행 중이에요. 잠시 후 다시 눌러 주세요.');
+    if (ms.some(([, v]) => v === 'ok')) return toast(`현재가 ${res.refreshed}종목을 다시 받아 돌파 여부를 갱신했어요.`);
+    if (ms.some(([, v]) => v === 'cooldown')) return toast(`방금 갱신했어요. ${res.cooldown || 60}초 뒤에 다시 받을 수 있어요.`);
+    toast('지금은 장이 열려 있지 않아 장 마감 종가 기준입니다.');
+  }
+
+  function trendAsof(d, markets) {
+    const metas = markets.map((m) => [m, d.meta[m]]).filter(([, x]) => x);
+    const bases = [...new Set(metas.map(([, x]) => x.base_date).filter(Boolean))];
+    let base = '';
+    if (bases.length === 1) base = ` (${md(bases[0])})`;
+    else if (bases.length > 1) base = ` (${metas.filter(([, x]) => x.base_date).map(([m, x]) => `${MK[m]} ${md(x.base_date)}`).join(' · ')})`;
+    const lives = metas.map(([, x]) => x.live_at).filter(Boolean).sort();
+    const anyOpen = metas.some(([, x]) => x.session_open);
+    const live = lives.length ? `시세: ${hm(lives[lives.length - 1])} 현시점 반영`
+      : anyOpen ? '시세: 장 마감 종가 (장중 갱신 대기)' : '시세: 장 마감 종가';
+    return `패턴: 장 마감 확정${base} · ${live}`;
+  }
+
+  function renderTrends() {
+    const d = S.trends;
+    if (!d) return;
+    const markets = S.tMarket === 'ALL' ? ['KR', 'US'] : [S.tMarket];
+    $$('#trMarket button').forEach((b) => { const on = b.dataset.m === S.tMarket; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    const inMarket = d.items.filter((i) => markets.includes(i.market));
+    $$('#trPatterns button').forEach((b) => {
+      const on = b.dataset.p === S.tPattern;
+      const n = b.dataset.p === 'all' ? inMarket.length : inMarket.filter(PATTERNS[b.dataset.p]).length;
+      b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.dataset.count = n;
+      let c = b.querySelector('.tr-n');
+      if (!c) { c = document.createElement('span'); c.className = 'tr-n'; b.appendChild(c); }
+      c.textContent = n;
+    });
+    $('#trAsof').textContent = trendAsof(d, markets);
+    const uni = markets.reduce((a, m) => a + ((d.meta[m] || {}).universe || 0), 0);
+    const hits = markets.reduce((a, m) => a + ((d.meta[m] || {}).hits || 0), 0);
+    $('#trCount').textContent = `${uni.toLocaleString('ko-KR')}종목 중 셋업 ${hits.toLocaleString('ko-KR')}개`;
+    const items = inMarket.filter(PATTERNS[S.tPattern]);
+    const list = $('#trList');
+    const analyzed = markets.reduce((a, m) => a + ((d.meta[m] || {}).analyzed || 0), 0);
+    if (!analyzed) {
+      const b = d.build;
+      list.innerHTML = `<p class="card ab-empty">${d.building && b ? `처음 집계 중이에요 (${b.progress}/${b.total}종목). 몇 분 뒤 자동으로 채워집니다.`
+        : '아직 장 마감 확정본이 없습니다. 다음 장 마감 배치 뒤에 채워져요.'}</p>`;
+      return;
+    }
+    if (!items.length) {
+      const msg = S.tPattern === 'breakout'
+        ? '지금 돌파 기준가를 넘은 후보가 없습니다. 장중에는 15분마다, 또는 🔄 현시점 갱신으로 확인해요.'
+        : '이 조건에 맞는 셋업이 없습니다.';
+      list.innerHTML = `<p class="card ab-empty">${msg}</p>`;
+      return;
+    }
+    list.innerHTML = items.map((i, k) => trendCard(i, k + 1)).join('');
+    paintRowButtons();
+    $$('.sc-add', list).forEach((b) => b.addEventListener('click', () => toggleBasket(b.dataset.t, b.dataset.n)));
+    $$('.sc-star', list).forEach((b) => b.addEventListener('click', () => toggleStar(b)));
+  }
+
+  function trendCard(i, rank) {
+    const cls = dir(i.change_pct);
+    const sig = (i.signals || []).filter((x) => x !== '🔥 Perfect Setup');
+    let line = '';
+    if (i.breakout) {
+      const over = i.pivot ? (i.price / i.pivot - 1) * 100 : null;
+      const vol = i.volume_pace ? ` · 거래량 ${i.volume_pace >= 1.2 ? '동반 ' : ''}${i.volume_pace.toFixed(1)}배 페이스` : '';
+      line = `<p class="tr-break"><strong>⚡ 장중 돌파</strong> ${esc(i.pivot_kind || '')} ${px(i.pivot, i.ticker)} 위 ${over != null ? pct(over, 1) : ''}${vol}</p>`;
+    } else if (i.pivot) {
+      line = `<p class="tr-pivot">돌파 기준가 <strong>${px(i.pivot, i.ticker)}</strong> <span class="ab-muted">${esc(i.pivot_kind || '')} · 현재가 대비 ${pct((i.pivot / i.price - 1) * 100, 1)}</span></p>`;
+    }
+    const badges = [
+      i.breakout ? '<span class="tr-badge brk">⚡ 장중 돌파</span>' : '',
+      i.perfect ? '<span class="tr-badge pf">🔥 Perfect Setup</span>' : '',
+    ].join('');
+    return `<article class="card tr-card${i.breakout ? ' is-breakout' : ''}">
+      <div class="tr-top">
+        <span class="tr-rank" aria-label="${rank}위">${rank}</span>
+        <div class="tr-id"><a href="/stock/${encodeURIComponent(i.ticker)}" class="sc-name">${esc(i.name || i.ticker)}</a>
+          <span class="ab-muted">${esc(i.ticker)} · ${MK[i.market]}</span></div>
+        <span class="tr-score sc-score s${Math.min(4, Math.floor((i.total_score || 0) / 20))}" title="기술 ${i.tech_score} · 모멘텀 ${i.momentum_score} · 펀더멘탈 ${i.fund_score}">${i.total_score}<small>/100</small></span>
+      </div>
+      ${badges ? `<div class="tr-badges">${badges}</div>` : ''}
+      <div class="tr-mid">
+        <span class="tr-spark-wrap ${i.sparkline && i.sparkline.length > 1 && i.sparkline[i.sparkline.length - 1] >= i.sparkline[0] ? 'up' : 'down'}">${spark(i.sparkline)}</span>
+        <div class="tr-px"><strong>${px(i.price, i.ticker)}</strong><span class="${cls}">${pct(i.change_pct)}</span>
+          ${i.live ? `<span class="tr-live">${esc(i.live_label || '장중')}</span>` : ''}</div>
+      </div>
+      ${line}
+      <div class="tr-tags">${sig.map((x) => `<span class="tr-tag${x.startsWith('⚠') ? ' warn' : ''}">${esc(x)}</span>`).join('')}</div>
+      <div class="tr-foot">
+        <span class="ab-muted tr-parts">기술 ${i.tech_score} · 모멘텀 ${i.momentum_score} · 펀더 ${i.fund_score}</span>
+        <span class="tr-actions">
+          <button type="button" class="sc-star" data-t="${esc(i.ticker)}" data-n="${esc(i.name)}" aria-pressed="false" aria-label="${esc(i.name)} 관심종목">${STAR(false)}</button>
+          <button type="button" class="sc-add" data-t="${esc(i.ticker)}" data-n="${esc(i.name)}"></button>
+        </span>
+      </div>
+    </article>`;
+  }
+
+  $$('#trMarket button').forEach((b) => b.addEventListener('click', () => { S.tMarket = b.dataset.m; b.blur(); writeUrl(); renderTrends(); }));
+  $$('#trPatterns button').forEach((b) => b.addEventListener('click', () => { S.tPattern = b.dataset.p; b.blur(); writeUrl(); renderTrends(); }));
+  $('#trRefresh').addEventListener('click', async () => {
+    const b = $('#trRefresh');
+    b.disabled = true; b.textContent = '⏳ 갱신 중…';
+    await loadTrends({ refresh: true });
+    b.disabled = false; b.textContent = '🔄 현시점 갱신';
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && S.tab === 'trends' && S.trends) loadTrends();
+  });
+
   // ── 시작 ───────────────────────────────────────────────────────────────
   (async function init() {
     readUrl();
+    if (S.tab === 'trends') { selectTab('trends'); }        // 추세 셋업은 메타를 기다리지 않고 바로 표시
     $$('#scMarket button').forEach((x) => { const on = x.dataset.m === S.market; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
     if (window.SAWatch && document.getElementById('notifyBell')) {
       try { await SAWatch.load(); S.loggedIn = true; } catch (e) { S.loggedIn = false; }
+      paintRowButtons();
     }
     try { await loadMeta(); } catch (e) { $('#scList').innerHTML = '<p class="ab-empty">불러오지 못했습니다. 새로고침해 주세요.</p>'; }
     selectTab(S.tab);

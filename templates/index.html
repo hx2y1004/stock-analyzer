@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=76" />
+  <link rel="stylesheet" href="/static/css/style.css?v=77" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -41,12 +41,12 @@
   <header class="header">
     <div class="header-inner">
       <div class="logo">📈 StockAnalyzer</div>
-      <nav class="nav">
-        <a href="/" class="nav-link active">분석</a>
+      <nav class="nav" aria-label="주요 메뉴">
+        <a href="/" class="nav-link active" aria-current="page">홈</a>
+        <a href="/screener" class="nav-link">발굴</a>
+        <a href="/ai-bots" class="nav-link">AI 봇</a>
         <a href="/trading" class="nav-link">모의투자</a>
         <a href="/leaderboard" class="nav-link">랭킹</a>
-        <a href="/ai-bots" class="nav-link">AI 봇</a>
-        <a href="/screener" class="nav-link">스크리너</a>
       </nav>
       <!-- 로그인/프로필 -->
       {% set login_action = "openLoginModal()" %}{% include "_auth_area.html" %}
@@ -57,10 +57,9 @@
   <section id="portfolioSection" class="portfolio-section hidden">
     <div class="portfolio-inner">
 
-      <!-- 탭 토글 (섹터 강도는 시황 섹터맵으로 대체됨) -->
+      <!-- 탭 토글 (추세 셋업은 발굴 › 추세 셋업 탭으로 이동) -->
       <div class="pf-tabs" role="tablist">
-        <button class="pf-tab active" data-tab="trends" onclick="switchPfTab('trends')">추세 상승 감지</button>
-        <button class="pf-tab" data-tab="portfolio" onclick="switchPfTab('portfolio')">내 포트폴리오</button>
+        <button class="pf-tab active" data-tab="portfolio" onclick="switchPfTab('portfolio')">내 포트폴리오</button>
         <button class="pf-tab" data-tab="watch" onclick="switchPfTab('watch')">관심종목</button>
       </div>
 
@@ -72,33 +71,8 @@
         <div id="watchList" class="watch-list"></div>
       </div>
 
-      <!-- 추세 상승 감지 탭 (기본 노출) -->
-      <div id="pfTabTrends" class="pf-tab-panel">
-        <div class="portfolio-top">
-          <div class="trends-market-toggle" id="marketToggle">
-            <button class="market-btn active" data-market="ALL" onclick="selectMarket(this)">전체</button>
-            <button class="market-btn" data-market="KR" onclick="selectMarket(this)">한국</button>
-            <button class="market-btn" data-market="US" onclick="selectMarket(this)">미국</button>
-          </div>
-          <button id="scanBtn" class="pf-add-btn" onclick="scanTrends()">🔍 스캔</button>
-        </div>
-        <div id="trendsCriteria" class="trends-criteria-box">
-          <span class="criteria-label">📋 기준:</span>
-          <span class="criteria-text">
-            <strong>기술(35)</strong> Stage2·BB돌파·OBV·베이스돌파 ·
-            <strong>모멘텀(40)</strong> 다중모멘텀·RS상대강도·52주 신고가 ·
-            <strong>펀더(25)</strong> 매출/EPS 가속·이익률·컨센서스
-            <br><small style="color:var(--text2)">+ 변동성/약세장 페널티 · 핵심신호 3+ 동시 시 Perfect Setup 보너스</small>
-          </span>
-        </div>
-        <div id="trendsCards" class="portfolio-cards">
-          <div class="pf-empty">아직 스캔 결과가 없습니다. 위 <strong>"🔍 스캔"</strong> 버튼을 눌러주세요.</div>
-        </div>
-        <div id="trendsFooter" class="pf-more-footer hidden"></div>
-      </div>
-
       <!-- 포트폴리오 탭 -->
-      <div id="pfTabPortfolio" class="pf-tab-panel hidden">
+      <div id="pfTabPortfolio" class="pf-tab-panel">
         <div class="pf-portfolio-note">
           📌 <strong>실제 보유 종목</strong>입니다 (모의투자와 별개 · 랭킹 제외).
           <a href="/trading" class="pf-note-link">모의투자 보러가기 →</a>
@@ -183,6 +157,7 @@
       <div class="card md-card">
         <div class="md-head">
           <h3 class="card-title" style="margin:0">오늘의 급등락</h3>
+          <a href="/screener?tab=trends" class="md-trends-link">🔥 오늘의 추세 셋업 보러가기 →</a>
         </div>
         <div class="md-movers">
           <div class="md-movers-col">
@@ -202,7 +177,7 @@
 
   <!-- 분석 페이지 상단: 홈으로 돌아가기 (분석 모드 전용) -->
   <div id="backToHome" class="back-to-home hidden">
-    <a href="/" class="back-link">← 시황 대시보드로</a>
+    <a href="/" class="back-link">← 홈으로</a>
   </div>
 
   <!-- 로딩 -->
@@ -647,6 +622,6 @@
   {% include "_footer.html" %}
   <script src="/static/js/chart.js"></script>
   <script src="/static/js/notify.js?v=3"></script>
-  <script src="/static/js/main.js?v=72"></script>
+  <script src="/static/js/main.js?v=73"></script>
 </body>
 </html>

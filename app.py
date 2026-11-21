@@ -66,7 +66,7 @@ from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
-                    BotPosition, PushSubscription, ScreenerSnapshot)
+                    BotPosition, PushSubscription, ScreenerSnapshot, TrendSetup)
 from auth import auth_bp
 
 # ── DB URL (로컬: SQLite, Railway: PostgreSQL) ─────────────────────────────────
@@ -1478,64 +1478,55 @@ def manifest():
     return send_from_directory("static", "manifest.json")
 
 
-# ── 추세 상승 감지 ─────────────────────────────────────
-import trends_scanner as _trends
+# ── 추세 셋업 (장 마감 확정 + 장중 경량 갱신, trend_setups.py) ──────────────────
+import trend_setups
 
 
-@app.route("/api/trends/scan", methods=["POST", "GET"])
+def _no_store(resp):
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+def _trends_market():
+    m = (request.args.get("market") or "ALL").upper()
+    return m if m in ("ALL", "KR", "US") else "ALL"
+
+
+@app.route("/api/trends/setups")
+def api_trends_setups():
+    """장 마감 확정 셋업 + 장중 돌파 덮어쓰기. DB 조회만 (즉시 응답)."""
+    return _no_store(jsonify(trend_setups.payload(_trends_market())))
+
+
+@app.route("/api/trends/refresh", methods=["POST"])
+def api_trends_refresh():
+    """'현시점 갱신': 장이 열린 시장의 돌파 후보 상위 50개 이하만 현재가를 다시 받아 돌파 여부 갱신 (시장별 60초 쿨다운)."""
+    market = _trends_market()
+    res = trend_setups.refresh_live(market)
+    out = trend_setups.payload(market)
+    out["refresh"] = res
+    return _no_store(jsonify(out))
+
+
+@app.route("/api/trends/scan", methods=["POST"])
 def api_trends_scan():
-    """스캔 시작 (또는 캐시 반환). 폴링은 /api/trends/status 로.
-
-    Query: market=ALL|KR|US, force=1 (캐시 무시)
-    """
-    from flask import request, jsonify
-    market = (request.args.get("market") or "ALL").upper()
-    force  = request.args.get("force") == "1"
-    res = _trends.start_scan(STOCK_DB, market, force=force)
-    return jsonify(res)
+    """소유자 진단: 유니버스 전체 재스캔(백그라운드, 40종목씩). 일반 사용자는 장 마감 확정본만 본다."""
+    if not _is_toss_owner():
+        return jsonify({"error": "소유자만 전체 재스캔을 실행할 수 있습니다. 셋업은 장 마감 배치로 자동 갱신됩니다."}), 403
+    return jsonify(trend_setups.start_rebuild(_trends_market()))
 
 
 @app.route("/api/trends/status")
 def api_trends_status():
-    """진행 상태/캐시 결과 조회."""
-    from flask import request, jsonify, make_response
-    import time as _time
-    market = (request.args.get("market") or "ALL").upper()
-    resp = make_response(jsonify(_trends.get_status(market)))
-    # 모든 캐시 계층 차단: 브라우저 / 프록시 / Service Worker
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
-    resp.headers["Pragma"]        = "no-cache"
-    resp.headers["Expires"]       = "0"
-    resp.headers["X-Accel-Expires"] = "0"
-    # ETag 무효화 (매번 다른 값)
-    resp.headers["ETag"]          = f'W/"{_time.time_ns()}"'
-    return resp
+    """전체 재스캔 진행률 (분모 = 실제 유니버스 종목 수)."""
+    return _no_store(jsonify(trend_setups.build_status(_trends_market())))
 
 
-@app.route("/api/trends/abort", methods=["POST"])
-def api_trends_abort():
-    """진행 중인 스캔 중단."""
-    from flask import request, jsonify
-    market = (request.args.get("market") or "ALL").upper()
-    return jsonify(_trends.abort_scan(market))
-
-
-# 레거시: 캐시된 결과만 반환 (없으면 안내)
 @app.route("/api/trends")
 def api_trends():
-    from flask import request, jsonify
-    from datetime import datetime
-    market = (request.args.get("market") or "ALL").upper()
-    st = _trends.get_status(market)
-    if st.get("state") == "done" and st.get("result"):
-        return jsonify(st["result"])
-    return jsonify({
-        "scanned_at": datetime.utcnow().isoformat() + "Z",
-        "market":     market,
-        "total":      0,
-        "items":      [],
-        "message":    "스캔이 실행되지 않았습니다. /api/trends/scan 으로 시작하세요.",
-    })
+    """(호환) 예전 경로 → 셋업 목록."""
+    return _no_store(jsonify(trend_setups.payload(_trends_market())))
 
 
 # ── 종목 DB 로드 (앱 시작 시 1회) ─────────────────────
@@ -6083,11 +6074,31 @@ screener.init({
     "kr_integration": fetch_naver_integration, "kr_per_basis": kr_per_basis,
     "sector_snapshot": lambda m: sector_map.get(m),
 })
-bot_engine.D["on_features"] = screener.upsert_technicals          # 장 마감 배치 → 스크리너 기술 지표
+trend_setups.init({
+    "app": app, "db": db, "Model": TrendSetup, "Snap": ScreenerSnapshot, "universe": bot_engine.universe,
+    "download_daily": bot_engine.download_daily, "drop_unfinished": bot_engine._drop_unfinished_bar,
+    "bot_lock": lambda: bot_engine._RUN_LOCK.locked(),
+})
+
+
+def _on_batch_features(market, feats, data):
+    """장 마감 배치 → 스크리너 기술 지표 + 추세 셋업 확정 (같은 일봉 재사용, 추가 다운로드 없음)."""
+    screener.upsert_technicals(market, feats, data)
+    trend_setups.on_batch(market, data)
+
+
+def _on_sector_rows(market, rows):
+    """섹터맵 15분 갱신 → 스크리너 가격 + 추세 셋업 장중 돌파."""
+    screener.upsert_prices(market, rows)
+    trend_setups.apply_live(market, rows)
+
+
+bot_engine.D["on_features"] = _on_batch_features
 sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_LOCK,
-                 "on_rows": screener.upsert_prices})               # 섹터맵 갱신 → 스크리너 가격
+                 "on_rows": _on_sector_rows})
 sector_map.start()
 screener.start()
+trend_setups.start()
 
 
 def _signal_dict(s):

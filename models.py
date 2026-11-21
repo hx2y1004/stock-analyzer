@@ -371,3 +371,37 @@ class ScreenerSnapshot(db.Model):
     tech_updated_at   = db.Column(db.DateTime)
     fund_updated_at   = db.Column(db.DateTime, index=True)
     updated_at        = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class TrendSetup(db.Model):
+    """추세 셋업 스냅샷 (종목당 1행). 패턴·점수는 장 마감 배치에서 확정하고,
+    장중에는 섹터맵 15분 시세(또는 '현시점 갱신')로 live_* 만 덮어써 돌파 여부를 본다."""
+    __tablename__ = "trend_setups"
+    id              = db.Column(db.Integer, primary_key=True)
+    ticker          = db.Column(db.String(30), nullable=False, unique=True)
+    name            = db.Column(db.String(200))
+    market          = db.Column(db.String(4), nullable=False, index=True)
+    price           = db.Column(db.Float)          # 확정 종가
+    change_pct      = db.Column(db.Float)
+    tech_score      = db.Column(db.Integer)
+    momentum_score  = db.Column(db.Integer)
+    fund_score      = db.Column(db.Integer)
+    total_score     = db.Column(db.Integer, index=True)
+    signals         = db.Column(db.Text)           # JSON 배열 (표시용 태그)
+    sparkline       = db.Column(db.Text)           # JSON 배열 (최근 30일 0~1 정규화)
+    stage2          = db.Column(db.Boolean, default=False)
+    perfect         = db.Column(db.Boolean, default=False)
+    new_high        = db.Column(db.Boolean, default=False)   # 52주 고점 -1% 이내
+    near_high       = db.Column(db.Boolean, default=False)   # 52주 고점 -3% 이내
+    bb_squeeze      = db.Column(db.Boolean, default=False)
+    pivot           = db.Column(db.Float)          # 돌파 기준가 (없으면 장중 돌파 후보 아님)
+    pivot_kind      = db.Column(db.String(20))     # '52주 고점' | '20일 고점'
+    high52          = db.Column(db.Float)
+    avg_volume20    = db.Column(db.Float)
+    base_date       = db.Column(db.Date)           # 패턴을 확정한 일봉 날짜
+    computed_at     = db.Column(db.DateTime)
+    live_price      = db.Column(db.Float)
+    live_change_pct = db.Column(db.Float)
+    live_volume     = db.Column(db.Float)
+    live_at         = db.Column(db.DateTime)
+    breakout_at     = db.Column(db.DateTime)       # 이번 세션에 처음 기준가를 넘은 시각

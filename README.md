@@ -23,7 +23,7 @@
 | 🤖 **AI 해설 (통합 호출 + 캐싱)** | 종목당 한 번의 AI 호출로 등락 사유·밸류에이션 코멘트·영문 뉴스 번역을 함께 생성. 결과는 DB(`ai_cache`)와 메모리에 캐시. Gemini(가벼운 모델 우선 자동 선택) → 한도 초과 시 Groq → 선택적 백업 공급자 순으로 폴백 |
 | 🗺 **시황 대시보드** | KOSPI·KOSDAQ·환율·S&P 500·나스닥·VIX, 오늘의 급등락 |
 | 🧩 **시총가중 섹터맵** | 한국 약 350 / 미국 약 537종목 전체를 섹터별 **시가총액 가중 등락률**로 집계, 트리맵 면적 = 섹터 시총 비중, 섹터별 상승/하락/보합 종목 수, 클릭하면 구성 종목(시총순·상승순·하락순) |
-| 📈 **추세 상승 감지** | 전체 유니버스 백그라운드 스캔 (기술·모멘텀·펀더멘털 점수) |
+| 📈 **추세 셋업 (발굴 › 추세 셋업)** | 2단 하이브리드: 장 마감 배치가 전체 887종목의 Stage2·BB 수축/돌파·OBV·상대강도·다중 모멘텀·52주 신고가·펀더멘탈 점수와 **돌파 기준가**를 확정해 DB에 저장(화면은 즉시 표시), 장중에는 섹터맵 15분 시세로 전날 BB 수축·52주 고점 -3% 이내 후보가 기준가를 넘으면 **⚡ 장중 돌파**. `🔄 현시점 갱신`은 후보 상위 50개만 2~3초 안에 다시 받음 |
 | 🔎 **원클릭 스크리너 · 종목 비교** | 한국·미국 전체 종목을 프리셋 5종(우량주 과매도·추세 돌파+수급·저평가 가치주·당일 모멘텀·AI 봇 최근 신호)과 세부 필터로 즉시 걸러 보기. 2~3종목을 상대 수익률 차트와 항목별 비교 표(우위 표시)로 나란히 비교 |
 | 💼 **포트폴리오 · 관심종목** | 실제 보유 종목(토스증권 계좌 불러오기, 소유자 전용), 관심종목과 현재가·등락률 |
 | 🎮 **모의투자 · 랭킹** | 1억 원 가상 계좌, 서버 실시간가 체결, 수수료 0.1%, 자산 곡선, 배지, 닉네임 랭킹(7일·30일·전체) |
@@ -40,7 +40,7 @@
                     │
             Oracle Cloud VM (메모리 1GB + 스왑)
             ├─ gunicorn: 워커 1개 × gthread 스레드 8개, timeout 120초
-            ├─ 백그라운드 스레드: 추세 스캔 · 섹터맵 스냅샷 · AI 봇 스케줄러
+            ├─ 백그라운드 스레드: 섹터맵 스냅샷 · AI 봇 스케줄러 · 스크리너 펀더멘탈 순환 · 추세 셋업 워밍업(표가 비었을 때만)
             └─ PostgreSQL (DATABASE_URL)
 ```
 
@@ -70,7 +70,7 @@ python app.py                      # http://127.0.0.1:5000
 
 - `DATABASE_URL`을 비워 두면 SQLite(`instance/portfolio.db`)를 씁니다.
 - API 키가 없어도 화면과 대부분의 로직은 확인할 수 있습니다(AI는 비활성 또는 대체 문구, 시세는 yfinance).
-- 로컬 개발 중 백그라운드 작업을 끄려면 `BOT_SCHEDULER=0`, `SECTORMAP_SCHEDULER=0`, `SCREENER_SCHEDULER=0`.
+- 로컬 개발 중 백그라운드 작업을 끄려면 `BOT_SCHEDULER=0`, `SECTORMAP_SCHEDULER=0`, `SCREENER_SCHEDULER=0`, `TRENDS_SCHEDULER=0`.
 
 ### 데이터 파일 다시 만들기 (가끔)
 
@@ -98,7 +98,7 @@ python build_sector_universe.py   # sector_universe.json: 섹터 분류 + 미국
 | | `TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS` | 소유자 전용 기능(계좌 불러오기, 진단 화면, 봇 수동 실행) 허용 계정 |
 | | `DART_API_KEY` | (선택) 국내 분기 실적 |
 | AI 봇 | `AI_DAILY_BUDGET` (기본 60), `BOT_AI_INTERVAL` (기본 4초), `BOT_SCHEDULER` | 봇 AI 평가 하루 상한·호출 간격·스케줄러 끄기 |
-| 섹터맵 · 스크리너 | `SECTORMAP_SCHEDULER`, `SCREENER_SCHEDULER` | `0`이면 각각의 백그라운드 갱신 끔 |
+| 섹터맵 · 스크리너 · 추세 셋업 | `SECTORMAP_SCHEDULER`, `SCREENER_SCHEDULER`, `TRENDS_SCHEDULER` | `0`이면 각각의 백그라운드 갱신 끔 (추세 셋업은 첫 워밍업만 끄고, 장 마감 확정·장중 돌파는 봇 배치·섹터맵이 계속 갱신) |
 | 알림 | `NOTIFY_PROVIDERS` | 기본 `inapp` (사이트 안 알림) |
 | 웹 푸시 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (선택) PWA 푸시. 비워 두면 푸시만 꺼지고 나머지는 정상. 키 만드는 한 줄 명령은 `.env.example`에 있음 |
 
@@ -114,7 +114,8 @@ python build_sector_universe.py   # sector_universe.json: 섹터 분류 + 미국
 | AI 봇 장중 체크 | 장중 매 5분 정각 | 대기 신호를 다음 장 시가로 체결, 보유 신호 손절·트레일링·익절, 봇 계좌 매매 |
 | 섹터맵 스냅샷 | 장중 매시 7·22·37·52분, 마감 후 한국 15:40 · 미국 16:20 | 시세 받아 시총가중 집계 후 `ai_cache`에 저장. 주말·휴장일 스킵 |
 | 스크리너 스냅샷 | 위 두 작업에 함께 + 펀더멘탈은 6초에 1종목 | 섹터맵 갱신 때 가격, 봇 배치 때 기술 지표, 7일 지난 종목만 펀더멘탈·목표가 갱신 |
-| 추세 스캔 | 요청 시 | 전체 종목 점수 계산 |
+| 추세 셋업 확정 | AI 봇 장 마감 배치에 함께 | 봇이 받은 1년 일봉을 재사용해 전체 종목 점수·태그·돌파 기준가를 `trend_setups`에 저장 (추가 다운로드 없음) |
+| 추세 셋업 장중 돌파 | 섹터맵 장중 갱신에 함께 | 돌파 후보의 현재가·등락률·거래량만 덮어씀 (계산 없음) |
 
 ---
 
@@ -132,7 +133,8 @@ stock-analyzer/
 ├── webpush.py                # 웹 푸시: VAPID 확인, 구독 저장, 발송, 만료 구독 정리
 ├── sector_map.py             # 시총가중 섹터맵 집계와 백그라운드 스냅샷
 ├── screener.py               # 스크리너 스냅샷 갱신·조회, 종목 비교
-├── trends_scanner.py         # 추세 상승 감지 스캔
+├── trends_scanner.py         # 추세 셋업 점수 계산 (일봉 → 점수·태그·돌파 기준가, 네트워크 없음)
+├── trend_setups.py           # 추세 셋업 저장·장중 돌파·현시점 갱신·워밍업
 ├── toss_api.py               # 토스증권 Open API
 ├── badges.py                 # 모의투자 배지
 ├── analysis/
@@ -142,7 +144,7 @@ stock-analyzer/
 │   └── valuation.py          # DCF 적정가
 ├── build_stock_db.py         # → stock_db.json (종목 유니버스)
 ├── build_sector_universe.py  # → sector_universe.json (섹터 분류·발행주식수)
-├── templates/                # index(분석·시황), trading(모의투자), leaderboard(랭킹), ai_bots(AI 봇), screener(스크리너·비교) + 공통 헤더·푸터
+├── templates/                # index(홈: 시황·종목 분석), screener(발굴: 스크리너·추세 셋업·비교), ai_bots(AI 봇), trading(모의투자), leaderboard(랭킹) + 공통 헤더·푸터
 ├── static/
 │   ├── js/                   # main · trading · leaderboard · ai_bots · screener · notify(알림 종·설정·푸시·관심종목) · chart
 │   ├── css/style.css         # 다크 테마
@@ -165,6 +167,7 @@ stock-analyzer/
 | `bot_strategies`, `ai_stock_assessments`, `ai_signals`, `bot_positions` | 봇 전략 파라미터, 종목별 AI 평가, 신호와 사후 추적, 신호 ↔ 봇 계좌 거래 |
 | `user_signal_subscriptions`, `watchlist_items`, `notifications`, `push_subscriptions` | 알림 구독 조건, 관심종목, 사이트 안 알림, 기기별 웹 푸시 구독 |
 | `screener_snapshots` | 스크리너용 종목별 경량 스냅샷 (가격·밸류에이션·기술 지표·펀더멘탈) |
+| `trend_setups` | 추세 셋업 종목별 스냅샷 (장 마감 확정 점수·태그·돌파 기준가 + 장중 현재가·돌파 시각) |
 
 ---
 
@@ -174,7 +177,7 @@ stock-analyzer/
 |---|---|
 | 분석 | `GET /api/analyze?ticker=`, `GET /api/analyze/extra`, `GET /api/chart`, `GET /api/search?q=` |
 | 시황 | `GET /api/market/overview`, `GET /api/market/sectormap?market=KR\|US`, `GET /api/market/movers` |
-| 추세 스캔 | `POST /api/trends/scan`, `GET /api/trends/status`, `POST /api/trends/abort` |
+| 추세 셋업 | `GET /api/trends/setups?market=ALL\|KR\|US`, `POST /api/trends/refresh` (현시점 갱신, 시장별 60초 쿨다운), `POST /api/trends/scan` (소유자 전체 재스캔), `GET /api/trends/status` |
 | 포트폴리오 | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/<id>`, `POST /api/portfolio/import-toss` (소유자) |
 | 관심종목 | `GET/POST /api/watchlist`, `DELETE /api/watchlist/<ticker>`, `GET /api/watchlist/quotes` |
 | 모의투자 | `GET /api/trading/dashboard`, `POST /api/trading/buy`, `POST /api/trading/sell`, `GET /api/trading/transactions`, `GET /api/trading/history` |
