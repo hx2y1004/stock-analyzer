@@ -1065,6 +1065,13 @@ def _scheduler_loop():
                             if _RUN_LOCK.acquire(blocking=False):
                                 try:
                                     intraday_check(market)
+                                    # 사용자 모의투자 목표가·손절가 자동 청산 (예약이 없으면 쿼리 1번으로 끝)
+                                    if D.get("paper_exit"):
+                                        try:
+                                            D["paper_exit"](market)
+                                        except Exception as e:
+                                            D["db"].session.rollback()
+                                            log(f"scheduler: {market} 모의투자 자동 청산 실패: {e}")
                                 finally:
                                     _RUN_LOCK.release()
                         except Exception as e:

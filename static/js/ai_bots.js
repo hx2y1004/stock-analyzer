@@ -223,14 +223,15 @@
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-pos" aria-labelledby="abTab-pos">
       ${b.positions.length ? `<div class="ab-scroll"><table class="ab-table">
-        <thead><tr><th>종목</th><th>진입가</th><th>현재가</th><th>수익률</th><th>목표까지</th><th>손절까지</th><th>보유</th></tr></thead>
+        <thead><tr><th>종목</th><th>진입가</th><th>현재가</th><th>수익률</th><th>목표까지</th><th>손절까지</th><th>보유</th><th><span class="sr-only">모의 매수</span></th></tr></thead>
         <tbody>${b.positions.map((p) => `<tr>
           <td><a href="/stock/${encodeURIComponent(p.ticker)}">${esc(p.name || p.ticker)}</a> <span class="ab-muted">${esc(p.ticker)} · ${p.quantity}주</span></td>
           <td>${px(p.entry_price, p.currency)}</td><td>${px(p.current_price, p.currency)}</td>
           <td class="${dirCls(p.return_pct)}">${pct(p.return_pct)}</td>
           <td>${pct(p.to_target_pct)} <span class="ab-muted">${px(p.target_price, p.currency)}</span></td>
           <td>${pct(p.to_stop_pct)} <span class="ab-muted">${px(p.stop_price, p.currency)}</span></td>
-          <td>${p.holding_days ?? 0}일</td></tr>`).join('')}</tbody></table></div>`
+          <td>${p.holding_days ?? 0}일</td>
+          <td>${followLink(p.ticker, p.target_price, p.stop_price, p.currency, b.name, p.name)}</td></tr>`).join('')}</tbody></table></div>`
         : '<p class="ab-empty">지금 보유 중인 종목이 없습니다. 신호가 나오면 다음 장 시가에 자동으로 매수합니다.</p>'}
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-trades" aria-labelledby="abTab-trades">
@@ -247,7 +248,8 @@
         <tbody>${b.signals.map((x) => `<tr>
           <td>${esc(x.signal_date)}</td>
           <td><a href="/stock/${encodeURIComponent(x.ticker)}">${esc(x.name || x.ticker)}</a>${x.account && x.account.status === 'SKIPPED' ? ` <span class="ab-muted" title="${esc(x.account.skip_reason)}">계좌 미체결</span>` : ''}</td>
-          <td>${badge(x.status, x.pnl_pct)}${x.status_reason ? `<div class="ab-muted ab-reason">${esc(x.status_reason)}</div>` : ''}</td>
+          <td>${badge(x.status, x.pnl_pct)}${x.status_reason ? `<div class="ab-muted ab-reason">${esc(x.status_reason)}</div>` : ''}
+            ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, x.market === 'KR' ? 'KRW' : 'USD', b.name, x.name) : ''}</td>
           <td>${px(x.fill_price || x.entry_price, x.market === 'KR' ? 'KRW' : 'USD')} → ${x.exit_price ? px(x.exit_price, x.market === 'KR' ? 'KRW' : 'USD') : '—'}</td>
           <td class="${dirCls(x.pnl_pct)}">${pct(x.pnl_pct)}</td>
           <td>${x.confidence ?? '—'}</td>
@@ -373,7 +375,18 @@
   modal.addEventListener('click', (e) => { if (e.target === modal || e.target.closest('[data-close]')) closeModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-  async function openWhy(id) {
+  // '따라 사기' → /trading?buy=…&target=…&stop=…&memo=[봇 이름 신호] (로그인 상태면 모의 매수 창이 바로 열림)
+function followLink(ticker, target, stop, currency, botName, name) {
+  const krw = currency === 'KRW';
+  const r = (v) => krw ? String(Math.round(v)) : Number(v).toFixed(2);
+  const q = new URLSearchParams({ buy: ticker });
+  if (target > 0) q.set('target', r(target));
+  if (stop > 0) q.set('stop', r(stop));
+  q.set('memo', `[${botName} 신호]`);
+  return `<a class="ab-follow" href="/trading?${q.toString()}" aria-label="${esc(name || ticker)} 따라 사기 (모의 매수)">따라 사기</a>`;
+}
+
+async function openWhy(id) {
     const body = $('#abModalBody');
     body.innerHTML = '<div class="ab-muted">불러오는 중...</div>';
     modal.classList.remove('hidden');

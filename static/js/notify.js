@@ -69,7 +69,7 @@
     panel.style.left = Math.max(8, left) + 'px';
   }
 
-  const KIND_ICON = { signal_new: '🟢', signal_exit: '🏁', signal_cancel: '⚪' };
+  const KIND_ICON = { signal_new: '🟢', signal_exit: '🏁', signal_cancel: '⚪', paper_exit: '🎯' };
 
   async function openPanel() {
     if (window.SAProfile) window.SAProfile.close(false);

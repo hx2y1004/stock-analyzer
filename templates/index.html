@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=83" />
+  <link rel="stylesheet" href="/static/css/style.css?v=84" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -310,6 +310,9 @@
             <div class="target-item"><div class="target-label">손절가</div><div id="stopLoss" class="target-value stop"></div></div>
           </div>
           <div id="tradeMetaRow" class="trade-meta-row hidden"></div>
+          <a id="verdictPaperBuy" class="verdict-buy-btn hidden" href="/trading">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3 17l6-6 4 4 8-8M15 7h6v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>모의 매수</span><span class="vb-sub" id="verdictPaperBuySub"></span></a>
         </section>
 
         <section class="card">
@@ -645,7 +648,7 @@
 
   {% include "_footer.html" %}
   <script src="/static/js/chart.js?v=4"></script>
-  <script src="/static/js/notify.js?v=4"></script>
-  <script src="/static/js/main.js?v=77"></script>
+  <script src="/static/js/notify.js?v=5"></script>
+  <script src="/static/js/main.js?v=78"></script>
 </body>
 </html>
