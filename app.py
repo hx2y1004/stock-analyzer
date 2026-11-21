@@ -76,6 +76,14 @@ if _db_url.startswith("postgres://"):          # Railway 구버전 호환
 
 app = Flask(__name__)
 
+# 로그 레벨: 설정하지 않으면 app.logger 의 유효 레벨이 루트 기본값 WARNING 이라 운영(gunicorn)에서 info 가 모두 버려졌다
+# ([BOT]·[TRENDS]·[SCREENER]·[SECTORMAP]·[AI] 등 배치·스케줄러 진행 로그). LOG_LEVEL 로 조정 (DEBUG/INFO/WARNING/ERROR).
+# 출력은 Flask 기본 핸들러(요청 중엔 wsgi.errors, 그 밖엔 stderr) → systemd 저널. 핸들러를 더 붙이지 않아 줄이 중복되지 않는다.
+import logging as _logging
+_LOG_LEVEL_NAME = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
+_lvl = _logging.getLevelName(_LOG_LEVEL_NAME)          # 'INFO' → 20, 모르는 이름이면 문자열이 돌아온다
+app.logger.setLevel(_lvl if isinstance(_lvl, int) else _logging.INFO)
+
 # 운영 여부: 운영 DB(DATABASE_URL)가 있거나 예전 Railway 배포면 운영으로 본다.
 # (예전에는 RAILWAY_ENVIRONMENT 만 봐서 Oracle 서버에서는 운영 보호가 꺼져 있었다)
 IS_PRODUCTION = bool(os.environ.get("DATABASE_URL") or os.environ.get("RAILWAY_ENVIRONMENT"))
@@ -1631,16 +1639,8 @@ def _get_price_df(ticker, interval, min_bars, yf_period="max"):
 
 # ── 분봉(10m) · 시간봉(1h): 토스 우선 → yfinance 폴백, 짧은 메모리 캐시 ──────────────
 INTRADAY_INTERVALS = ("10m", "1h")
-# app.logger 는 레벨 설정이 없어 운영(gunicorn)에서 info 가 버려진다(유효 레벨 WARNING).
-# 분·시간봉 출처 로그는 운영에서 바로 확인해야 하므로 전용 로거를 INFO 로 두고 stderr(= systemd 저널)로 내보낸다.
-import logging as _logging
-_intra_log = _logging.getLogger("stockanalyzer.intraday")
-if not _intra_log.handlers:
-    _h = _logging.StreamHandler()
-    _h.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    _intra_log.addHandler(_h)
-    _intra_log.setLevel(_logging.INFO)
-    _intra_log.propagate = False
+# 분·시간봉 출처 로그 (앱 로거의 자식: LOG_LEVEL 과 앱 핸들러를 그대로 따른다)
+_intra_log = app.logger.getChild("intraday")
 _INTRA_CACHE = {}                         # (ticker, interval) → (ts, df, source)
 _INTRA_TTL = {"10m": 60, "1h": 180}
 _INTRA_LOCK = threading.Lock()
@@ -1874,7 +1874,7 @@ def _fetch_kr_quarterly_data_uncached(krx_code):
             else:
                 act_keys.add(k)
 
-        app.logger.info(
+        app.logger.debug(
             f"[KR qtr] actual={sorted(act_keys)} estimate={sorted(est_keys)}"
         )
 
@@ -1917,7 +1917,7 @@ def _fetch_kr_quarterly_data_uncached(krx_code):
 
     # 시도 1 로 발표치를 얻었으면 아래 폴백(요청 최대 5개, 수 초 소요)은 건너뛴다
     if rev_act and oi_act:
-        app.logger.info(f"[KR qtr] FINAL(api): rev_act_periods={sorted(rev_act.keys())}")
+        app.logger.debug(f"[KR qtr] FINAL(api): rev_act_periods={sorted(rev_act.keys())}")
         return {
             "rev_act": rev_act, "oi_act":  oi_act,
             "rev_est": rev_est, "oi_est":  oi_est,
@@ -1936,7 +1936,7 @@ def _fetch_kr_quarterly_data_uncached(krx_code):
                 before = len(rev_act)
                 _parse_naver_finance(fi)
                 after = len(rev_act)
-                app.logger.info(f"[KR qtr] integration: {before}→{after} periods")
+                app.logger.debug(f"[KR qtr] integration: {before}→{after} periods")
     except Exception as e:
         app.logger.warning(f"[KR qtr] integration failed: {e}")
 
@@ -1955,13 +1955,13 @@ def _fetch_kr_quarterly_data_uncached(krx_code):
         for u in wisereport_urls:
             try:
                 r3 = requests.get(u, headers=wisereport_hdrs, timeout=10)
-                app.logger.info(f"[KR qtr] wisereport try {u[-60:]} → {r3.status_code} {len(r3.text)}b")
+                app.logger.debug(f"[KR qtr] wisereport try {u[-60:]} → {r3.status_code} {len(r3.text)}b")
                 if r3.status_code != 200 or not r3.text:
                     continue
                 soup = BeautifulSoup(r3.text, "html.parser")
                 tables = soup.find_all("table")
                 if not tables:
-                    app.logger.info(f"[KR qtr] wisereport no tables")
+                    app.logger.debug(f"[KR qtr] wisereport no tables")
                     continue
                 before = len(rev_act)
                 # 모든 테이블 순회 (페이지에 여러 표가 있음 — 분기 표를 찾아야 함)
@@ -2000,7 +2000,7 @@ def _fetch_kr_quarterly_data_uncached(krx_code):
 
                 after = len(rev_act)
                 if after > before:
-                    app.logger.info(
+                    app.logger.debug(
                         f"[KR qtr] wisereport SUCCESS: {before}→{after} periods, "
                         f"periods={sorted(rev_act.keys())}"
                     )
@@ -2016,7 +2016,7 @@ def _fetch_kr_quarterly_data_uncached(krx_code):
         from bs4 import BeautifulSoup
         page_url = f"https://m.stock.naver.com/domestic/stock/{krx_code}/finance/quarterly"
         rp = requests.get(page_url, headers=_hdrs, timeout=10)
-        app.logger.info(f"[KR qtr] mobile page → {rp.status_code} {len(rp.text)}b")
+        app.logger.debug(f"[KR qtr] mobile page → {rp.status_code} {len(rp.text)}b")
         if rp.status_code == 200 and rp.text:
             soup = BeautifulSoup(rp.text, "html.parser")
             tables = soup.find_all("table")
@@ -2054,14 +2054,14 @@ def _fetch_kr_quarterly_data_uncached(krx_code):
                         else:      oi_act[period]  = krw_val
             after = len(rev_act)
             if after > before:
-                app.logger.info(
+                app.logger.debug(
                     f"[KR qtr] mobile page scrape: {before}→{after} periods, "
                     f"periods={sorted(rev_act.keys())}"
                 )
     except Exception as e:
         app.logger.warning(f"[KR qtr] mobile page scrape failed: {e}")
 
-    app.logger.info(f"[KR qtr] FINAL: rev_act_periods={sorted(rev_act.keys())}")
+    app.logger.debug(f"[KR qtr] FINAL: rev_act_periods={sorted(rev_act.keys())}")
 
     return {
         "rev_act": rev_act, "oi_act":  oi_act,
@@ -2154,7 +2154,7 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
             f"[DART] {krx_code}: corp_code 매핑 없음 (corp_codes map size={len(corp_codes)})"
         )
         return {"rev_act": {}, "oi_act": {}}
-    app.logger.info(f"[DART] {krx_code}: corp_code={corp_code}")
+    app.logger.debug(f"[DART] {krx_code}: corp_code={corp_code}")
 
     rev_cum = {}   # (year, qtr_idx) → cumulative revenue
     oi_cum  = {}
@@ -2203,7 +2203,7 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
                             oi_cum[(y, qi)] = amt
                             oi_found = True
                     if rev_found or oi_found:
-                        app.logger.info(
+                        app.logger.debug(
                             f"[DART] {krx_code} {y}Q{qi} {fs_div}: "
                             f"rev={'✓' if rev_found else '✗'} "
                             f"oi={'✓' if oi_found else '✗'}"
@@ -2240,7 +2240,7 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
         "rev_act": _to_quarterly(rev_cum),
         "oi_act":  _to_quarterly(oi_cum),
     }
-    app.logger.info(
+    app.logger.debug(
         f"[DART] {krx_code}: rev_periods={sorted(result['rev_act'].keys())[-4:]} "
         f"oi_periods={sorted(result['oi_act'].keys())[-4:]}"
     )
@@ -2574,7 +2574,7 @@ def fetch_upcoming_events(stock, info: dict, ticker: str = "") -> list:
                     continue
                 if ts.normalize() >= today and (next_earnings_ts is None or ts < next_earnings_ts):
                     next_earnings_ts = ts
-            app.logger.info(f"[events] get_earnings_dates → next={next_earnings_ts}")
+            app.logger.debug(f"[events] get_earnings_dates → next={next_earnings_ts}")
     except Exception as e:
         app.logger.warning(f"[events] get_earnings_dates failed: {e}")
 
@@ -2598,7 +2598,7 @@ def fetch_upcoming_events(stock, info: dict, ticker: str = "") -> list:
                         if ts and ts.normalize() >= today:
                             if next_earnings_ts is None or ts < next_earnings_ts:
                                 next_earnings_ts = ts
-                    app.logger.info(f"[events] calendar → next={next_earnings_ts}")
+                    app.logger.debug(f"[events] calendar → next={next_earnings_ts}")
         except Exception as e:
             app.logger.warning(f"[events] calendar failed: {e}")
 
@@ -2614,7 +2614,7 @@ def fetch_upcoming_events(stock, info: dict, ticker: str = "") -> list:
                         if next_earnings_ts is None or ts < next_earnings_ts:
                             next_earnings_ts = ts
                         break
-            app.logger.info(f"[events] info → next={next_earnings_ts}")
+            app.logger.debug(f"[events] info → next={next_earnings_ts}")
         except Exception as e:
             app.logger.warning(f"[events] info earnings failed: {e}")
 
@@ -3807,7 +3807,7 @@ def analyze():
                 body = _gz.decompress(_b64.b64decode(dbb[0]["b"])).decode("utf-8")
                 _analyze_cache_put((ticker, interval), body, dbc[0])
                 cached = _analyze_cache_get((ticker, interval))
-                app.logger.info(f"[analyze] ticker={ticker} DB 캐시 사용")
+                app.logger.debug(f"[analyze] ticker={ticker} DB 캐시 사용")
         except Exception as e:
             app.logger.warning(f"[analyze] ticker={ticker} DB 캐시 읽기 실패: {e}")
     if cached:
@@ -4163,7 +4163,7 @@ def analyze():
             except Exception:
                 pass
 
-            app.logger.info(f"[EPS est] {ticker}: act={list(eps_act_by_period.keys())[:6]} est={list(eps_est_by_period.keys())[:6]}")
+            app.logger.debug(f"[EPS est] {ticker}: act={list(eps_act_by_period.keys())[:6]} est={list(eps_est_by_period.keys())[:6]}")
 
             # 4. 매출 리스트 (추정치 매칭, 최신순)
             def _match_estimate(period, est_dict):
@@ -4229,9 +4229,9 @@ def analyze():
                         kr_rev_act[p] = v
                     for p, v in dart_data["oi_act"].items():
                         kr_oi_act[p] = v
-                    app.logger.info(f"[KR qtr] DART merged for {krx_code}")
+                    app.logger.debug(f"[KR qtr] DART merged for {krx_code}")
 
-                app.logger.info(
+                app.logger.debug(
                     f"[KR qtr] {krx_code}: act_periods={sorted(kr_rev_act.keys())} "
                     f"est_periods={sorted(kr_rev_est.keys())}"
                 )

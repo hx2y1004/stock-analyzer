@@ -98,6 +98,7 @@ python build_sector_universe.py   # sector_universe.json: 섹터 분류 + 미국
 | | `TOSS_OWNER_EMAIL` 또는 `TOSS_OWNER_USER_IDS` | 소유자 전용 기능(계좌 불러오기, 진단 화면, 봇 수동 실행) 허용 계정 |
 | | `DART_API_KEY` | (선택) 국내 분기 실적 |
 | AI 봇 | `AI_DAILY_BUDGET` (기본 60), `BOT_AI_INTERVAL` (기본 4초), `BOT_SCHEDULER` | 봇 AI 평가 하루 상한·호출 간격·스케줄러 끄기 |
+| 로그 | `LOG_LEVEL` | 기본 `INFO`(배치·스케줄러 진행: `[BOT]`·`[TRENDS]`·`[SCREENER]`·`[SECTORMAP]`·`[AI]`·`[intraday]` 등). `DEBUG` 면 요청별 세부 진단(`[KR qtr]`·`[DART]`·`[events]`)까지, `WARNING` 이면 경고 이상만 |
 | 섹터맵 · 스크리너 · 추세 셋업 | `SECTORMAP_SCHEDULER`, `SCREENER_SCHEDULER`, `TRENDS_SCHEDULER` | `0`이면 각각의 백그라운드 갱신 끔 (추세 셋업은 첫 워밍업만 끄고, 장 마감 확정·장중 돌파는 봇 배치·섹터맵이 계속 갱신) |
 | 알림 | `NOTIFY_PROVIDERS` | 기본 `inapp` (사이트 안 알림) |
 | 웹 푸시 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (선택) PWA 푸시. 비워 두면 푸시만 꺼지고 나머지는 정상. 키 만드는 한 줄 명령은 `.env.example`에 있음 |
