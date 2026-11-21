@@ -5392,6 +5392,15 @@ html, body { overflow-x: clip; }
   .analyst-target, .analyst-prior { min-width: 0; overflow-wrap: anywhere; }
 }
 
+/* 종목 상세 하단 그리드: 1fr 의 최소 폭(auto)이 애널리스트 행 최소 폭(증권사 130 + 의견 90 + …)을 따라가
+   481~560px 에서 카드가 화면 밖으로 넘쳤다 → minmax(0, …) 로 열이 줄어들게 하고, 640px 이하에서 행 줄바꿈 */
+.bottom-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+.bottom-grid > * { min-width: 0; }
+@media (max-width: 1024px) { .bottom-grid { grid-template-columns: minmax(0, 1fr); } }
+.analyst-row { flex-wrap: wrap; row-gap: 4px; }      /* 데스크톱 좌측 열(2fr)도 좁을 수 있어 항상 줄바꿈 허용 */
+.analyst-firm { min-width: 0; }
+@media (min-width: 1025px) { .analyst-firm { flex: 1 1 120px; } }
+
 /* 모의투자 빠른 매수 버튼 (예전 인라인 스타일) */
 .qb-submit { flex: 0 0 auto; padding: 10px 24px; white-space: nowrap; }
 @media (max-width: 768px) {
