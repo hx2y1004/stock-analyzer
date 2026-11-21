@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 종목 상세 차트 아래 거래 버튼 정리 (PR #40)
+- 차트 아래 2줄 버튼(`💰 모의 매수`·보유 시 `💸 모의 매도`·`📊 모의투자 대시보드` / `📁 포트폴리오 추가매수`·`📁 포트폴리오 매도`·`🗑 포지션 삭제`)을 없앴다. 차트 카드 다음에 바로 `내 포지션` 카드가 16px 간격으로 온다.
+  - 모의 매수는 `종합 분석 판단` 카드의 `모의 매수`(→ `/trading?buy=`)로, 모의 매도는 `/trading`에서 한다.
+  - 실제 포트폴리오 관리는 `내 포지션` 헤더 우측 `포트폴리오 관리 →`(로그인 시에만)로 홈 `내 포트폴리오` 탭에 간다. 미보유일 때 카드 안 `+ 포트폴리오에 추가` 버튼은 그대로다.
+- 홈 `/#portfolioSection`: 섹션이 로그인 확인 뒤 비동기로 나타나 기본 앵커 이동이 안 되므로, `loadPortfolio()`가 포트폴리오 탭을 열고 `_scrollToPortfolioSection()`으로 고정 헤더 아래에 맞춘다. 위쪽 시황 카드가 늦게 그려지며 밀어내므로 4초 동안 몇 번 다시 맞추고, 사용자가 스크롤·터치하면 멈춘다.
+- 함께 지운 미사용 코드: `index.html`의 `sellModal`·`paperBuyModal`·`paperSellModal`, `main.js`의 `renderTradeActions`, 실보유 매도(`openSellModal`·`submitSellHolding`), 분석 페이지 모의매매 블록 전체(`renderPaperTradeActions`·가격 폴링·`submitPaperBuy/Sell`·`_stepPaper`), `currentPositionId`, CSS `.trade-actions`·`.trade-btn`·`.live-price-tag`·`.price-readonly`·`.price-hint`. 홈 포트폴리오가 쓰는 `openAddModal`·`openEditModal`·`deleteHolding`은 남겼다. `/trading`의 매수·매도 모달(`tradeBuyModal`·`sellModalName` 등)은 별개다.
+
 ### 모의투자 2차 (PR #39) — 목표가·손절가 자동 청산 예약 · 원클릭 모의 매수
 - **모델**: `paper_holdings.target_price`, `stop_loss_price` (Float, nullable, 종목 통화 기준). 시작 시 inspector 로 없을 때만
   `ALTER TABLE ADD COLUMN` (PostgreSQL·SQLite 공통, 무중단). 봇 계좌는 예약을 쓰지 않는다.
