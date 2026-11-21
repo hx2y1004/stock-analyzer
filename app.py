@@ -1629,16 +1629,71 @@ def _get_price_df(ticker, interval, min_bars, yf_period="max"):
     return None, None
 
 
+# ── 분봉(10m) · 시간봉(1h): 토스 우선 → yfinance 폴백, 짧은 메모리 캐시 ──────────────
+INTRADAY_INTERVALS = ("10m", "1h")
+_INTRA_CACHE = {}                         # (ticker, interval) → (ts, df, source)
+_INTRA_TTL = {"10m": 60, "1h": 180}
+_INTRA_LOCK = threading.Lock()
+_OHLCV_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+
+
+def _get_intraday_df(ticker, interval):
+    """Returns (df, source) — df 는 tz-aware 인덱스(거래소 현지 시간). 실패 시 (None, None)."""
+    key = (ticker, interval)
+    now = time.time()
+    with _INTRA_LOCK:
+        hit = _INTRA_CACHE.get(key)
+        if hit and now - hit[0] < _INTRA_TTL[interval]:
+            return hit[1], hit[2]
+    df, src = None, None
+    # 1순위: 토스 (분·시간 간격 지원 여부는 toss_api.get_intraday_df 가 확인하고 안 되면 None)
+    if toss_api.is_enabled() and toss_api.is_eligible(ticker):
+        try:
+            tdf, used = toss_api.get_intraday_df(ticker, interval)
+            if tdf is not None and len(tdf) >= 60:
+                df, src = tdf, "toss"
+                app.logger.info(f"[intraday] {ticker} {interval} 토스 사용 (interval={used}, {len(tdf)}봉)")
+        except Exception as e:
+            app.logger.warning(f"[intraday] toss {ticker} {interval} failed: {e}")
+    # 2순위: yfinance — 1h 는 그대로, 10m 은 5분봉을 10분으로 리샘플 (yfinance 에 10m 간격이 없음, 5분봉은 최근 60일까지)
+    if df is None:
+        try:
+            if interval == "1h":
+                ydf = yf.Ticker(ticker).history(period="3mo", interval="1h")
+            else:
+                ydf = yf.Ticker(ticker).history(period="1mo", interval="5m")
+                if ydf is not None and not ydf.empty:
+                    ydf = (ydf[["Open", "High", "Low", "Close", "Volume"]].resample("10min").agg(_OHLCV_AGG)
+                           .dropna(subset=["Close"]))
+            if ydf is not None and not ydf.empty:
+                df, src = ydf, "yfinance"
+        except Exception as e:
+            app.logger.warning(f"[intraday] yfinance {ticker} {interval} failed: {e}")
+    if df is not None:
+        with _INTRA_LOCK:
+            _INTRA_CACHE[key] = (now, df, src)
+            if len(_INTRA_CACHE) > 60:                   # 메모리 보호: 오래된 것부터 정리
+                for k, _ in sorted(_INTRA_CACHE.items(), key=lambda kv: kv[1][0])[:20]:
+                    _INTRA_CACHE.pop(k, None)
+    return df, src
+
+
 def build_chart_data(ticker, interval):
-    """차트 데이터만 반환 (봉 전환 시 사용)"""
-    if interval not in ("1d", "1wk", "1mo"):
+    """차트 데이터만 반환 (봉 전환 시 사용).
+    일·주·월봉: dates = 'YYYY-MM-DD'. 10분·1시간봉: dates = Unix 초(정수), tz = 거래소 시간대.
+    chart_data["source"] 에 'toss' | 'yfinance'."""
+    if interval not in ("10m", "1h", "1d", "1wk", "1mo"):
         interval = "1d"
 
-    INTERVAL_LABELS = {"1d": "일봉", "1wk": "주봉", "1mo": "월봉"}
+    INTERVAL_LABELS = {"10m": "10분", "1h": "1시간", "1d": "일봉", "1wk": "주봉", "1mo": "월봉"}
+    intraday = interval in INTRADAY_INTERVALS
 
-    # 봉별 목표 봉 수 (지표 + 충분한 히스토리)
-    CHART_MIN_BARS = {"1d": 600, "1wk": 250, "1mo": 130}
-    df, _src = _get_price_df(ticker, interval, CHART_MIN_BARS.get(interval, 600))
+    if intraday:
+        df, _src = _get_intraday_df(ticker, interval)
+    else:
+        # 봉별 목표 봉 수 (지표 + 충분한 히스토리)
+        CHART_MIN_BARS = {"1d": 600, "1wk": 250, "1mo": 130}
+        df, _src = _get_price_df(ticker, interval, CHART_MIN_BARS.get(interval, 600))
     if df is None or df.empty:
         return None, f"'{ticker}' 데이터를 찾을 수 없습니다."
 
@@ -1647,7 +1702,15 @@ def build_chart_data(ticker, interval):
         return None, f"'{ticker}' 유효한 가격 데이터가 없습니다."
 
     df = add_all_indicators(df)
-    df.index = df.index.strftime("%Y-%m-%d")
+    tz_name = None
+    if intraday:
+        idx = df.index
+        if getattr(idx, "tz", None) is None:
+            idx = idx.tz_localize("UTC")
+        tz_name = "Asia/Seoul" if ticker.upper().endswith((".KS", ".KQ")) else "America/New_York"
+        df.index = [int(t.timestamp()) for t in idx]
+    else:
+        df.index = df.index.strftime("%Y-%m-%d")
 
     def series(col):
         return [_cf(v) for v in df[col]] if col in df.columns else []
@@ -1668,6 +1731,7 @@ def build_chart_data(ticker, interval):
         "rsi":       series("RSI"),
         "macd":      series("MACD"),  "macd_signal": series("MACD_signal"),
         "macd_hist": series("MACD_hist"),
+        "source":    _src, "intraday": intraday, "tz": tz_name,
     }
     return chart_data, INTERVAL_LABELS[interval]
 
@@ -1684,7 +1748,8 @@ def chart_only():
             return jsonify({"error": interval_label}), 404
         return app.response_class(
             response=json.dumps(
-                {"chart": chart_data, "interval": interval, "interval_label": interval_label},
+                {"chart": chart_data, "interval": interval, "interval_label": interval_label,
+                 "chart_source": chart_data.get("source")},
                 cls=NumpyEncoder, ensure_ascii=False,
             ),
             status=200, mimetype="application/json",

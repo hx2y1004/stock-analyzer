@@ -242,14 +242,16 @@ def get_price(ticker):
 
 
 # ── 캔들 ───────────────────────────────────────────────────
-def _get_candles_page(symbol, count=200, before=None, adjusted=True):
-    """토스 일봉 캔들 1페이지. Returns (list[dict], next_before)."""
+def _get_candles_page(symbol, count=200, before=None, adjusted=True, interval="1d", raise_http=False):
+    """토스 캔들 1페이지. Returns (list[dict], next_before).
+    interval 기본 1d. 분봉·시간봉 값은 공식 문서를 확인하지 못해 get_intraday_df 가 후보값을 시도한다.
+    raise_http=True 면 HTTP 오류(4xx 등)를 호출한 쪽으로 올려 '미지원 간격'을 구분할 수 있게 한다."""
     h = _headers()
     if not h:
         return [], None
     params = {
         "symbol": symbol,
-        "interval": "1d",
+        "interval": interval,
         "count": min(max(int(count), 1), 200),
         "adjusted": "true" if adjusted else "false",
     }
@@ -261,7 +263,9 @@ def _get_candles_page(symbol, count=200, before=None, adjusted=True):
         j = r.json()
         return _extract_list(j), _extract_next_before(j)
     except Exception as e:
-        log.warning(f"[toss] candles {symbol} failed: {e}")
+        if raise_http and isinstance(e, requests.HTTPError):
+            raise
+        log.warning(f"[toss] candles {symbol} {interval} failed: {e}")
         return [], None
 
 
@@ -356,6 +360,73 @@ def get_candles_df(ticker, interval="1d", min_bars=260, adjusted=True):
         df = df.resample(rule).agg(agg).dropna(subset=["Close"])
 
     return df
+
+
+# ── 분봉 · 시간봉 ───────────────────────────────────────────
+# 토스 /api/v1/candles 의 분·시간 interval 값은 공식 문서를 확인하지 못했다(이 개발 환경에서 문서 접근 불가).
+# 그래서 후보값을 차례로 시도하고, 실제 봉 간격이 요청과 맞을 때만 쓴다 (파라미터를 무시하고 일봉을 주는 경우도 걸러냄).
+# 실패한 (간격 후보)는 6시간 동안 다시 시도하지 않는다 → 매 요청마다 실패 호출이 쌓이지 않게.
+_INTRA_TRY = {
+    "10m": [("10m", None), ("5m", "10min")],     # (토스 interval, 리샘플 규칙)
+    "1h":  [("1h", None), ("60m", None)],
+}
+_INTRA_SEC = {"10m": 600, "5m": 300, "1h": 3600, "60m": 3600}
+_intra_bad = {}            # toss interval → 실패 시각
+_INTRA_BAD_TTL = 6 * 3600
+_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+
+
+def _spacing_ok(df, want_sec):
+    """같은 날 안의 봉 간격 중앙값이 요청 간격과 같은지 (점심·장 마감 공백은 제외)."""
+    if df is None or len(df) < 10:
+        return False
+    d = df.index.to_series().diff().dt.total_seconds().dropna()
+    d = d[d < 4 * 3600]
+    return len(d) >= 5 and abs(float(d.median()) - want_sec) < 1
+
+
+def get_intraday_df(ticker, interval, pages=5):
+    """토스 분봉(10m)·시간봉(1h). 지원하지 않거나 실패하면 None (호출한 쪽이 yfinance 로 폴백).
+    Returns (df, used_interval) — used_interval 은 실제로 받은 토스 간격 (예: '5m' 을 10분으로 리샘플)."""
+    if not is_enabled() or not is_eligible(ticker) or interval not in _INTRA_TRY:
+        return None, None
+    sym = to_toss_symbol(ticker)
+    now = time.time()
+    for tiv, rule in _INTRA_TRY[interval]:
+        if now - _intra_bad.get(tiv, 0) < _INTRA_BAD_TTL:
+            continue
+        rows, before = [], None
+        try:
+            for _ in range(pages):
+                batch, nxt = _get_candles_page(sym, count=200, before=before, interval=tiv, raise_http=True)
+                if not batch:
+                    break
+                rows.extend(batch)
+                if len(batch) < 200:
+                    break
+                if not nxt:
+                    try:
+                        nxt = min(c.get("timestamp") for c in batch if c.get("timestamp"))
+                    except (ValueError, TypeError):
+                        break
+                if not nxt or nxt == before:
+                    break
+                before = nxt
+        except requests.HTTPError as e:
+            code = getattr(e.response, "status_code", None)
+            log.info(f"[toss] intraday {sym} interval={tiv} HTTP {code} → 미지원으로 보고 6시간 건너뜀")
+            _intra_bad[tiv] = now
+            continue
+        df = _candles_to_df(rows)
+        if not _spacing_ok(df, _INTRA_SEC[tiv]):
+            log.info(f"[toss] intraday {sym} interval={tiv} 응답 없음 또는 봉 간격 불일치 → 건너뜀")
+            if df is not None and len(df) >= 10:
+                _intra_bad[tiv] = now          # 파라미터를 무시하고 다른 간격을 주는 경우
+            continue
+        if rule:
+            df = df.resample(rule).agg(_AGG).dropna(subset=["Close"])
+        return df, tiv
+    return None, None
 
 
 # ── 환율 ───────────────────────────────────────────────────

@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=79" />
+  <link rel="stylesheet" href="/static/css/style.css?v=80" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -219,15 +219,13 @@
       <div class="col-chart">
         <section class="card chart-card">
           <div class="chart-card-header">
-            <h3 class="card-title">기술적 분석 차트 <span id="intervalBadge" class="interval-badge">일봉</span></h3>
+            <h3 class="card-title">기술적 분석 차트 <span id="intervalBadge" class="interval-badge">일봉</span><span id="chartDelay" class="chart-delay" hidden>지연 시세</span></h3>
           </div>
           <div class="chart-toolbar" id="chartToolbar">
             <div class="ct-row">
-              <div class="ct-group" role="group" aria-label="차트 종류">
-                <button type="button" class="chart-btn active" data-ctype="candlestick" aria-pressed="true">캔들</button>
-                <button type="button" class="chart-btn" data-ctype="line" aria-pressed="false">라인</button>
-              </div>
-              <div class="ct-group interval-group" role="group" aria-label="봉 단위">
+              <div class="ct-group" role="group" aria-label="봉 단위">
+                <button type="button" class="interval-btn" data-interval="10m" onclick="setChartInterval('10m')">10분</button>
+                <button type="button" class="interval-btn" data-interval="1h" onclick="setChartInterval('1h')">1시간</button>
                 <button type="button" class="interval-btn active" data-interval="1d" onclick="setChartInterval('1d')">일봉</button>
                 <button type="button" class="interval-btn" data-interval="1wk" onclick="setChartInterval('1wk')">주봉</button>
                 <button type="button" class="interval-btn" data-interval="1mo" onclick="setChartInterval('1mo')">월봉</button>
@@ -245,6 +243,11 @@
               <button type="button" class="ct-icon-btn" id="chartResetBtn" title="기본 기간·여백·가격축으로 되돌리기">↺ 리셋</button>
             </div>
             <div class="ct-row ct-scroll">
+              <div class="ct-group" role="group" aria-label="차트 종류">
+                <button type="button" class="chart-btn active" data-ctype="candlestick" aria-pressed="true">캔들</button>
+                <button type="button" class="chart-btn" data-ctype="line" aria-pressed="false">라인</button>
+              </div>
+              <span class="ct-sep" aria-hidden="true"></span>
               <div class="ct-group" role="group" aria-label="겹쳐 보기">
                 <button type="button" class="ind-chip" data-ind="ma" aria-pressed="true">MA</button>
                 <button type="button" class="ind-chip" data-ind="bb" aria-pressed="false">BB</button>
@@ -640,8 +643,8 @@
   </div>
 
   {% include "_footer.html" %}
-  <script src="/static/js/chart.js?v=2"></script>
+  <script src="/static/js/chart.js?v=3"></script>
   <script src="/static/js/notify.js?v=3"></script>
-  <script src="/static/js/main.js?v=74"></script>
+  <script src="/static/js/main.js?v=75"></script>
 </body>
 </html>
