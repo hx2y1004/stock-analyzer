@@ -1037,8 +1037,14 @@ function quickSearch(ticker) {
   analyze();
 }
 
+// 종합 분석(/api/analyze)은 일·주·월봉 기준. 10분·1시간봉은 차트(/api/chart)만 바꾼다
+function _isIntradayInterval(iv) { return iv === '10m' || iv === '1h'; }
+function _analyzeInterval() { return _isIntradayInterval(currentInterval) ? '1d' : currentInterval; }
+
+let _chartReqSeq = 0;
 async function setChartInterval(interval) {
   currentInterval = interval;
+  const seq = ++_chartReqSeq;            // 빠르게 연속으로 누르면 마지막 요청 결과만 그린다
   document.querySelectorAll('.interval-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.interval === interval);
   });
@@ -1053,6 +1059,7 @@ async function setChartInterval(interval) {
   try {
     const res = await fetch(`/api/chart?ticker=${encodeURIComponent(ticker)}&interval=${interval}`);
     const data = await res.json();
+    if (seq !== _chartReqSeq) return;
     if (!res.ok) { showError(data.error || '차트 로딩 실패'); return; }
 
     chartData = data.chart;
@@ -1061,7 +1068,7 @@ async function setChartInterval(interval) {
   } catch (e) {
     showError('차트 로딩 오류: ' + e.message);
   } finally {
-    chartEl.style.opacity = '1';
+    if (seq === _chartReqSeq) chartEl.style.opacity = '1';
   }
 }
 
@@ -1107,7 +1114,7 @@ async function analyze() {
     const timer = setTimeout(() => ctrl.abort(), 90000);
     let res, data;
     try {
-      res = await fetch(`/api/analyze?ticker=${encodeURIComponent(ticker)}&period=${period}&interval=${currentInterval}`,
+      res = await fetch(`/api/analyze?ticker=${encodeURIComponent(ticker)}&period=${period}&interval=${_analyzeInterval()}`,
                         { signal: ctrl.signal });
       data = await res.json().catch(() => ({}));
     } catch (err) {
@@ -1157,7 +1164,11 @@ async function analyze() {
 
     // result를 먼저 보여준 뒤 레이아웃 계산 후 차트 렌더링
     document.getElementById('result').classList.remove('hidden');
-    requestAnimationFrame(() => setTimeout(() => renderCharts(data.chart), 50));
+    requestAnimationFrame(() => setTimeout(() => {
+      renderCharts(data.chart);
+      // 분봉·시간봉 보는 중 다시 분석(예: 모의 매수 후)하면 종합 분석은 일봉 기준이므로 차트만 다시 분봉으로
+      if (_isIntradayInterval(currentInterval)) setChartInterval(currentInterval);
+    }, 50));
   } catch (e) {
     showError('서버 연결 오류: ' + e.message);
   } finally {
@@ -1215,7 +1226,7 @@ async function loadAnalyzeExtras(ticker, data, refill = 0) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
-    const res = await fetch(`/api/analyze/extra?ticker=${encodeURIComponent(ticker)}&interval=${currentInterval}`,
+    const res = await fetch(`/api/analyze/extra?ticker=${encodeURIComponent(ticker)}&interval=${_analyzeInterval()}`,
                             { signal: ctrl.signal });
     const ex = await res.json();
     if (currentAnalysisTicker !== ticker) return;      // 그 사이 다른 종목으로 이동

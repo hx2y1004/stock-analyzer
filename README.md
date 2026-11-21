@@ -175,7 +175,7 @@ stock-analyzer/
 
 | 구분 | 경로 |
 |---|---|
-| 분석 | `GET /api/analyze?ticker=`, `GET /api/analyze/extra`, `GET /api/chart`, `GET /api/search?q=` |
+| 분석 | `GET /api/analyze?ticker=`, `GET /api/analyze/extra`, `GET /api/chart?interval=10m\|1h\|1d\|1wk\|1mo`, `GET /api/search?q=` |
 | 시황 | `GET /api/market/overview`, `GET /api/market/sectormap?market=KR\|US`, `GET /api/market/movers` |
 | 추세 셋업 | `GET /api/trends/setups?market=ALL\|KR\|US`, `POST /api/trends/refresh` (현시점 갱신, 시장별 60초 쿨다운), `POST /api/trends/scan` (소유자 전체 재스캔), `GET /api/trends/status` |
 | 포트폴리오 | `GET/POST /api/portfolio`, `PUT/DELETE /api/portfolio/<id>`, `POST /api/portfolio/import-toss` (소유자) |

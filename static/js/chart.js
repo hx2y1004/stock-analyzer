@@ -12,7 +12,12 @@
   const LWC = window.LightweightCharts;
   const RIGHT_OFFSET = 5;
   const RANGE_DAYS = { '1M': 31, '3M': 92, '6M': 183, '1Y': 366 };
-  const DEFAULT_RANGE = { '1d': '6M', '1wk': '1Y', '1mo': 'ALL' };
+  const TRADING_DAYS = { '1D': 1, '3D': 3, '5D': 5 };            // 분·시간봉: 최근 N 거래일
+  // 봉 단위별 기간 버튼과 기본 범위 ('BARS' = 최근 INTRA_BARS 봉, 버튼 강조 없음)
+  const RANGE_KEYS = { '10m': ['1D', '3D', '5D', '1M', 'ALL'], '1h': ['5D', '1M', '3M', 'ALL'], day: ['1M', '3M', '6M', '1Y', 'ALL'] };
+  const DEFAULT_RANGE = { '10m': 'BARS', '1h': 'BARS', '1d': '6M', '1wk': '1Y', '1mo': 'ALL' };
+  const INTRA_BARS = 100;
+  const TZ_LABEL = { 'Asia/Seoul': 'KST', 'America/New_York': 'ET' };
   const COLORS = {
     us: { up: '#3fb950', down: '#f85149' },          // 초록 상승 / 빨강 하락
     kr: { up: '#f04452', down: '#3182f6' },          // 빨강 상승 / 파랑 하락
@@ -44,6 +49,24 @@
   const isUSD = () => !isKRW() && (stock().currency || 'USD') === 'USD';
   const scheme = () => (S.color === 'auto' ? (isKRW() ? 'kr' : 'us') : S.color);
   const palette = () => COLORS[scheme()];
+
+  // ── 분·시간봉 시간 ─────────────────────────────────────────────────────────
+  // LWC 는 Unix 초를 UTC 시계로 그린다 → 거래소 현지 시계(한국 KST, 미국 ET)로 보이도록
+  // '현지 벽시계 시각을 UTC 로 본 값'으로 옮겨 그린다 (서머타임도 봉마다 Intl 로 계산). 범례도 같은 값을 쓴다.
+  const _dtf = {};
+  function tzShift(ts, tz) {
+    if (!tz) return ts;
+    const f = _dtf[tz] || (_dtf[tz] = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23',
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    const p = Object.fromEntries(f.formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value]));
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) / 1000;
+  }
+  const isoOf = (t) => new Date(t * 1000).toISOString();           // 옮긴 값 → 'YYYY-MM-DDTHH:MM…' (현지 시계)
+  function barLabel(i) {
+    const t = S.data.dates[i];
+    if (!S.intra) return t;
+    return isoOf(t).slice(0, 16).replace('T', ' ') + (TZ_LABEL[S.tz] ? ' ' + TZ_LABEL[S.tz] : '');
+  }
 
   // ── 숫자 형식 ────────────────────────────────────────────────────────────
   function fmtPrice(v) {
@@ -118,12 +141,13 @@
     return {
       width: el.clientWidth || el.parentElement.clientWidth || 600,
       height,
-      localization: { locale: 'ko-KR', priceFormatter: fmtNum },
+      localization: Object.assign({ locale: 'ko-KR', priceFormatter: fmtNum },
+        S.intra ? { timeFormatter: (t) => isoOf(t).slice(0, 16).replace('T', ' ') } : {}),   // 크로스헤어 시간 라벨 YYYY-MM-DD HH:MM
       layout: { background: { color: '#161b22' }, textColor: '#8b949e', fontSize: isMobile() ? 11 : 12 },
       grid: { vertLines: { color: '#21262d' }, horzLines: { color: 'rgba(33,38,45,.6)' } },
       crosshair: { mode: LWC.CrosshairMode.Normal },
       rightPriceScale: { borderColor: '#30363d', minimumWidth: isMobile() ? 56 : 70 },
-      timeScale: { borderColor: '#30363d', visible: timeVisible, timeVisible: false, rightOffset: RIGHT_OFFSET,
+      timeScale: { borderColor: '#30363d', visible: timeVisible, timeVisible: !!S.intra, secondsVisible: false, rightOffset: RIGHT_OFFSET,
         minBarSpacing: 0.02, fixLeftEdge: false, lockVisibleTimeRangeOnResize: true },
       // 모바일 핵심: 세로 드래그는 페이지 스크롤로 넘기고, 가로 드래그만 차트 이동
       handleScroll: { vertTouchDrag: false, horzTouchDrag: true, pressedMouseMove: true, mouseWheel: true },
@@ -163,8 +187,8 @@
   function addChart(el, height, timeVisible, kind) {
     el.innerHTML = '';
     const chart = LWC.createChart(el, baseOptions(el, height, timeVisible));
-    if (kind === 'price') chart.applyOptions({ localization: { locale: 'ko-KR', priceFormatter: fmtPrice } });
-    if (kind === 'osc') chart.applyOptions({ localization: { locale: 'ko-KR', priceFormatter: (v) => v.toFixed(1) } });
+    if (kind === 'price') chart.applyOptions({ localization: { priceFormatter: fmtPrice } });
+    if (kind === 'osc') chart.applyOptions({ localization: { priceFormatter: (v) => v.toFixed(1) } });
     const rec = { el, chart, kind, series: null };
     rec.ro = new ResizeObserver(() => {
       const w = el.clientWidth;
@@ -287,7 +311,7 @@
     const pal = palette();
     const col = chg == null ? 'var(--text2)' : chg > 0 ? pal.up : chg < 0 ? pal.down : 'var(--text2)';
     const isLast = i === lastIndex();
-    el.innerHTML = `<span class="ol-date">${d.dates[i]}${isLast ? '' : ''}</span>`
+    el.innerHTML = `<span class="ol-date">${barLabel(i)}</span>`
       + `<span class="ol-kv"><i>시</i>${fmtPrice(d.open[i])}</span><span class="ol-kv"><i>고</i>${fmtPrice(d.high[i])}</span>`
       + `<span class="ol-kv"><i>저</i>${fmtPrice(d.low[i])}</span><span class="ol-kv"><i>종</i><b style="color:${col}">${fmtPrice(d.close[i])}</b></span>`
       + `<span class="ol-kv" style="color:${col}">${chg == null ? '—' : (chg > 0 ? '+' : '') + chg.toFixed(2) + '%'}</span>`
@@ -298,6 +322,7 @@
 
   function indexOfTime(t) {
     if (t == null) return null;
+    if (typeof t === 'number') { const v = S.idx.get(t); return v == null ? null : v; }
     const key = typeof t === 'string' ? t : (t.year ? `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}` : null);
     return key ? S.idx.get(key) : null;
   }
@@ -369,7 +394,20 @@
     if (!d || !S.main) return;
     const n = d.dates.length;
     let from = 0;
-    if (key !== 'ALL') {
+    if (S.intra && key !== 'ALL') {
+      const day = (i) => isoOf(d.dates[i]).slice(0, 10);
+      if (key === 'BARS') from = n - INTRA_BARS;
+      else if (TRADING_DAYS[key]) {
+        // 최근 N 거래일 (주말·휴장일은 봉이 없으니 날짜가 바뀌는 지점을 센다)
+        let days = 0, i = n - 1, cur = day(n - 1);
+        for (; i >= 0; i--) { const di = day(i); if (di !== cur) { days++; cur = di; if (days >= TRADING_DAYS[key]) break; } }
+        from = i + 1;
+      } else {
+        const cut = d.dates[n - 1] - RANGE_DAYS[key] * 86400;
+        from = d.dates.findIndex((x) => x >= cut);
+      }
+      from = Math.max(0, Math.min(from < 0 ? 0 : from, n - 12));
+    } else if (key !== 'ALL') {
       const last = new Date(d.dates[n - 1] + 'T00:00:00Z');
       const cut = new Date(last.getTime() - RANGE_DAYS[key] * 86400000).toISOString().slice(0, 10);
       from = d.dates.findIndex((x) => x >= cut);
@@ -385,7 +423,27 @@
       r.chart.priceScale('right').applyOptions({ autoScale: true });
       r.chart.timeScale().applyOptions({ rightOffset: RIGHT_OFFSET });
     });
-    applyRange(DEFAULT_RANGE[curInterval()] || '6M');
+    applyRange(defaultRange());
+  }
+  const defaultRange = () => DEFAULT_RANGE[S.intra ? S.interval : curInterval()] || '6M';
+
+  // 봉 단위에 맞는 기간 버튼 (10분: 1D·3D·5D·1M·전체 / 1시간: 5D·1M·3M·전체 / 일·주·월: 1M·3M·6M·1Y·전체)
+  function paintRangeButtons() {
+    const box = $('chartRanges');
+    if (!box) return;
+    const keys = RANGE_KEYS[S.intra ? S.interval : 'day'] || RANGE_KEYS.day;
+    if (box.dataset.keys === keys.join(',')) return;
+    box.dataset.keys = keys.join(',');
+    box.innerHTML = keys.map((k) => `<button type="button" data-range="${k}" aria-pressed="false">${k === 'ALL' ? '전체' : k}</button>`).join('');
+  }
+
+  // 한국 종목 분·시간봉이 Yahoo 폴백이면 '지연 시세' 안내
+  function paintSourceNote() {
+    const el = $('chartDelay');
+    if (!el) return;
+    const show = S.intra && S.source === 'yfinance' && isKRW();
+    el.hidden = !show;
+    if (show) el.title = '한국 종목 분·시간봉을 Yahoo Finance 에서 받아 실시간보다 늦을 수 있습니다 (장 막판 봉이 빠질 수도 있어요).';
   }
 
   // ── 렌더 ────────────────────────────────────────────────────────────────
@@ -393,8 +451,18 @@
     if (!data || !data.dates || !LWC) return;
     const prevRange = keepView && S.main ? S.main.chart.timeScale().getVisibleLogicalRange() : null;
     const prevKey = S.range;
+    S.intra = !!data.intraday;
+    S.tz = data.tz || null;
+    S.source = data.source || null;
+    S.interval = S.intra ? (curInterval() === '1h' ? '1h' : '10m') : curInterval();
+    // 분·시간봉: Unix 초 → 거래소 현지 시계 기준 값 (같은 배열을 세 차트·범례·기간 계산이 함께 쓴다)
+    if (S.intra && !data._shifted) {
+      data = Object.assign({}, data, { dates: data.dates.map((t) => tzShift(t, S.tz)), _unix: data.dates, _shifted: true });
+    }
     S.data = data;
     S.idx = new Map(data.dates.map((d, i) => [d, i]));
+    paintRangeButtons();
+    paintSourceNote();
     destroy();
     $('rsiChart').hidden = !S.subs.rsi;
     $('macdChart').hidden = !S.subs.macd;
@@ -410,7 +478,7 @@
       setRange(prevRange);
       markRange(prevKey);
     } else {
-      applyRange(DEFAULT_RANGE[curInterval()] || '6M');
+      applyRange(defaultRange());
     }
     requestAnimationFrame(() => {
       // 다른 차트들도 메인과 같은 범위로 (구독 연결 전에 그려진 범위 보정)
