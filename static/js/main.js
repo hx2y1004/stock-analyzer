@@ -979,15 +979,15 @@ async function renderStockBots(stock) {
 
 // ── 좌우 컬럼 길이 맞추기: '다가오는 이벤트'를 기본은 좌측(내 포지션 아래)에 두고,
 // PC 2열에서는 이벤트를 뺀 두 컬럼 높이를 재서 합쳤을 때 차이가 더 작은 쪽에 붙인다.
-// (AI 봇 카드·보유 정보로 좌측이 길어지는 종목은 우측으로) 1열(≤1024px)에서는 CSS order 로 맨 아래.
+// (AI 봇 카드·보유 정보로 좌측이 길어지는 종목은 우측으로) 1열(≤1024px)에서는 우측 컬럼 끝 = 맨 아래.
 const _BALANCE_FILL_MAX = 96;   // 이 이하로 차이 나면 짧은 쪽 마지막 카드를 살짝 늘려 아래 끝을 맞춘다
 function _balanceStockColumns() {
   const ev = document.getElementById('eventsCard');
   const L = document.querySelector('.col-chart'), R = document.querySelector('.col-side');
   if (!ev || !L || !R) return;
   document.querySelectorAll('.main-grid .card[data-fill]').forEach((c) => { c.style.minHeight = ''; delete c.dataset.fill; });
-  if (innerWidth <= 1024) {
-    if (ev.parentElement !== L) L.appendChild(ev);
+  if (innerWidth <= 1024) {                 // 1열: 기존처럼 맨 아래 (우측 컬럼 끝)
+    if (ev.parentElement !== R || R.lastElementChild !== ev) R.appendChild(ev);
     return;
   }
   if (!ev.classList.contains('hidden')) {
