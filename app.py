@@ -1631,44 +1631,79 @@ def _get_price_df(ticker, interval, min_bars, yf_period="max"):
 
 # ── 분봉(10m) · 시간봉(1h): 토스 우선 → yfinance 폴백, 짧은 메모리 캐시 ──────────────
 INTRADAY_INTERVALS = ("10m", "1h")
+# app.logger 는 레벨 설정이 없어 운영(gunicorn)에서 info 가 버려진다(유효 레벨 WARNING).
+# 분·시간봉 출처 로그는 운영에서 바로 확인해야 하므로 전용 로거를 INFO 로 두고 stderr(= systemd 저널)로 내보낸다.
+import logging as _logging
+_intra_log = _logging.getLogger("stockanalyzer.intraday")
+if not _intra_log.handlers:
+    _h = _logging.StreamHandler()
+    _h.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _intra_log.addHandler(_h)
+    _intra_log.setLevel(_logging.INFO)
+    _intra_log.propagate = False
 _INTRA_CACHE = {}                         # (ticker, interval) → (ts, df, source)
 _INTRA_TTL = {"10m": 60, "1h": 180}
 _INTRA_LOCK = threading.Lock()
-_OHLCV_AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+
+
+def _yf_intraday(ticker, interval):
+    """yfinance 분·시간봉 (과거 구간 베이스). 1h: 3개월, 10m: 5분봉 1개월 → 10분 리샘플 (yfinance 에 10m 없음)."""
+    if interval == "1h":
+        ydf = yf.Ticker(ticker).history(period="3mo", interval="1h")
+    else:
+        ydf = yf.Ticker(ticker).history(period="1mo", interval="5m")
+        if ydf is not None and not ydf.empty:
+            ydf = toss_api.resample_minutes(ydf, 10, toss_api.market_of(ticker))
+    if ydf is None or ydf.empty:
+        return None
+    ydf = ydf[["Open", "High", "Low", "Close", "Volume"]]
+    tz = toss_api.EXCHANGE_TZ[toss_api.market_of(ticker)]
+    return ydf.tz_convert(tz) if ydf.index.tz is not None else ydf.tz_localize("UTC").tz_convert(tz)
+
+
+def merge_intraday(base, latest):
+    """과거(yfinance) 위에 최신(토스 1분봉 리샘플) 구간을 덮어쓴다.
+    토스 구간의 첫 봉 시각 이후의 base 봉은 모두 버리고 토스 봉으로 잇는다 → 중복 시각 없음, 오름차순."""
+    if latest is None or latest.empty:
+        return base
+    if base is None or base.empty:
+        return latest
+    latest = latest.tz_convert(base.index.tz)
+    cut = latest.index.min()
+    out = pd.concat([base[base.index < cut], latest])
+    out = out[~out.index.duplicated(keep="last")].sort_index()
+    return out
 
 
 def _get_intraday_df(ticker, interval):
-    """Returns (df, source) — df 는 tz-aware 인덱스(거래소 현지 시간). 실패 시 (None, None)."""
+    """분·시간봉. 토스 1분봉 리샘플(최신 3~4거래일, 한국 장 마감 동시호가·당일 실시간 포함)을
+    yfinance 과거 구간 위에 덮어써 지표 워밍업 봉 수를 확보한다.
+    Returns (df, source) — source: 'toss_hybrid'(병합) | 'toss'(토스만) | 'yfinance'(토스 실패) | None."""
     key = (ticker, interval)
     now = time.time()
     with _INTRA_LOCK:
         hit = _INTRA_CACHE.get(key)
         if hit and now - hit[0] < _INTRA_TTL[interval]:
             return hit[1], hit[2]
-    df, src = None, None
-    # 1순위: 토스 (분·시간 간격 지원 여부는 toss_api.get_intraday_df 가 확인하고 안 되면 None)
+    tdf, n_min = None, 0
     if toss_api.is_enabled() and toss_api.is_eligible(ticker):
         try:
-            tdf, used = toss_api.get_intraday_df(ticker, interval)
-            if tdf is not None and len(tdf) >= 60:
-                df, src = tdf, "toss"
-                app.logger.info(f"[intraday] {ticker} {interval} 토스 사용 (interval={used}, {len(tdf)}봉)")
+            tdf, n_min = toss_api.get_intraday_df(ticker, interval)
         except Exception as e:
-            app.logger.warning(f"[intraday] toss {ticker} {interval} failed: {e}")
-    # 2순위: yfinance — 1h 는 그대로, 10m 은 5분봉을 10분으로 리샘플 (yfinance 에 10m 간격이 없음, 5분봉은 최근 60일까지)
-    if df is None:
-        try:
-            if interval == "1h":
-                ydf = yf.Ticker(ticker).history(period="3mo", interval="1h")
-            else:
-                ydf = yf.Ticker(ticker).history(period="1mo", interval="5m")
-                if ydf is not None and not ydf.empty:
-                    ydf = (ydf[["Open", "High", "Low", "Close", "Volume"]].resample("10min").agg(_OHLCV_AGG)
-                           .dropna(subset=["Close"]))
-            if ydf is not None and not ydf.empty:
-                df, src = ydf, "yfinance"
-        except Exception as e:
-            app.logger.warning(f"[intraday] yfinance {ticker} {interval} failed: {e}")
+            app.logger.warning(f"[intraday] toss 1m {ticker} {interval} failed: {e}")
+            tdf, n_min = None, 0
+    ydf = None
+    try:
+        ydf = _yf_intraday(ticker, interval)
+    except Exception as e:
+        app.logger.warning(f"[intraday] yfinance {ticker} {interval} failed: {e}")
+    if tdf is not None and not tdf.empty:
+        df = merge_intraday(ydf, tdf)
+        src = "toss_hybrid" if ydf is not None and not ydf.empty else "toss"
+    else:
+        df, src = ydf, ("yfinance" if ydf is not None else None)
+    _intra_log.info(f"[intraday] {ticker} {interval}: toss_1m={n_min} → resampled={0 if tdf is None else len(tdf)}, "
+                    f"total={0 if df is None else len(df)}, source={src}")
     if df is not None:
         with _INTRA_LOCK:
             _INTRA_CACHE[key] = (now, df, src)
@@ -1681,7 +1716,7 @@ def _get_intraday_df(ticker, interval):
 def build_chart_data(ticker, interval):
     """차트 데이터만 반환 (봉 전환 시 사용).
     일·주·월봉: dates = 'YYYY-MM-DD'. 10분·1시간봉: dates = Unix 초(정수), tz = 거래소 시간대.
-    chart_data["source"] 에 'toss' | 'yfinance'."""
+    chart_data["source"] 에 'toss' | 'toss_hybrid' | 'yfinance'."""
     if interval not in ("10m", "1h", "1d", "1wk", "1mo"):
         interval = "1d"
 

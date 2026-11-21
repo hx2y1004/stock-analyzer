@@ -437,13 +437,14 @@
     box.innerHTML = keys.map((k) => `<button type="button" data-range="${k}" aria-pressed="false">${k === 'ALL' ? '전체' : k}</button>`).join('');
   }
 
-  // 한국 종목 분·시간봉이 Yahoo 폴백이면 '지연 시세' 안내
+  // 한국 종목 분·시간봉이 순수 Yahoo 폴백(chart_source='yfinance')일 때만 '지연 시세' 안내.
+  // 'toss' · 'toss_hybrid'(최신 구간이 토스 1분봉으로 채워짐)이면 숨김
   function paintSourceNote() {
     const el = $('chartDelay');
     if (!el) return;
     const show = S.intra && S.source === 'yfinance' && isKRW();
     el.hidden = !show;
-    if (show) el.title = '한국 종목 분·시간봉을 Yahoo Finance 에서 받아 실시간보다 늦을 수 있습니다 (장 막판 봉이 빠질 수도 있어요).';
+    if (show) el.title = '토스 실시간 분봉을 받지 못해 Yahoo Finance 시세로 표시 중입니다. 실시간보다 늦고 장 막판(14:50 이후) 봉이 빠질 수 있어요.';
   }
 
   // ── 렌더 ────────────────────────────────────────────────────────────────

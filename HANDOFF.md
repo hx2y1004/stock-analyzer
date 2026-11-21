@@ -1,7 +1,7 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-11-21 KST (차트 10분·1시간봉 PR #33, 차트 v2 PR #32, 모바일 반응형 PR #31, 추세 셋업 PR #30)
+> 마지막 업데이트: 2026-11-21 KST (분·시간봉 토스 1분봉 하이브리드 PR #34, 차트 10분·1시간봉 PR #33, 차트 v2 PR #32, 모바일 반응형 PR #31, 추세 셋업 PR #30)
 
 ---
 
@@ -57,14 +57,24 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 분·시간봉 토스 1분봉 하이브리드 (PR #34)
+- 토스 `/api/v1/candles` 는 **`1m`·`1d` 만 공식 지원**(5m·10m·1h·60m 미지원, 사용자가 공식 스펙으로 확인). PR #33 의 후보 간격 시도 로직은 삭제.
+- `toss_api.get_minute_df`: `interval=1m`, 200봉 × 최대 8페이지(≈ 정규장 4거래일) · 2초 예산, 20초 캐시, 거래소 시간대로 변환.
+  `resample_minutes(df, 10|60, market)`: 버킷을 장 시작에 맞춤(한국 09:00·10:00…, 미국 1시간 09:30·10:30…), 라벨 = 버킷 시작, 체결 없는 버킷 제거.
+  `get_intraday_df`: 페이지 한도로 잘린 가장 오래된 날은 버리고 완전한 날부터 리샘플.
+- `app._get_intraday_df`: yfinance(1h 3mo / 5m 1mo→10분)를 베이스로 깔고 `merge_intraday` 로 **토스 구간 첫 봉 이후를 전부 토스 봉으로 교체**
+  (중복 시각 없음). 한국장 14:50~15:30(동시호가 15:30 봉 포함)과 당일 실시간 봉이 채워진다.
+  source: `toss_hybrid`(병합) / `toss`(yfinance 실패) / `yfinance`(토스 실패·빈 응답·키 없음). `지연 시세` 배지는 한국 종목 + `yfinance` 일 때만.
+- **로그**: `[intraday] {ticker} {interval}: toss_1m=N → resampled=M, total=T, source=…` — 전용 로거 `stockanalyzer.intraday`(INFO, stderr).
+  ⚠️ `app.logger` 는 레벨 설정이 없어 운영(gunicorn)에서 **info 가 버려진다**(유효 레벨 WARNING). `[TRENDS]`·`[SCREENER]`·`[SECTORMAP]`·`[BOT]` 등
+  모듈 `log()` 가 info 로 남기는 줄은 운영 로그에 안 나올 가능성이 높다(로컬에서 확인: 레벨 미설정 시 출력 0줄). 경고(warning) 이상만 보임.
+
 ### 차트 10분봉 · 1시간봉 (PR #33)
 - 봉 단위 `10분 · 1시간 · 일봉 · 주봉 · 월봉`. `/api/chart?interval=10m|1h` 만 분·시간봉을 주고, 종합 분석(`/api/analyze`)은 일봉 기준 그대로
   (main.js `_analyzeInterval()`; 분봉 보는 중 다시 분석하면 차트만 분봉으로 다시 받음). 봉 전환 요청은 마지막 것만 그림(`_chartReqSeq`).
 - **데이터**: `app._get_intraday_df` → 1순위 `toss_api.get_intraday_df`, 2순위 yfinance (`1h`: period 3mo, `10m`: 5분봉 1mo → `10min` 리샘플).
   메모리 캐시 10m 60초 · 1h 180초(최대 60개). 응답 `chart_source`('toss'|'yfinance'), `chart.tz`, `chart.intraday`.
-- **토스 분봉 지원 여부는 미확인**: 개발 환경에서 토스 문서·API 모두 접근 불가(허용 IP·네트워크). 그래서 후보 interval
-  (`10m`→`5m` 리샘플, `1h`→`60m`)을 시도하고, **실제 봉 간격이 요청과 같을 때만** 채택(파라미터를 무시하고 일봉을 줘도 걸러짐).
-  HTTP 오류·간격 불일치는 6시간 동안 재시도 안 함. 운영 로그 `[toss] intraday …` / `[intraday] … 토스 사용` 으로 실제 지원 여부 확인할 것.
+- (PR #34 에서 교체) 토스 후보 간격 시도 → 토스 1분봉 리샘플 + yfinance 병합. 위 절 참고.
 - **시간**: 분·시간봉 `dates` 는 Unix 초. chart.js 가 거래소 현지 시계(한국 KST, 미국 ET, 서머타임 포함)로 옮겨 그리고,
   X축·크로스헤어·범례에 `YYYY-MM-DD HH:MM KST|ET`. 한국 종목 분·시간봉이 yfinance 면 `지연 시세` 배지.
 - **기간 버튼 자동 전환**: 10분 `1D·3D·5D·1M·전체`(1D/3D/5D 는 거래일 수), 1시간 `5D·1M·3M·전체`, 일·주·월 기존. 분·시간봉 기본·리셋 = 최근 100봉.

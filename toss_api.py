@@ -362,71 +362,87 @@ def get_candles_df(ticker, interval="1d", min_bars=260, adjusted=True):
     return df
 
 
-# ── 분봉 · 시간봉 ───────────────────────────────────────────
-# 토스 /api/v1/candles 의 분·시간 interval 값은 공식 문서를 확인하지 못했다(이 개발 환경에서 문서 접근 불가).
-# 그래서 후보값을 차례로 시도하고, 실제 봉 간격이 요청과 맞을 때만 쓴다 (파라미터를 무시하고 일봉을 주는 경우도 걸러냄).
-# 실패한 (간격 후보)는 6시간 동안 다시 시도하지 않는다 → 매 요청마다 실패 호출이 쌓이지 않게.
-_INTRA_TRY = {
-    "10m": [("10m", None), ("5m", "10min")],     # (토스 interval, 리샘플 규칙)
-    "1h":  [("1h", None), ("60m", None)],
-}
-_INTRA_SEC = {"10m": 600, "5m": 300, "1h": 3600, "60m": 3600}
-_intra_bad = {}            # toss interval → 실패 시각
-_INTRA_BAD_TTL = 6 * 3600
+# ── 분봉 · 시간봉 (토스 1분봉 → 10분·1시간 리샘플) ─────────────────────────────
+# 토스 /api/v1/candles 는 interval 1m(1분봉)과 1d(일봉)만 공식 지원한다 (5m·10m·1h·60m 미지원, 2026-11 사용자 확인).
+# 그래서 분·시간봉은 1분봉을 받아 pandas 로 묶는다. 과거 구간은 app.py 가 yfinance 로 채우고 토스 구간으로 최신 부분을 덮어쓴다.
+MINUTE_MAX_PAGES = 8            # 200봉 × 8 = 1600분 ≈ 정규장 4거래일 (한국·미국 모두 하루 390분)
+MINUTE_TIME_BUDGET = 2.0        # 초. 이 시간을 넘기면 받은 데까지만 쓴다
+SESSION_OPEN = {"KR": (9, 0), "US": (9, 30)}
+EXCHANGE_TZ = {"KR": "Asia/Seoul", "US": "America/New_York"}
 _AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+_minute_cache = {}              # toss_symbol → (ts, DataFrame)
+_MINUTE_TTL = 20
 
 
-def _spacing_ok(df, want_sec):
-    """같은 날 안의 봉 간격 중앙값이 요청 간격과 같은지 (점심·장 마감 공백은 제외)."""
-    if df is None or len(df) < 10:
-        return False
-    d = df.index.to_series().diff().dt.total_seconds().dropna()
-    d = d[d < 4 * 3600]
-    return len(d) >= 5 and abs(float(d.median()) - want_sec) < 1
+def market_of(ticker):
+    t = (ticker or "").upper()
+    return "KR" if t.endswith(".KS") or t.endswith(".KQ") else "US"
 
 
-def get_intraday_df(ticker, interval, pages=5):
-    """토스 분봉(10m)·시간봉(1h). 지원하지 않거나 실패하면 None (호출한 쪽이 yfinance 로 폴백).
-    Returns (df, used_interval) — used_interval 은 실제로 받은 토스 간격 (예: '5m' 을 10분으로 리샘플)."""
-    if not is_enabled() or not is_eligible(ticker) or interval not in _INTRA_TRY:
-        return None, None
+def get_minute_df(ticker, max_pages=MINUTE_MAX_PAGES, time_budget=MINUTE_TIME_BUDGET):
+    """토스 1분봉 (최근 → 과거로 페이지를 넘기며 최대 max_pages, time_budget 초 안에서).
+    Returns DataFrame (거래소 시간대 tz-aware 인덱스, 오름차순) 또는 None."""
+    if not is_enabled() or not is_eligible(ticker):
+        return None
     sym = to_toss_symbol(ticker)
     now = time.time()
-    for tiv, rule in _INTRA_TRY[interval]:
-        if now - _intra_bad.get(tiv, 0) < _INTRA_BAD_TTL:
-            continue
-        rows, before = [], None
-        try:
-            for _ in range(pages):
-                batch, nxt = _get_candles_page(sym, count=200, before=before, interval=tiv, raise_http=True)
-                if not batch:
-                    break
-                rows.extend(batch)
-                if len(batch) < 200:
-                    break
-                if not nxt:
-                    try:
-                        nxt = min(c.get("timestamp") for c in batch if c.get("timestamp"))
-                    except (ValueError, TypeError):
-                        break
-                if not nxt or nxt == before:
-                    break
-                before = nxt
-        except requests.HTTPError as e:
-            code = getattr(e.response, "status_code", None)
-            log.info(f"[toss] intraday {sym} interval={tiv} HTTP {code} → 미지원으로 보고 6시간 건너뜀")
-            _intra_bad[tiv] = now
-            continue
-        df = _candles_to_df(rows)
-        if not _spacing_ok(df, _INTRA_SEC[tiv]):
-            log.info(f"[toss] intraday {sym} interval={tiv} 응답 없음 또는 봉 간격 불일치 → 건너뜀")
-            if df is not None and len(df) >= 10:
-                _intra_bad[tiv] = now          # 파라미터를 무시하고 다른 간격을 주는 경우
-            continue
-        if rule:
-            df = df.resample(rule).agg(_AGG).dropna(subset=["Close"])
-        return df, tiv
-    return None, None
+    hit = _minute_cache.get(sym)
+    if hit and now - hit[0] < _MINUTE_TTL:
+        return hit[1]
+    rows, before, seen = [], None, set()
+    t0 = time.time()
+    for _ in range(max_pages):
+        batch, nxt = _get_candles_page(sym, count=200, before=before, interval="1m")
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < 200 or time.time() - t0 > time_budget:
+            break
+        if not nxt:
+            try:
+                nxt = min(c.get("timestamp") for c in batch if c.get("timestamp"))
+            except (ValueError, TypeError):
+                break
+        if not nxt or nxt in seen:
+            break
+        seen.add(nxt)
+        before = nxt
+    df = _candles_to_df(rows)
+    if df is None or df.empty:
+        return None
+    df = df.tz_convert(EXCHANGE_TZ[market_of(ticker)]) if getattr(df.index, "tz", None) is not None \
+        else df.tz_localize("UTC").tz_convert(EXCHANGE_TZ[market_of(ticker)])
+    _minute_cache[sym] = (now, df)
+    return df
+
+
+def resample_minutes(df, minutes, market):
+    """1분봉 → N분봉. 버킷은 거래소 장 시작 시각에 맞춘다 (미국 1시간봉 = 09:30·10:30…, 한국 = 09:00·10:00…).
+    라벨은 버킷 시작 시각(yfinance 와 같음). 거래 없는 버킷은 버린다."""
+    if df is None or df.empty:
+        return df
+    oh, om = SESSION_OPEN[market]
+    offset = pd.Timedelta(minutes=(oh * 60 + om) % minutes)
+    out = (df[["Open", "High", "Low", "Close", "Volume"]]
+           .resample(f"{minutes}min", origin="start_day", offset=offset, label="left", closed="left")
+           .agg(_AGG).dropna(subset=["Close"]))
+    return out
+
+
+def get_intraday_df(ticker, interval):
+    """토스 1분봉을 받아 10m / 1h 로 리샘플. Returns (df, n_minute) — 실패 시 (None, 0).
+    가장 오래된 날은 1분봉이 중간부터 잘려 있을 수 있어(페이지 한도) 그날은 버리고 완전한 날부터 쓴다."""
+    if interval not in ("10m", "1h"):
+        return None, 0
+    m1 = get_minute_df(ticker)
+    if m1 is None or m1.empty:
+        return None, 0
+    days = m1.index.normalize()
+    if days.nunique() > 1:
+        m1 = m1[days > days.min()]
+    market = market_of(ticker)
+    out = resample_minutes(m1, 10 if interval == "10m" else 60, market)
+    return out, len(m1)
 
 
 # ── 환율 ───────────────────────────────────────────────────
