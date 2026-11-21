@@ -4967,27 +4967,62 @@ def _fetch_benchmark_history(symbol, lookback_days=400):
         return cached["data"] if cached else []
 
 
+def _ffill_benchmark(series, extra_dates):
+    """주말·휴장일(내 자산 스냅샷은 있는데 지수 종가가 없는 날)에 직전 거래일 수익률을 채워 선이 끊기지 않게.
+    series: [{date, return_pct}] (오름차순), extra_dates: 'YYYY-MM-DD' 목록. 첫 지수 값 이전 날짜는 채우지 않는다."""
+    if not series:
+        return series
+    have = {p["date"]: p["return_pct"] for p in series}
+    first = series[0]["date"]
+    dates = sorted(set(have) | {d for d in extra_dates if d and d >= first})
+    out, last = [], None
+    for d in dates:
+        if d in have:
+            last = have[d]
+            out.append({"date": d, "return_pct": last})
+        elif last is not None:
+            out.append({"date": d, "return_pct": last, "filled": True})
+    return out
+
+
+def _max_drawdown_pct(user_id):
+    """일별 자산 스냅샷 기준 최대 낙폭(%). 고점 대비 가장 크게 빠진 비율, 데이터 2개 미만이면 0."""
+    rows = [r[0] for r in db.session.query(AssetSnapshot.total_assets_krw)
+            .filter_by(user_id=user_id).order_by(AssetSnapshot.date.asc()).all() if r[0]]
+    peak, mdd = None, 0.0
+    for v in rows:
+        peak = v if peak is None or v > peak else peak
+        if peak > 0:
+            mdd = min(mdd, (v / peak - 1) * 100)
+    return round(mdd, 2)
+
+
 def _normalize_benchmark(history, start_date_str):
     """벤치마크 종가 시계열을 start_date 기준 % 수익률로 변환.
     Returns: list of {"date": "YYYY-MM-DD", "return_pct": float}
     """
     if not history or not start_date_str:
         return []
-    # start_date 이후 첫 종가를 baseline으로 사용
-    baseline = None
+    # 기준 = 시작일 당일(또는 그 직전 거래일) 종가. 주말·휴장일에 시작해도 그날 0% 로 선이 시작되고
+    # 다음 거래일까지 비지 않는다 (예전엔 '시작일 이후 첫 종가'라 주말 시작이면 월요일까지 지수선이 없었다)
+    before = [pt for pt in history if pt["date"] <= start_date_str and pt.get("close")]
+    after = [pt for pt in history if pt["date"] > start_date_str and pt.get("close")]
+    if before:
+        base_pt = before[-1]
+    elif after:
+        base_pt = after[0]
+    else:
+        return []
+    baseline = base_pt["close"]
+    if not baseline or baseline <= 0:
+        return []
     out = []
+    if base_pt["date"] < start_date_str:
+        out.append({"date": start_date_str, "return_pct": 0.0, "filled": True})
     for pt in history:
-        if pt["date"] < start_date_str:
+        if pt["date"] < start_date_str or not pt.get("close"):
             continue
-        if baseline is None:
-            baseline = pt["close"]
-            if not baseline or baseline <= 0:
-                baseline = None
-                continue
-        out.append({
-            "date": pt["date"],
-            "return_pct": round((pt["close"] / baseline - 1) * 100, 3),
-        })
+        out.append({"date": pt["date"], "return_pct": round((pt["close"] / baseline - 1) * 100, 3)})
     return out
 
 
@@ -5269,7 +5304,9 @@ def trading_dashboard():
             "total_sells":  len(sells),
             "wins":         wins,
             "win_rate":     round(win_rate, 1),
+            "max_drawdown_pct": _max_drawdown_pct(user.id),
         },
+        "real_holdings_count": Holding.query.filter_by(user_id=user.id).count(),
         "newly_earned_badges": new_badges,   # 이번 호출에 새로 받은 배지 키 목록
         "nickname":            user.nickname,
     })
@@ -5286,10 +5323,16 @@ def realtime_price():
         return jsonify({"error": "ticker 필요"}), 400
     price = _fetch_current_price(ticker)
     currency = "KRW" if (ticker.endswith(".KS") or ticker.endswith(".KQ")) else "USD"
+    # 정규장 시간인지 (모달의 '실시간' / '장 마감 종가' 배지). 공휴일은 판단하지 못한다
+    try:
+        market_open = trend_setups.session_progress("KR" if currency == "KRW" else "US") is not None
+    except Exception:
+        market_open = None
     return jsonify({
         "ticker": ticker,
         "price": round(float(price), 6) if price else None,
         "currency": currency,
+        "market_open": market_open,
     })
 
 
@@ -5809,12 +5852,13 @@ def trading_history():
     kospi_hist = _fetch_benchmark_history("^KS11", lookback_days=lookback)
     sp500_hist = _fetch_benchmark_history("^GSPC", lookback_days=lookback)
 
+    snap_dates = [s["date"] for s in snap_series if s["date"]]
     return jsonify({
         "snapshots":           snap_series,
         "initial_capital_krw": round(initial),
         "benchmarks": {
-            "kospi": _normalize_benchmark(kospi_hist, start_date_str),
-            "sp500": _normalize_benchmark(sp500_hist, start_date_str),
+            "kospi": _ffill_benchmark(_normalize_benchmark(kospi_hist, start_date_str), snap_dates),
+            "sp500": _ffill_benchmark(_normalize_benchmark(sp500_hist, start_date_str), snap_dates),
         },
         "start_date": start_date_str,
     })
