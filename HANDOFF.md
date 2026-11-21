@@ -60,9 +60,11 @@
 ### 모바일 반응형 일괄 정리 (PR #31) — 갤럭시 폴드 커버·펼침, 360~720px
 - **발굴 세부 필터 오버플로우**: `.sc-filter-grid` 가 `repeat(2, 1fr)` 라 열 최소 폭이 입력창 고유 폭(약 298px)을 따라가
   360px 에서 카드 밖으로 313px 넘쳤다. `minmax(0, 1fr)` + 입력창 `width:100%; min-width:0; box-sizing:border-box`, 480px 이하 1열.
-- **헤더**: 로고를 `<span class="logo-icon">` + `<span class="logo-text">` 로 나눠 430px 이하에선 글자 span 만 숨김(`::first-letter` 핵 삭제).
-  메뉴 5개 축소를 480px(7px/12px) → 400px(5px/11.5px) → 350px(4px/11px) 단계로. 이름을 숨기는 480px 이하에선 프로필을 32px 정원형 배지로.
-  (430px 이하에서는 기존대로 아바타를 숨기고 종·로그아웃만)
+- **헤더**: 로고를 `<span class="logo-icon">` + `<span class="logo-text">` 로 나눠 560px 이하에선 글자 span 만 숨김(`::first-letter` 핵 삭제).
+  메뉴 5개 여백: 768px(10px) → 640px(8px) → 540px(7px/12px) → 400px(5px/11.5px) → 350px(4px/11px).
+  768px 이하에선 프로필 이름을 숨기고 32px 정원형 배지(430px 이하는 기존대로 아바타 숨김, 종·로그아웃만).
+  검증 중 발견: **로그인 상태 481~600px(폴드 펼침)에서 '로그아웃'이 화면 오른쪽 밖으로 최대 74px 밀려 있었다** (body clip 때문에 가로 스크롤 없이 잘려 보임). 위 단계로 해소.
+- AI 봇 '표로 보기' 표가 스크롤 래퍼 없이 344px 에서 넘쳐 `.ab-scroll` 로 감쌈 (ai_bots.js).
 - **전역**: `html, body { overflow-x: clip }` (sticky 헤더 유지). AI 봇 모달 `width: min(520px, calc(100vw - 24px))`.
   스크리너 모바일 카드 종목명 줄바꿈, `.ab-scroll` 터치 스크롤, 종목 상세 DCF 기준점 480px 이하 한 줄씩(라벨 왼쪽·값 오른쪽),
   모의투자 빠른 매수 버튼 인라인 스타일 → `.qb-submit` (768px 이하 전체 폭).
