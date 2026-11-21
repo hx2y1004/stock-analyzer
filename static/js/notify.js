@@ -72,6 +72,7 @@
   const KIND_ICON = { signal_new: '🟢', signal_exit: '🏁', signal_cancel: '⚪' };
 
   async function openPanel() {
+    if (window.SAProfile) window.SAProfile.close(false);
     if (!panel) {
       panel = document.createElement('div');
       panel.className = 'notify-panel hidden';
@@ -404,6 +405,67 @@
   };
   window.SAWatch = SAWatch;
   window.SANotify = { openSettings, refresh: refreshCount };
+
+  // ── 프로필 메뉴 (헤더 우측 아바타 → 드롭다운: 이름·이메일 · 알림 설정 · 로그아웃) ──────────────
+  // 서버(_auth_area.html)가 같은 마크업을 먼저 그리고, 각 페이지 JS 가 /api/me 뒤에 SAProfile.html(user) 로 다시 그린다.
+  const CARET = '<svg class="profile-caret" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function profileHTML(u) {
+    u = u || {};
+    const name = u.name || '사용자';
+    const img = u.profile_image
+      ? `<img class="profile-img" src="${esc(u.profile_image)}" alt="" onerror="this.style.visibility='hidden'" />`
+      : '<span class="profile-img profile-img-ph" aria-hidden="true">👤</span>';
+    return `<div class="profile-menu">
+      <button type="button" class="profile-area profile-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="profileDropdown" aria-label="${esc(name)} 계정 메뉴">
+        ${img}<span class="profile-name">${esc(name)}</span>${CARET}
+      </button>
+      <div class="profile-dropdown" id="profileDropdown" role="menu" aria-label="계정" hidden>
+        <div class="pd-head"><span class="pd-name">${esc(name)}</span>${u.email ? `<span class="pd-email">${esc(u.email)}</span>` : ''}</div>
+        <button type="button" class="pd-item" role="menuitem" data-act="notify">알림 설정</button>
+        <a class="pd-item pd-logout" role="menuitem" href="/auth/logout">로그아웃</a>
+      </div>
+    </div>`;
+  }
+  function pmParts() {
+    const t = document.querySelector('.header-right .profile-trigger');
+    return t ? { t, m: t.parentElement.querySelector('.profile-dropdown') } : {};
+  }
+  function closeProfile(focusTrigger) {
+    const { t, m } = pmParts();
+    if (!m || m.hidden) return;
+    m.hidden = true; t.setAttribute('aria-expanded', 'false');
+    if (focusTrigger) t.focus();
+  }
+  function openProfile() {
+    const { t, m } = pmParts();
+    if (!m) return;
+    closePanel();                                   // 알림 패널과 동시에 열리지 않게
+    m.hidden = false; t.setAttribute('aria-expanded', 'true');
+    const first = m.querySelector('[role="menuitem"]');
+    if (first) first.focus();
+  }
+  document.addEventListener('click', (ev) => {
+    const trg = ev.target.closest('.profile-trigger');
+    const { m } = pmParts();
+    if (trg) { ev.preventDefault(); (m && m.hidden) ? openProfile() : closeProfile(false); return; }
+    if (m && !m.hidden && !ev.target.closest('.profile-dropdown')) closeProfile(false);
+    const act = ev.target.closest('.profile-dropdown [data-act="notify"]');
+    if (act) { closeProfile(false); openSettings(); }
+  });
+  document.addEventListener('keydown', (ev) => {
+    const { m } = pmParts();
+    if (!m || m.hidden) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); closeProfile(true); return; }
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      const items = [...m.querySelectorAll('[role="menuitem"]')];
+      const i = items.indexOf(document.activeElement);
+      const n = ev.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      ev.preventDefault(); items[n].focus();
+    }
+    if (ev.key === 'Tab') closeProfile(false);
+  });
+  window.SAProfile = { html: profileHTML, close: closeProfile };
+
 
   function init() {
     bell = document.getElementById('notifyBell');

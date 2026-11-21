@@ -12,15 +12,22 @@
 {%- endif %}
 <div id="authArea" class="auth-area">
   {%- if current_user.is_authenticated %}
-  <div class="profile-area">
-    {%- if current_user.profile_image %}
-    <img class="profile-img" src="{{ current_user.profile_image }}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--border);flex-shrink:0;" />
-    {%- else %}
-    <div class="profile-img" style="width:28px;height:28px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>
-    {%- endif %}
-    <span class="profile-name">{{ current_user.name or '사용자' }}</span>
+  {#- 프로필 메뉴: 아바타를 누르면 이름·이메일 · 알림 설정 · 로그아웃 (notify.js SAProfile 과 같은 마크업) #}
+  <div class="profile-menu">
+    <button type="button" class="profile-area profile-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="profileDropdown" aria-label="{{ current_user.name or '사용자' }} 계정 메뉴">
+      {%- if current_user.profile_image %}
+      <img class="profile-img" src="{{ current_user.profile_image }}" alt="" onerror="this.style.visibility='hidden'" />
+      {%- else %}
+      <span class="profile-img profile-img-ph" aria-hidden="true">👤</span>
+      {%- endif %}
+      <span class="profile-name">{{ current_user.name or '사용자' }}</span><svg class="profile-caret" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="profile-dropdown" id="profileDropdown" role="menu" aria-label="계정" hidden>
+      <div class="pd-head"><span class="pd-name">{{ current_user.name or '사용자' }}</span>{% if current_user.email %}<span class="pd-email">{{ current_user.email }}</span>{% endif %}</div>
+      <button type="button" class="pd-item" role="menuitem" data-act="notify">알림 설정</button>
+      <a class="pd-item pd-logout" role="menuitem" href="/auth/logout">로그아웃</a>
+    </div>
   </div>
-  <a href="/auth/logout" class="logout-btn">로그아웃</a>
   {%- else %}
   <button class="login-btn" onclick="{{ login_action }}">로그인</button>
   {%- endif %}

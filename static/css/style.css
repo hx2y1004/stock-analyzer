@@ -5362,8 +5362,8 @@ html, body { overflow-x: clip; }
   .nav { gap: 2px; }
   .nav-link { padding: 4px 7px; font-size: 12px; }
 }
-@media (max-width: 560px) {
-  /* 메뉴 5개 + 종·프로필·로그아웃이 들어가도록 560px 이하에서는 로고 아이콘만 */
+@media (max-width: 519px) {
+  /* 520px 미만에서만 로고 아이콘만 (로그아웃이 프로필 메뉴로 들어가 우측이 가벼워짐) */
   .logo { font-size: 16px; }
   .logo-text { display: none; }
 }
@@ -5538,3 +5538,60 @@ body.stock-mode .result { margin-top: 0; }
 /* 랭킹: 카드 사이 간격 0 → 다른 페이지와 같은 16px */
 .leaderboard-main { display: flex; flex-direction: column; gap: var(--page-gap); }
 .leaderboard-main > * { margin-top: 0; margin-bottom: 0; }
+
+/* ── 헤더 3영역 균형 + 프로필 드롭다운 (2026-11) ───────────────────────────────── */
+/* 모든 폭에서 [로고 | 메뉴 | 알림·프로필] = minmax(0,1fr) auto minmax(0,1fr) → 메뉴가 화면 정중앙.
+   (예전엔 768px 이하에서 flex space-between 이라 우측이 무거우면 메뉴가 왼쪽으로 쏠렸다) */
+.header-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); column-gap: 8px;
+  justify-content: initial; overflow: visible; }
+.header-inner > .logo { justify-self: start; min-width: 0; }
+.header-inner > .nav { justify-self: center; }
+.header-inner > .header-right { justify-self: end; min-width: 0; }
+.header-right .logout-btn { display: none; }               /* 로그아웃은 프로필 메뉴 안으로 */
+
+.profile-menu { position: relative; display: inline-flex; }
+.header-right .profile-trigger { display: inline-flex; align-items: center; gap: 6px; font: inherit; color: var(--text); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; }
+.profile-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.profile-trigger[aria-expanded="true"] { border-color: var(--accent); }
+.profile-img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: var(--border); flex-shrink: 0; }
+.profile-img-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--bg3); font-size: 14px; line-height: 1; }
+.profile-caret { color: var(--text2); flex-shrink: 0; margin-left: -2px; }
+.profile-dropdown { position: absolute; top: calc(100% + 8px); right: 0; z-index: 300; min-width: 220px;
+  max-width: calc(100vw - 2 * var(--page-pad)); background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.profile-dropdown[hidden] { display: none; }
+.pd-head { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--border-soft, var(--border)); min-width: 0; }
+.pd-name { font-size: 14px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-email { font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-item { display: flex; align-items: center; width: 100%; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--text); font: inherit; font-size: 14px; text-align: left; text-decoration: none; cursor: pointer; }
+.pd-item:hover, .pd-item:focus-visible { background: var(--bg3); outline: none; }
+.pd-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.pd-logout { color: var(--red); }
+
+/* 이름은 넓은 화면에서만, 좁으면 32px 원형 아바타(가운데 정렬) — 430px 이하에서도 숨기지 않는다(로그아웃 경로) */
+@media (max-width: 768px) {
+  .header-right .profile-trigger { display: inline-flex; padding: 0; width: 32px; height: 32px; gap: 0; justify-content: center; border-radius: 50%; }
+  .header-right .profile-trigger .profile-name, .header-right .profile-trigger .profile-caret { display: none; }
+  .header-right .profile-trigger .profile-img { width: 26px; height: 26px; }
+}
+
+/* ── 전 페이지 카드 간격 16px 통일 ─────────────────────────────────────────── */
+:root { --card-gap: 16px; }
+/* 컨테이너 첫 카드까지 위 여백 = 16px */
+.sc-main, .ab-main, .trading-main, .leaderboard-main, .trends-main { padding-top: var(--card-gap); margin-top: 0; }
+.sc-main, .sc-panel, .ab-main, .trading-main, .leaderboard-main { gap: var(--card-gap); }
+.ab-cards { gap: var(--card-gap); }
+/* 모의투자: 카드 8개를 감싼 #tradingDashboard 가 일반 블록이라 카드 사이가 0px 였다 */
+#tradingDashboard { display: flex; flex-direction: column; gap: var(--card-gap); }
+#tradingDashboard > * { margin-top: 0; margin-bottom: 0; }
+/* 종목 상세: 검색바 → 첫 카드 16px, 차트 아래 거래 버튼도 16px 간격(예전 12px 추가 여백) */
+body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: var(--card-gap); }
+.col-chart, .col-side, .main-grid, .bottom-grid { gap: var(--card-gap); }
+.col-chart > .trade-actions, .col-chart > #paperTradeActions + #tradeActions { margin-top: 0; }
+.main-grid { margin-bottom: var(--card-gap); }
+.result > .stock-header { margin-bottom: var(--card-gap); }
+@media (max-width: 640px) {
+  body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: var(--card-gap); }
+}

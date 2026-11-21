@@ -61,17 +61,7 @@ async function checkAuthAndLoad() {
       return;
     }
     currentUser = u;
-    // 인라인 style 로 강제 크기 (CSS 캐시 등 우회)
-    const imgStyle = 'width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--border);flex-shrink:0;';
-    const img = u.profile_image
-      ? `<img class="profile-img" src="${_escName(u.profile_image)}" style="${imgStyle}" />`
-      : `<div class="profile-img" style="${imgStyle};display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
-    document.getElementById('authArea').innerHTML = `
-      <div class="profile-area">
-        ${img}
-        <span class="profile-name">${_escName(u.name || '사용자')}</span>
-      </div>
-      <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
+    if (window.SAProfile) document.getElementById('authArea').innerHTML = SAProfile.html(u);
     document.getElementById('loginRequired').classList.add('hidden');
     document.getElementById('tradingDashboard').classList.remove('hidden');
     await loadDashboard();
