@@ -1,7 +1,7 @@
 # StockAnalyzer 작업 인계 문서
 
 > **다음 세션에서 가장 먼저 이 파일을 읽고 작업 시작할 것**
-> 마지막 업데이트: 2026-11-21 KST (모바일 반응형 일괄 정리 PR #31, 추세 셋업 2단 하이브리드 · 메뉴 개편 PR #30)
+> 마지막 업데이트: 2026-11-21 KST (종목 상세 차트 v2 PR #32, 모바일 반응형 PR #31, 추세 셋업 PR #30)
 
 ---
 
@@ -56,6 +56,23 @@
   지금은 맥락(`analysis_ctx`, 1시간)과 압축 분석 본문(`analysis_body`, 5분, 메모리 LRU 미사용·만료 즉시 삭제)을 DB에도 저장,
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
+
+### 종목 상세 차트 v2 (PR #32) — 모바일 터치·가독성 전면 개선
+- 차트 코드를 `main.js` 에서 **`static/js/chart.js`** 로 옮겨 새로 작성. API(`/api/chart`)와 지표 계산은 그대로.
+  main.js 는 `renderCharts(data)` 만 부르고, 툴바는 chart.js 가 이벤트 위임으로 처리(`window.SAChart` 로 상태 확인 가능).
+- **터치**: `handleScroll.vertTouchDrag=false`(세로 스와이프 = 페이지 스크롤), `horzTouchDrag=true`, `kineticScroll {touch:true, mouse:false}`,
+  `trackingMode.exitMode = OnTouchEnd`(누르고 있으면 크로스헤어, 떼면 해제).
+- **동기화**: 세 차트에 같은 날짜 칸(값 없으면 빈 칸)을 넣어 봉 번호를 맞춘 뒤 `subscribeVisibleLogicalRangeChange` 로 논리 범위,
+  `setCrosshairPosition` 으로 크로스헤어를 복사. LWC 범위 이벤트는 **비동기**라 '프로그램이 정한 범위'(`S._setRange`)와 비교해
+  사용자 조작일 때만 기간 프리셋 강조를 끈다.
+- **툴바 3줄**: 캔들/라인·일봉/주봉/월봉·⛶ 확대 / 1M·3M·6M·1Y·전체·↺ 리셋 / MA·BB·일목 | RSI·MACD | 색상. 모바일은 각 줄 가로 스크롤.
+  기본 기간: 일봉 6M, 주봉 1Y, 월봉 전체. 리셋 = 기본 기간 + 가격축 자동 + 우측 여백 5봉.
+- **가독성**: 차트 밖 상단 고정 범례(날짜·시고저종·등락률·거래량), 메인 하단 18% 거래량 히스토그램, 일목 구름대(시리즈 프리미티브, alpha 0.14),
+  기본은 MA 만 켬. RSI/MACD 는 PC 기본 켬, 640px 이하 기본 끔. 보조 차트 왼쪽 위에 현재값 라벨. 시간축은 맨 아래 차트에만.
+  원화 정수·쉼표, 달러 `$`·소수 2자리. 캔들 색: 한국 종목 빨강↑/파랑↓, 미국 초록↑/빨강↓ 자동 + 툴바 토글.
+- 저장(localStorage): `chartInd`(MA/BB/일목), `chartSubs`(RSI/MACD), `chartColor`('auto'|'kr'|'us').
+- 전체화면: `.chart-card.is-fullscreen`(fixed, inset 0, z 9999), 높이는 차트 시작 위치~화면 끝 실측, Esc·닫기, 배경 스크롤 잠금.
+- 다시 그릴 때 이전 차트를 `chart.remove()`·ResizeObserver 해제 (예전엔 봉 전환마다 차트가 쌓였다).
 
 ### 모바일 반응형 일괄 정리 (PR #31) — 갤럭시 폴드 커버·펼침, 360~720px
 - **발굴 세부 필터 오버플로우**: `.sc-filter-grid` 가 `repeat(2, 1fr)` 라 열 최소 폭이 입력창 고유 폭(약 298px)을 따라가

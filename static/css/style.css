@@ -5406,3 +5406,65 @@ html, body { overflow-x: clip; }
 @media (max-width: 768px) {
   .qb-submit { width: 100%; padding: 12px 16px; }
 }
+
+/* ── 종목 상세 차트 v2: 툴바 · 고정 OHLC 범례 · 전체화면 ─────────────────────── */
+.chart-toolbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.ct-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ct-group { display: inline-flex; gap: 4px; flex: 0 0 auto; }
+.ct-sep { width: 1px; height: 18px; background: var(--border); flex: 0 0 auto; }
+.chart-toolbar button { -webkit-tap-highlight-color: transparent; }
+.chart-toolbar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chart-btn.active, .chart-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,.1); }
+.chart-btn:hover { color: var(--text); }
+.ind-chip { font-family: inherit; }
+.ind-chip[aria-pressed="true"] { background: rgba(88,166,255,0.15); border-color: var(--accent); color: var(--accent); }
+.ct-ranges button { min-width: 40px; height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg3);
+  color: var(--text2); font-size: 12.5px; font-weight: 700; cursor: pointer; font-variant-numeric: tabular-nums; }
+.ct-ranges button.active { border-color: var(--text); color: var(--text); background: rgba(240,246,252,.08); }
+@media (hover: hover) { .ct-ranges button:hover { color: var(--text); } }
+.ct-icon-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg3); color: var(--text2); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
+.ct-icon-btn:hover { color: var(--text); border-color: var(--text2); }
+.ct-fs { margin-left: auto; }
+.ct-color span { font-size: 11.5px; }
+
+/* 상단 고정 OHLC 범례: 차트 밖 한 줄 → 손가락에 가리지 않음, 높이 고정으로 흔들림 없음 */
+.chart-ohlc { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-height: 22px; padding: 4px 2px 6px;
+  font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.45; }
+.chart-ohlc .ol-date { color: var(--text2); font-weight: 600; }
+.chart-ohlc.is-hover .ol-date { color: var(--accent); }
+.chart-ohlc .ol-kv { white-space: nowrap; }
+.chart-ohlc .ol-kv i { font-style: normal; color: var(--text2); margin-right: 3px; font-size: 11.5px; }
+.chart-ohlc b { font-weight: 700; }
+
+.sub-chart[hidden] { display: none; }
+.main-chart, .sub-chart { height: auto; position: relative; touch-action: pan-y; }
+#rsiChart.sub-chart, #macdChart.sub-chart { height: auto; margin-top: 4px; border-top: 1px solid var(--border-soft, var(--border)); }
+.chart-legend { white-space: nowrap; }
+.chart-legend .cl-v { font-weight: 700; font-variant-numeric: tabular-nums; }
+.chart-legend .cl-sub { color: var(--text2); margin-left: 4px; }
+.chart-legend .cl-hot { color: var(--red); font-weight: 600; }
+.chart-legend .cl-cold { color: var(--green); font-weight: 600; }
+
+/* 전체화면 */
+.chart-card.is-fullscreen { position: fixed; inset: 0; z-index: 9999; margin: 0; border-radius: 0; border: none; overflow-y: auto;
+  background: var(--bg2); padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.chart-card.is-fullscreen .chart-card-header { margin-bottom: 8px; }
+.chart-card.is-fullscreen .ct-fs { border-color: var(--text2); color: var(--text); }
+body.chart-fs-open { overflow: hidden; }
+
+@media (max-width: 640px) {
+  .chart-card-header { margin-bottom: 10px; }
+  /* 모바일: 각 줄을 한 줄로 유지하고 넘치면 가로 스크롤 */
+  .ct-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding-bottom: 1px; }
+  .ct-row::-webkit-scrollbar { display: none; }
+  .chart-btn, .interval-btn { padding: 5px 10px; font-size: 12px; }
+  .ct-ranges button { min-width: 0; padding: 0 9px; height: 30px; }
+  .ind-chip { padding: 5px 10px; font-size: 12px; }
+  .ct-icon-btn { padding: 0 9px; }
+  .chart-ohlc { font-size: 11.5px; gap: 1px 9px; min-height: 40px; align-content: flex-start; }
+  .chart-ohlc .ol-kv i { font-size: 10.5px; }
+}
+@media (max-width: 360px) {
+  .ct-fs span { display: none; }
+}

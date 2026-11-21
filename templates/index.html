@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=78" />
+  <link rel="stylesheet" href="/static/css/style.css?v=79" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -221,28 +221,48 @@
           <div class="chart-card-header">
             <h3 class="card-title">기술적 분석 차트 <span id="intervalBadge" class="interval-badge">일봉</span></h3>
           </div>
-          <div class="chart-controls">
-            <div class="ctrl-group">
-              <button class="chart-btn active" onclick="setChartType('candlestick')">캔들</button>
-              <button class="chart-btn" onclick="setChartType('line')">라인</button>
+          <div class="chart-toolbar" id="chartToolbar">
+            <div class="ct-row">
+              <div class="ct-group" role="group" aria-label="차트 종류">
+                <button type="button" class="chart-btn active" data-ctype="candlestick" aria-pressed="true">캔들</button>
+                <button type="button" class="chart-btn" data-ctype="line" aria-pressed="false">라인</button>
+              </div>
+              <div class="ct-group interval-group" role="group" aria-label="봉 단위">
+                <button type="button" class="interval-btn active" data-interval="1d" onclick="setChartInterval('1d')">일봉</button>
+                <button type="button" class="interval-btn" data-interval="1wk" onclick="setChartInterval('1wk')">주봉</button>
+                <button type="button" class="interval-btn" data-interval="1mo" onclick="setChartInterval('1mo')">월봉</button>
+              </div>
+              <button type="button" class="ct-icon-btn ct-fs" id="chartFsBtn" aria-label="차트 전체화면으로 보기" aria-pressed="false"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>확대</span></button>
             </div>
-            <div class="ctrl-group interval-group">
-              <button class="interval-btn active" data-interval="1d" onclick="setChartInterval('1d')">일봉</button>
-              <button class="interval-btn" data-interval="1wk" onclick="setChartInterval('1wk')">주봉</button>
-              <button class="interval-btn" data-interval="1mo" onclick="setChartInterval('1mo')">월봉</button>
+            <div class="ct-row">
+              <div class="ct-group ct-ranges" id="chartRanges" role="group" aria-label="기간">
+                <button type="button" data-range="1M" aria-pressed="false">1M</button>
+                <button type="button" data-range="3M" aria-pressed="false">3M</button>
+                <button type="button" data-range="6M" aria-pressed="false">6M</button>
+                <button type="button" data-range="1Y" aria-pressed="false">1Y</button>
+                <button type="button" data-range="ALL" aria-pressed="false">전체</button>
+              </div>
+              <button type="button" class="ct-icon-btn" id="chartResetBtn" title="기본 기간·여백·가격축으로 되돌리기">↺ 리셋</button>
             </div>
-            <div class="indicator-toggles">
-              <input type="checkbox" id="toggleMA" checked onchange="toggleIndicator('ma')" hidden />
-              <label for="toggleMA" class="ind-chip">📈 MA</label>
-              <input type="checkbox" id="toggleBB" checked onchange="toggleIndicator('bb')" hidden />
-              <label for="toggleBB" class="ind-chip">📊 BB</label>
-              <input type="checkbox" id="toggleIchimoku" checked onchange="toggleIndicator('ichimoku')" hidden />
-              <label for="toggleIchimoku" class="ind-chip">☁️ 일목</label>
+            <div class="ct-row ct-scroll">
+              <div class="ct-group" role="group" aria-label="겹쳐 보기">
+                <button type="button" class="ind-chip" data-ind="ma" aria-pressed="true">MA</button>
+                <button type="button" class="ind-chip" data-ind="bb" aria-pressed="false">BB</button>
+                <button type="button" class="ind-chip" data-ind="ichimoku" aria-pressed="false">일목</button>
+              </div>
+              <span class="ct-sep" aria-hidden="true"></span>
+              <div class="ct-group" role="group" aria-label="보조 지표">
+                <button type="button" class="ind-chip" data-sub="rsi" aria-pressed="false">RSI</button>
+                <button type="button" class="ind-chip" data-sub="macd" aria-pressed="false">MACD</button>
+              </div>
+              <span class="ct-sep" aria-hidden="true"></span>
+              <button type="button" class="ind-chip ct-color" id="chartColorBtn">🇰🇷 <span>빨강↑</span></button>
             </div>
           </div>
+          <div class="chart-ohlc" id="chartLegend" aria-live="off"></div>
           <div id="mainChart" class="main-chart"></div>
-          <div id="rsiChart" class="sub-chart"></div>
-          <div id="macdChart" class="sub-chart"></div>
+          <div id="rsiChart" class="sub-chart" hidden></div>
+          <div id="macdChart" class="sub-chart" hidden></div>
         </section>
 
         <!-- 차트 아래 거래 액션 버튼 -->
@@ -620,8 +640,8 @@
   </div>
 
   {% include "_footer.html" %}
-  <script src="/static/js/chart.js"></script>
+  <script src="/static/js/chart.js?v=2"></script>
   <script src="/static/js/notify.js?v=3"></script>
-  <script src="/static/js/main.js?v=73"></script>
+  <script src="/static/js/main.js?v=74"></script>
 </body>
 </html>
