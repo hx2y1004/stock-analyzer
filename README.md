@@ -183,7 +183,7 @@ stock-analyzer/
 | 관심종목 | `GET/POST /api/watchlist`, `DELETE /api/watchlist/<ticker>`, `GET /api/watchlist/quotes` |
 | 모의투자 | `GET /api/trading/dashboard`, `POST /api/trading/buy` (선택 `target_price`·`stop_loss_price`), `POST /api/trading/sell`, `PATCH /api/trading/holdings/<ticker>/targets`, `GET /api/trading/transactions`, `GET /api/trading/history` |
 | 랭킹 | `GET /api/leaderboard?metric=total\|7d\|30d&bots=1\|0` |
-| AI 봇 | `GET /api/ai-bots/overview`, `GET /api/ai-bots/chart?period=`, `GET /api/ai-bots/<봇>`, `GET /api/ai-bots/<봇>/trades`, `GET /api/bots/signals`, `GET /api/bots/signals/<id>`, `POST /api/admin/bots/run` (소유자) |
+| AI 봇 | `GET /api/ai-bots/overview`, `GET /api/ai-bots/chart?period=`, `GET /api/ai-bots/<봇>`, `GET /api/ai-bots/<봇>/trades`, `GET /api/stock-bots/<종목>` (종목 상세 봇 현황), `GET /api/bots/signals`, `GET /api/bots/signals/<id>`, `POST /api/admin/bots/run` (소유자) |
 | 알림 | `GET/PUT /api/signal-subscription`, `GET /api/notifications`, `POST /api/notifications/read` |
 | 스크리너 · 비교 | `GET /api/screener`, `GET /api/screener/meta`, `GET /api/compare?tickers=A,B,C` |
 | 웹 푸시 | `GET /api/push/vapid-public-key`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `POST /api/push/test` |

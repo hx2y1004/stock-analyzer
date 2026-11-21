@@ -245,10 +245,9 @@ body {
   display: grid;
   grid-template-columns: 3fr 2fr;
   gap: 16px;
-  align-items: stretch;
+  align-items: start;          /* 좌우 컬럼은 각자 콘텐츠 높이 (억지로 늘리지 않음) */
   margin-bottom: 16px;
 }
-.col-side { height: 100%; }
 
 /* 왼쪽: 차트 컬럼 (차트 + 트레이드 + 내 포지션) */
 .col-chart {
@@ -264,10 +263,6 @@ body {
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-}
-/* 우측 사이드바 마지막 카드가 컬럼 끝까지 늘어나서 빈 공간 채움 */
-.col-side > .card:last-of-type {
-  flex-grow: 1;
 }
 
 /* 하단 그리드: 애널리스트(좌) + 뉴스(우) */
@@ -516,7 +511,7 @@ body {
 
 /* 태블릿 (≤ 1024px): 그리드 → 1열 전환 */
 @media (max-width: 1024px) {
-  .main-grid { grid-template-columns: 1fr; }
+  .main-grid { grid-template-columns: 1fr; }   /* 1열: '다가오는 이벤트'는 JS가 우측 컬럼 끝(맨 아래)으로 옮긴다 */
   .bottom-grid {
     grid-template-columns: 1fr;
     align-items: start;       /* 모바일에선 stretch 불필요 */
@@ -2518,30 +2513,7 @@ body {
 }
 .add-submit-btn:hover { opacity: 0.85; }
 
-/* 포지션 카드 (col-chart 내부)
-   — 차트/트레이드 아래 남은 공간을 카드가 모두 차지하도록 stretch */
-.col-chart > #positionCard {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 260px;
-}
-#positionCard .card-title { flex-shrink: 0; }
-#positionCard #positionContent {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-/* 미보유: 콘텐츠 세로 가운데 정렬 → 빈 공간 자연스럽게 채움 */
-#positionContent .position-empty {
-  flex: 1;
-  justify-content: center;
-}
-/* 보유 중: 콘텐츠는 자연스럽게 위에서 채움 (필요 시 stretch) */
-#positionContent .position-holding {
-  flex: 1;
-  justify-content: flex-start;
-}
+/* 포지션 카드 (col-chart 내부): 자기 콘텐츠 높이만큼만 */
 
 /* ── 시장 컨텍스트 카드 ── */
 .market-context-card .mc-list {
@@ -5761,3 +5733,36 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .pos-manage-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .pos-manage-link.hidden { display: none; }
 @media (max-width: 480px) { .pos-card-head { margin-bottom: 12px; } }
+
+/* 종목 상세 'AI 봇 현황' 미니 카드 (보유 중이거나 최근 7일 신호가 있는 봇만) */
+.bot-status-note { font-size: 11px; color: var(--text2); white-space: nowrap; }
+.bot-status-list { display: flex; flex-direction: column; gap: 8px; }
+.bs-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  padding: 8px 12px; background: var(--bg3); border-radius: 8px; border-left: 3px solid var(--bs-color, var(--accent));
+}
+.bs-main { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.bs-badge { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.bs-state { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.bs-state.up { color: var(--green); } .bs-state.down { color: var(--red); } .bs-state.flat, .bs-state.sig { color: var(--accent); }
+.bs-state.muted { color: var(--text2); }
+.bs-levels { font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bs-levels b { font-weight: 600; color: var(--text); }
+.bs-link { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--text2); text-decoration: none; white-space: nowrap; }
+.bs-link:hover { color: var(--accent); }
+/* 좁은 화면: 배지·상태 / 목표·손절 + 링크 2줄 */
+@media (max-width: 600px) {
+  .bs-main { flex-basis: 100%; }
+}
+.bs-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* 내 포지션: 금액·비중 / 시나리오 줄 */
+.position-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.pe-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; background: var(--bg3); border-radius: 8px; padding: 8px; }
+.pe-row.scenario { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pe-item { text-align: center; padding: 2px 4px; min-width: 0; }
+.pe-label { font-size: 10px; color: var(--text2); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-val { font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pe-val.up { color: var(--green); } .pe-val.down { color: var(--red); }
+.pe-sub { font-weight: 600; opacity: .85; }
+.pe-note { font-size: 10px; color: var(--text2); text-align: right; }
