@@ -1494,17 +1494,6 @@ body {
   font-size: 14px;
   outline: none;
 }
-.trade-btn {
-  padding: 12px;
-  border-radius: 8px;
-  border: none;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-.buy-btn { background: var(--green); color: #fff; }
-.sell-btn { background: var(--red); color: #fff; }
 
 /* ── 애널리스트 ── */
 .analyst-consensus {
@@ -2639,34 +2628,6 @@ body {
   line-height: 1.5;
 }
 
-/* ── 차트 아래 거래 버튼 ── */
-.trade-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 12px;
-}
-.trade-btn {
-  flex: 1;
-  padding: 16px 10px;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-  transition: all 0.15s;
-  letter-spacing: -0.3px;
-}
-.trade-btn.buy  { background: rgba(63,185,80,0.15);  color: var(--green); border: 1px solid var(--green); }
-.trade-btn.sell { background: rgba(248,81,73,0.15);   color: var(--red);   border: 1px solid var(--red); }
-.trade-btn.del  { background: var(--bg2); color: var(--text2); border: 1px solid var(--border); }
-.trade-btn.buy:hover  { background: rgba(63,185,80,0.28); }
-.trade-btn.sell:hover { background: rgba(248,81,73,0.28); }
-.trade-btn.del:hover  { border-color: var(--red); color: var(--red); }
-.trade-btn.link { background: rgba(88,166,255,0.12); color: var(--accent); border: 1px solid var(--accent); font-size: 14px; }
-.trade-btn.link:hover  { background: rgba(88,166,255,0.22); }
-
-/* 모의투자/포트폴리오 액션 영역 사이 여백 */
-#paperTradeActions + #tradeActions { margin-top: 8px; }
 
 /* ── 내 포지션 카드 ── */
 .position-empty {
@@ -4103,30 +4064,6 @@ body {
 .pf-toss-btn:disabled { opacity: 0.6; cursor: default; }
 @media (max-width: 640px) {
   .pf-toss-btn, .pf-add-btn { font-size: 12px; padding: 6px 10px; }
-}
-
-/* 모의매매 실시간 단가 (readonly) */
-.live-price-tag {
-  font-size: 11px;
-  color: var(--red);
-  font-weight: 600;
-  margin-left: 4px;
-}
-.add-input.price-readonly {
-  background: rgba(88, 166, 255, 0.06);
-  border-color: var(--border);
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 16px;
-  cursor: default;
-  font-variant-numeric: tabular-nums;
-}
-.add-input.price-readonly:focus { outline: none; border-color: var(--border); }
-.price-hint {
-  margin: 6px 0 0;
-  font-size: 11px;
-  color: var(--text2);
-  line-height: 1.4;
 }
 
 /* 보유종목 표시 토글 (평가금/현재가 · 원/$) */
@@ -5589,7 +5526,6 @@ body.stock-mode .result { margin-top: 0; }
 /* 종목 상세: 검색바 → 첫 카드 16px, 차트 아래 거래 버튼도 16px 간격(예전 12px 추가 여백) */
 body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: var(--card-gap); }
 .col-chart, .col-side, .main-grid, .bottom-grid { gap: var(--card-gap); }
-.col-chart > .trade-actions, .col-chart > #paperTradeActions + #tradeActions { margin-top: 0; }
 .main-grid { margin-bottom: var(--card-gap); }
 .result > .stock-header { margin-bottom: var(--card-gap); }
 @media (max-width: 640px) {
@@ -5816,3 +5752,12 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .tt-exit-calc > div { padding: 6px 8px; }
   .tt-exit-calc b { font-size: 13px; }
 }
+
+/* 종목 상세 '내 포지션' 카드 헤더: 실제 포트폴리오 관리 링크 (차트 아래 거래 버튼 5개를 정리하면서 추가) */
+.pos-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.pos-card-head .card-title { margin-bottom: 0; }
+.pos-manage-link { font-size: 13px; font-weight: 600; color: var(--text2); text-decoration: none; white-space: nowrap; }
+.pos-manage-link:hover { color: var(--accent); }
+.pos-manage-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.pos-manage-link.hidden { display: none; }
+@media (max-width: 480px) { .pos-card-head { margin-bottom: 12px; } }

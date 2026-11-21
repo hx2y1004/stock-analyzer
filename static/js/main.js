@@ -4,7 +4,6 @@ let chartData = null;
 let currentInterval = '1d';
 let currentUser = null;
 let currentAnalysisTicker = null;
-let currentPositionId = null;
 let currentPositionData = null;
 let pfCollapsed = true;       // 포트폴리오 기본 상태: 접힘
 let pfAllHoldings = [];       // 마지막으로 불러온 전체 보유 종목
@@ -386,9 +385,30 @@ function renderAuthArea() {
   if (window.SAProfile) area.innerHTML = SAProfile.html(currentUser);     // 아바타 → 드롭다운(알림 설정 · 로그아웃)
 }
 
+// /#portfolioSection 진입: 위쪽 시황 카드가 늦게 그려지며 섹션을 밀어내므로 몇 번 다시 맞춘다.
+// 사용자가 직접 스크롤하면 바로 멈춘다.
+function _scrollToPortfolioSection() {
+  const sec = document.getElementById('portfolioSection');
+  let stopped = false;
+  const stop = () => { stopped = true; };
+  ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(ev => addEventListener(ev, stop, { once: true, passive: true }));
+  [0, 300, 800, 1500, 2500, 4000].forEach(ms => setTimeout(() => {
+    if (stopped) return;
+    const hdr = document.querySelector('.header');
+    const offset = (hdr ? hdr.getBoundingClientRect().height : 0) + 12;   // 고정 헤더에 가리지 않게
+    const delta = sec.getBoundingClientRect().top - offset;
+    if (Math.abs(delta) > 4) scrollTo({ top: scrollY + delta, behavior: 'instant' });
+  }, ms));
+}
+
 // ── 포트폴리오 ───────────────────────────────────────────────────────────────
 async function loadPortfolio() {
   document.getElementById('portfolioSection').classList.remove('hidden');
+  if (location.hash === '#portfolioSection' && !window._pfHashDone) {
+    window._pfHashDone = true;
+    switchPfTab('portfolio');
+    _scrollToPortfolioSection();
+  }
   const cards = document.getElementById('portfolioCards');
   cards.innerHTML = '<div class="pf-loading">불러오는 중...</div>';
   try {
@@ -594,9 +614,7 @@ async function deleteHolding(event, hid) {
   if (!confirm('이 종목을 포트폴리오에서 삭제할까요?')) return;
   await fetch(`/api/portfolio/${hid}`, { method: 'DELETE' });
   loadPortfolio();
-  currentPositionId   = null;
   currentPositionData = null;
-  renderTradeActions(null);
   renderPositionCard(null, null);
 }
 
@@ -863,8 +881,9 @@ function closeLoginModal(event) {
 // ── 내 포지션 카드 렌더링 ─────────────────────────────────────────────────
 function renderPositionCard(position, stock) {
   const el = document.getElementById('positionContent');
+  const manage = document.getElementById('posManageLink');
+  if (manage) manage.classList.toggle('hidden', !currentUser);
   currentPositionData = position;
-  currentPositionId   = position ? position.id : null;
 
   // 로그인 안 됨
   if (!currentUser) {
@@ -874,7 +893,6 @@ function renderPositionCard(position, stock) {
         <div class="position-empty-msg">로그인하면 보유 주식 기준<br>매매 타이밍을 분석해 드려요</div>
         <button class="position-login-btn" onclick="openLoginModal()">로그인하기</button>
       </div>`;
-    renderTradeActions(null);
     return;
   }
 
@@ -908,7 +926,6 @@ function renderPositionCard(position, stock) {
         <div class="position-empty-msg">이 종목을 보유하고 계신가요?</div>
         <button class="position-add-btn" onclick="openAddModal('${ticker}','${name}','${cur}')">+ 포트폴리오에 추가</button>
       </div>`;
-    renderTradeActions(null);
     return;
   }
 
@@ -975,64 +992,6 @@ function renderPositionCard(position, stock) {
       </div>` : ''}
     </div>`;
 
-  renderTradeActions(position, stock);
-}
-
-// ── 차트 아래 거래 버튼 표시 ────────────────────────────────────────────────
-function renderTradeActions(position, stock) {
-  const el = document.getElementById('tradeActions');
-  if (!position) {
-    el.classList.add('hidden');
-    return;
-  }
-  // 버튼에 최신 ticker/name/currency 반영
-  const cur  = position.currency || 'USD';
-  const name = stock ? stock.name : position.name;
-  el.querySelector('.buy').onclick  = () => openAddModal(position.ticker, name, cur);
-  el.querySelector('.sell').onclick = () => openSellModal();
-  el.querySelector('.del').onclick  = (e) => deleteHolding(e, position.id);
-  el.classList.remove('hidden');
-}
-
-// ── 모의 매도 모달 ───────────────────────────────────────────────────────────
-function openSellModal() {
-  if (!currentPositionData) return;
-  const p = currentPositionData;
-  const cur = p.currency || 'USD';
-  document.getElementById('sellModalDesc').textContent =
-    `${p.name || p.ticker} 보유 ${p.quantity}주 · 평균매입가 ${cur === 'KRW' ? Math.round(Number(p.purchase_price)).toLocaleString('ko-KR') + '원' : '$' + Number(p.purchase_price).toFixed(2)}`;
-  document.getElementById('sellCurrencyLabel').textContent = `(${cur})`;
-  document.getElementById('sellPrice').value = '';
-  document.getElementById('sellQty').value   = '';
-  document.getElementById('sellModal').classList.remove('hidden');
-}
-function closeSellModal(event) {
-  if (!event || event.target === document.getElementById('sellModal'))
-    document.getElementById('sellModal').classList.add('hidden');
-}
-async function submitSellHolding() {
-  const price = parseFloat(document.getElementById('sellPrice').value);
-  const qty   = parseFloat(document.getElementById('sellQty').value);
-  if (!price || !qty || qty <= 0) { alert('매도가와 수량을 입력해주세요'); return; }
-  if (!currentPositionId) return;
-
-  const p = currentPositionData;
-  const newQty = p.quantity - qty;
-
-  if (newQty <= 0) {
-    // 전량 매도 → 포지션 삭제
-    await fetch(`/api/portfolio/${currentPositionId}`, { method: 'DELETE' });
-  } else {
-    // 일부 매도 → 수량 업데이트
-    await fetch(`/api/portfolio/${currentPositionId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quantity: newQty }),
-    });
-  }
-  closeSellModal();
-  loadPortfolio();
-  if (currentAnalysisTicker === p.ticker) analyze();
 }
 
 function quickSearch(ticker) {
@@ -1148,7 +1107,6 @@ async function analyze() {
     renderScorecard(data.analysis.scorecard, data.stock);
     renderMetrics(data.stock, data.analysis);
     renderPositionCard(data.position || null, data.stock);
-    renderPaperTradeActions(data.stock);
     renderMarketContext(data.stock.market_context, data.stock.currency === 'KRW');
     renderUpcomingEvents(data.stock.upcoming_events);
     renderZones(data.analysis, data.stock);
@@ -3044,277 +3002,6 @@ function hideAddAC() {
   addAcItems = [];
   addAcIndex = -1;
 }
-
-// ════════════════════════════════════════════════════════════════════
-// 모의투자 (Paper Trading) — 분석 페이지 통합
-// ════════════════════════════════════════════════════════════════════
-let _paperDashboard = null;     // 대시보드 캐시 (현금, 포지션, 환율)
-let _paperSellMaxQty = 0;
-
-const _fmtKRW = (v) => v == null ? '—' : Math.round(v).toLocaleString('ko-KR') + '원';
-const _fmtNative = (v, cur) => {
-  if (v == null) return '—';
-  if (cur === 'KRW') return Math.round(v).toLocaleString('ko-KR') + '원';
-  return '$' + Number(v).toFixed(2);
-};
-
-// ── 분석 결과에 모의투자 버튼 렌더 ──
-async function renderPaperTradeActions(stock) {
-  const el = document.getElementById('paperTradeActions');
-  const sellBtn = document.getElementById('paperSellBtn');
-  if (!el || !stock) return;
-  // 로그인 필요
-  if (!currentUser) { el.classList.add('hidden'); return; }
-  el.classList.remove('hidden');
-  sellBtn.classList.add('hidden');
-
-  // 대시보드 가져와 해당 티커 보유 여부 확인
-  try {
-    const r = await fetch('/api/trading/dashboard');
-    if (!r.ok) return;
-    _paperDashboard = await r.json();
-    const pos = (_paperDashboard.positions || []).find(p => p.ticker === stock.ticker);
-    if (pos && pos.quantity > 0) {
-      sellBtn.classList.remove('hidden');
-      sellBtn.dataset.qty = pos.quantity;
-      sellBtn.dataset.avgPrice = pos.purchase_price;
-    }
-  } catch (e) { /* 무시 */ }
-}
-
-// ── 실시간 단가 폴링 (체결가는 서버가 강제하므로 화면은 참고용) ──
-let _paperPriceTimer = null;
-function startPaperPricePolling(ticker, priceInputId, onUpdate) {
-  stopPaperPricePolling();
-  const apply = async () => {
-    try {
-      const r = await fetch(`/api/realtime-price?ticker=${encodeURIComponent(ticker)}`);
-      const d = await r.json();
-      if (d && d.price) {
-        const el = document.getElementById(priceInputId);
-        if (el) el.value = d.currency === 'KRW' ? Math.round(d.price) : Number(d.price).toFixed(2);
-        if (onUpdate) onUpdate();
-      }
-    } catch (e) { /* 무시 */ }
-  };
-  apply();
-  _paperPriceTimer = setInterval(apply, 1000);
-}
-function stopPaperPricePolling() {
-  if (_paperPriceTimer) { clearInterval(_paperPriceTimer); _paperPriceTimer = null; }
-}
-
-// ── 매수 모달 ──
-function openPaperBuyFromAnalysis() {
-  if (!currentUser) { openLoginModal(); return; }
-  const stock = window._lastStock;
-  if (!stock) { alert('먼저 종목을 분석해주세요'); return; }
-  const cur = stock.currency || 'USD';
-  const price = stock.current_price || 0;
-
-  document.getElementById('paperBuyTicker').value   = stock.ticker;
-  document.getElementById('paperBuyName').value     = stock.name || stock.ticker;
-  document.getElementById('paperBuyCurrency').value = cur;
-  document.getElementById('paperBuyCurLabel').textContent = `(${cur})`;
-  document.getElementById('paperBuyDesc').textContent = `${stock.name || stock.ticker} (${stock.ticker})`;
-  document.getElementById('paperBuyPrice').value = cur === 'KRW' ? Math.round(price) : (price ? Number(price).toFixed(2) : '');
-  document.getElementById('paperBuyQty').value = '';
-  document.getElementById('paperBuyNote').value = '';
-  updatePaperBuySummary();
-  document.getElementById('paperBuyModal').classList.remove('hidden');
-  startPaperPricePolling(stock.ticker, 'paperBuyPrice', updatePaperBuySummary);
-  setTimeout(() => document.getElementById('paperBuyQty').focus(), 50);
-}
-
-function closePaperBuyModal(event) {
-  if (!event || event.target === document.getElementById('paperBuyModal')) {
-    document.getElementById('paperBuyModal').classList.add('hidden');
-    stopPaperPricePolling();
-  }
-}
-
-function updatePaperBuySummary() {
-  const cur = document.getElementById('paperBuyCurrency').value || 'USD';
-  const price = parseFloat(document.getElementById('paperBuyPrice').value) || 0;
-  const qty   = parseFloat(document.getElementById('paperBuyQty').value) || 0;
-  const amount = price * qty;
-  const fx = _paperDashboard ? _paperDashboard.exchange_rate : 1380;
-  const amount_krw = cur === 'KRW' ? amount : amount * fx;
-  const fee = Math.round(amount_krw * 0.001);
-  const total = amount_krw + fee;
-  const cash = _paperDashboard ? _paperDashboard.cash_krw : 0;
-  const remain = cash - total;
-
-  document.getElementById('paperBuySummary').innerHTML = `
-    <div class="ts-row"><span>매수 금액 (${cur})</span><span>${cur === 'KRW' ? _fmtKRW(amount) : '$' + amount.toFixed(2)}</span></div>
-    ${cur === 'USD' ? `<div class="ts-row"><span>KRW 환산 (₩${fx})</span><span>${_fmtKRW(amount_krw)}</span></div>` : ''}
-    <div class="ts-row"><span>수수료 (0.1%)</span><span>${_fmtKRW(fee)}</span></div>
-    <div class="ts-row total"><span>총 차감액</span><span>${_fmtKRW(total)}</span></div>
-    <div class="ts-row ${remain < 0 ? 'warn' : ''}"><span>매수 후 현금</span><span>${_fmtKRW(remain)}</span></div>
-  `;
-}
-
-async function submitPaperBuy() {
-  const ticker = document.getElementById('paperBuyTicker').value;
-  const name   = document.getElementById('paperBuyName').value;
-  const price  = parseFloat(document.getElementById('paperBuyPrice').value);
-  const qty    = parseFloat(document.getElementById('paperBuyQty').value);
-  const note   = (document.getElementById('paperBuyNote').value || '').trim();
-  if (!qty || qty <= 0) { alert('수량을 입력해주세요'); return; }
-  if (!price || price <= 0) { alert('현재가를 불러오는 중입니다. 잠시 후 다시 시도해주세요'); return; }
-  // 체결가는 서버 실시간가로 강제됨 (price 미전송 → 조작 차단)
-  try {
-    const r = await fetch('/api/trading/buy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, name, quantity: qty, note }),
-    });
-    const d = await r.json();
-    if (!r.ok) { alert(d.error || '매수 실패'); return; }
-    closePaperBuyModal();
-    if (confirm(`✅ ${ticker} ${qty}주 모의 매수 완료!\n\n모의투자 대시보드로 이동할까요?`)) {
-      window.location.href = '/trading';
-    } else {
-      // 현재 페이지 머무는 경우 — 대시보드 캐시 갱신해서 매도 버튼 노출
-      await renderPaperTradeActions(window._lastStock);
-    }
-  } catch (e) { alert('네트워크 오류: ' + (e.message || e)); }
-}
-
-// ── 매도 모달 ──
-function openPaperSellFromAnalysis() {
-  if (!currentUser) { openLoginModal(); return; }
-  const stock = window._lastStock;
-  if (!stock) return;
-  const sellBtn = document.getElementById('paperSellBtn');
-  const maxQty = parseFloat(sellBtn.dataset.qty || '0');
-  const avg = parseFloat(sellBtn.dataset.avgPrice || '0');
-  if (!maxQty) { alert('이 종목의 모의투자 보유 수량이 없습니다'); return; }
-
-  const cur = stock.currency || 'USD';
-  const price = stock.current_price || 0;
-
-  document.getElementById('paperSellTicker').value = stock.ticker;
-  document.getElementById('paperSellCurrency').value = cur;
-  document.getElementById('paperSellCurLabel').textContent = `(${cur})`;
-  document.getElementById('paperSellDesc').textContent =
-    `${stock.name || stock.ticker} (${stock.ticker}) · 보유 ${maxQty}주 · 평균 ${_fmtNative(avg, cur)}`;
-  document.getElementById('paperSellPrice').value = cur === 'KRW' ? Math.round(price) : (price ? Number(price).toFixed(2) : '');
-  document.getElementById('paperSellQty').value = '';
-  document.getElementById('paperSellNote').value = '';
-  document.getElementById('paperSellMaxQty').textContent = maxQty;
-  _paperSellMaxQty = maxQty;
-  updatePaperSellSummary();
-  document.getElementById('paperSellModal').classList.remove('hidden');
-  startPaperPricePolling(stock.ticker, 'paperSellPrice', updatePaperSellSummary);
-  setTimeout(() => document.getElementById('paperSellQty').focus(), 50);
-}
-
-function closePaperSellModal(event) {
-  if (!event || event.target === document.getElementById('paperSellModal')) {
-    document.getElementById('paperSellModal').classList.add('hidden');
-    stopPaperPricePolling();
-  }
-}
-
-function setPaperSellMax() {
-  document.getElementById('paperSellQty').value = Math.floor(_paperSellMaxQty);
-  updatePaperSellSummary();
-}
-
-function updatePaperSellSummary() {
-  const cur = document.getElementById('paperSellCurrency').value || 'USD';
-  const price = parseFloat(document.getElementById('paperSellPrice').value) || 0;
-  const qty   = parseFloat(document.getElementById('paperSellQty').value) || 0;
-  const amount = price * qty;
-  const fx = _paperDashboard ? _paperDashboard.exchange_rate : 1380;
-  const amount_krw = cur === 'KRW' ? amount : amount * fx;
-  const fee = Math.round(amount_krw * 0.001);
-  const proceeds = amount_krw - fee;
-
-  // 손익 추정
-  const ticker = document.getElementById('paperSellTicker').value;
-  let pnl_estimate = null;
-  if (_paperDashboard && ticker) {
-    const pos = (_paperDashboard.positions || []).find(p => p.ticker === ticker);
-    if (pos) {
-      const cost_native = pos.purchase_price * qty;
-      const cost_krw = cur === 'KRW' ? cost_native : cost_native * fx;
-      pnl_estimate = amount_krw - cost_krw;
-    }
-  }
-
-  document.getElementById('paperSellSummary').innerHTML = `
-    <div class="ts-row"><span>매도 금액 (${cur})</span><span>${cur === 'KRW' ? _fmtKRW(amount) : '$' + amount.toFixed(2)}</span></div>
-    ${cur === 'USD' ? `<div class="ts-row"><span>KRW 환산 (₩${fx})</span><span>${_fmtKRW(amount_krw)}</span></div>` : ''}
-    <div class="ts-row"><span>수수료 (0.1%)</span><span>${_fmtKRW(fee)}</span></div>
-    <div class="ts-row total"><span>받을 금액</span><span>${_fmtKRW(proceeds)}</span></div>
-    ${pnl_estimate != null ? `<div class="ts-row ${pnl_estimate >= 0 ? 'up' : 'warn'}"><span>예상 손익</span><span>${pnl_estimate >= 0 ? '+' : ''}${_fmtKRW(pnl_estimate)}</span></div>` : ''}
-  `;
-}
-
-async function submitPaperSell() {
-  const ticker = document.getElementById('paperSellTicker').value;
-  const price  = parseFloat(document.getElementById('paperSellPrice').value);
-  const qty    = parseFloat(document.getElementById('paperSellQty').value);
-  const note   = (document.getElementById('paperSellNote').value || '').trim();
-  if (!qty || qty <= 0) { alert('수량을 입력해주세요'); return; }
-  if (!price || price <= 0) { alert('현재가를 불러오는 중입니다. 잠시 후 다시 시도해주세요'); return; }
-  if (qty > _paperSellMaxQty) { alert(`보유 수량(${_paperSellMaxQty})을 초과할 수 없습니다`); return; }
-  // 체결가는 서버 실시간가로 강제됨 (price 미전송 → 조작 차단)
-  try {
-    const r = await fetch('/api/trading/sell', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, quantity: qty, note }),
-    });
-    const d = await r.json();
-    if (!r.ok) { alert(d.error || '매도 실패'); return; }
-    closePaperSellModal();
-    const pnl = d.realized_pnl_krw || 0;
-    const msg = `✅ ${ticker} ${qty}주 모의 매도 완료!${pnl ? `\n실현 손익: ${pnl >= 0 ? '+' : ''}${_fmtKRW(pnl)}` : ''}\n\n모의투자 대시보드로 이동할까요?`;
-    if (confirm(msg)) {
-      window.location.href = '/trading';
-    } else {
-      await renderPaperTradeActions(window._lastStock);
-    }
-  } catch (e) { alert('네트워크 오류: ' + (e.message || e)); }
-}
-
-// ── 모달 입력 검증 (paper) ──
-function _stepPaper(modalType, inputId, direction) {
-  const input = document.getElementById(inputId);
-  if (!input) return;
-  const curEl = document.getElementById(modalType === 'buy' ? 'paperBuyCurrency' : 'paperSellCurrency');
-  const isKRW = (curEl.value || 'USD') === 'KRW';
-  let step = 1;
-  if (inputId.includes('Price')) step = isKRW ? 100 : 1;
-
-  let cur = parseFloat(input.value); if (isNaN(cur)) cur = 0;
-  let next = cur + direction * step;
-  if (next < 0) next = 0;
-  if (inputId.includes('Qty') || (inputId.includes('Price') && isKRW)) next = Math.round(next);
-  else next = Math.round(next * 100) / 100;
-  input.value = next;
-
-  if (modalType === 'buy') updatePaperBuySummary();
-  else                     updatePaperSellSummary();
-}
-
-// 모달 입력 이벤트 바인딩 (DOMContentLoaded에서)
-// 가격(paperBuyPrice/paperSellPrice)은 서버 실시간가로 자동 갱신되는 readonly 필드 — 수량만 조작 가능
-document.addEventListener('DOMContentLoaded', () => {
-  [['paperBuyQty', 'buy', updatePaperBuySummary], ['paperSellQty', 'sell', updatePaperSellSummary]].forEach(([id, type, upd]) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('input', upd);
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp')   { e.preventDefault(); _stepPaper(type, id, 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); _stepPaper(type, id, -1); }
-    });
-  });
-});
-
 
 // ── 섹터/테마 강도 ───────────────────────────────────────────
 let _sectorsLoadedOnce = false;
