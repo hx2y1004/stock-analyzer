@@ -179,9 +179,9 @@
       det.className = 'ab-table-view';
       $('#abChartNote').after(det);
     }
-    det.innerHTML = `<summary>표로 보기</summary><table class="ab-table"><thead><tr><th>구분</th><th>시작일</th><th>마지막 날짜</th><th>수익률</th></tr></thead><tbody>
+    det.innerHTML = `<summary>표로 보기</summary><div class="ab-scroll"><table class="ab-table"><thead><tr><th>구분</th><th>시작일</th><th>마지막 날짜</th><th>수익률</th></tr></thead><tbody>
       ${d.series.map((s) => { const a = s.data[0], z = s.data[s.data.length - 1]; return `<tr><td>${esc(s.name)}</td><td>${a ? esc(a.date) : '—'}</td><td>${z ? esc(z.date) : '—'}</td><td class="${dirCls(z && z.return_pct)}">${z ? pct(z.return_pct) : '—'}</td></tr>`; }).join('')}
-    </tbody></table>`;
+    </tbody></table></div>`;
   }
 
   // ── 봇 상세 ───────────────────────────────────────────────────────────
