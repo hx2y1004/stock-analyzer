@@ -980,19 +980,33 @@ async function renderStockBots(stock) {
 // ── 좌우 컬럼 길이 맞추기: '다가오는 이벤트'를 기본은 좌측(내 포지션 아래)에 두고,
 // PC 2열에서는 이벤트를 뺀 두 컬럼 높이를 재서 합쳤을 때 차이가 더 작은 쪽에 붙인다.
 // (AI 봇 카드·보유 정보로 좌측이 길어지는 종목은 우측으로) 1열(≤1024px)에서는 CSS order 로 맨 아래.
+const _BALANCE_FILL_MAX = 96;   // 이 이하로 차이 나면 짧은 쪽 마지막 카드를 살짝 늘려 아래 끝을 맞춘다
 function _balanceStockColumns() {
   const ev = document.getElementById('eventsCard');
   const L = document.querySelector('.col-chart'), R = document.querySelector('.col-side');
   if (!ev || !L || !R) return;
-  if (innerWidth <= 1024 || ev.classList.contains('hidden')) {
+  document.querySelectorAll('.main-grid .card[data-fill]').forEach((c) => { c.style.minHeight = ''; delete c.dataset.fill; });
+  if (innerWidth <= 1024) {
     if (ev.parentElement !== L) L.appendChild(ev);
     return;
   }
-  const evH = ev.getBoundingClientRect().height + 16;       // 카드 + --card-gap
-  const lH = L.getBoundingClientRect().height - (ev.parentElement === L ? evH : 0);
-  const rH = R.getBoundingClientRect().height - (ev.parentElement === R ? evH : 0);
-  const target = Math.abs(lH + evH - rH) <= Math.abs(rH + evH - lH) ? L : R;
-  if (ev.parentElement !== target) target.appendChild(ev);
+  if (!ev.classList.contains('hidden')) {
+    const evH = ev.getBoundingClientRect().height + 16;       // 카드 + --card-gap
+    const lH = L.getBoundingClientRect().height - (ev.parentElement === L ? evH : 0);
+    const rH = R.getBoundingClientRect().height - (ev.parentElement === R ? evH : 0);
+    const target = Math.abs(lH + evH - rH) <= Math.abs(rH + evH - lH) ? L : R;
+    if (ev.parentElement !== target) target.appendChild(ev);
+  }
+  // 남은 차이가 작으면 짧은 컬럼의 마지막 카드만 그만큼 늘려 두 컬럼 아래 끝을 맞춘다 (큰 차이는 그대로 둠)
+  const diff = L.getBoundingClientRect().height - R.getBoundingClientRect().height;
+  if (Math.abs(diff) >= 1 && Math.abs(diff) <= _BALANCE_FILL_MAX) {
+    const col = diff < 0 ? L : R;
+    const last = [...col.children].filter((c) => c.classList.contains('card') && !c.classList.contains('hidden')).pop();
+    if (last) {
+      last.style.minHeight = Math.round(last.getBoundingClientRect().height + Math.abs(diff)) + 'px';
+      last.dataset.fill = '1';
+    }
+  }
 }
 let _balanceRaf = 0;
 function _scheduleBalance() {
