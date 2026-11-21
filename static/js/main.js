@@ -879,6 +879,134 @@ function closeLoginModal(event) {
 }
 
 // ── 내 포지션 카드 렌더링 ─────────────────────────────────────────────────
+// 내 포지션 보강: 금액·비중 줄, 목표가·손절가 시나리오 줄 (분석 응답의 값으로 계산, 추가 호출 없음)
+function _positionExtra(position, analysis, fmtP) {
+  const qty = Number(position.quantity) || 0;
+  const buy = Number(position.purchase_price) || 0;
+  const curP = Number(position.current_price) || 0;
+  if (!qty || !buy) return '';
+  const cost = buy * qty;
+  const value = curP ? curP * qty : null;
+  const pf = position.portfolio;
+  const w = pf && pf.weight_pct != null ? `${pf.weight_pct.toFixed(1)}%` : '—';
+  const wTitle = pf && pf.count > 1
+    ? `보유 ${pf.count}종목 평가금 기준${pf.estimated ? ` · ${pf.estimated}종목은 최근 시세가 없어 매입가로 계산` : ''}`
+    : '보유 종목이 이 종목 하나';
+  const money = (v) => fmtP(Math.round(v), true);
+  const signed = (amt, pct) => {
+    const cls = amt > 0 ? 'up' : amt < 0 ? 'down' : '';
+    const sign = amt > 0 ? '+' : amt < 0 ? '−' : '';
+    return `<div class="pe-val ${cls}">${sign}${money(Math.abs(amt))} <span class="pe-sub">(${sign}${Math.abs(pct).toFixed(1)}%)</span></div>`;
+  };
+  let scenario = '';
+  const tgt = analysis ? Number(analysis.target_price) : NaN;
+  const stp = analysis ? Number(analysis.stop_loss) : NaN;
+  // 유효: 목표가는 현재가 위, 손절가는 현재가 아래 (현재가가 없으면 매입가 기준)
+  const ref = curP || buy;
+  const okT = tgt > 0 && tgt > ref;
+  const okS = stp > 0 && stp < ref && (!okT || stp < tgt);
+  if (okT || okS) {
+    const item = (label, px, ok) => ok
+      ? `<div class="pe-item"><div class="pe-label">${label} ${fmtP(px)}</div>${signed((px - buy) * qty, (px / buy - 1) * 100)}</div>`
+      : `<div class="pe-item"><div class="pe-label">${label}</div><div class="pe-val">—</div></div>`;
+    scenario = `
+      <div class="pe-row scenario" aria-label="목표가·손절가 시나리오">
+        ${item('목표가 도달', tgt, okT)}
+        ${item('손절가 이탈', stp, okS)}
+      </div>`;
+  }
+  return `
+      <div class="position-extra">
+        <div class="pe-row" aria-label="금액과 비중">
+          <div class="pe-item"><div class="pe-label">총 매입금</div><div class="pe-val">${money(cost)}</div></div>
+          <div class="pe-item"><div class="pe-label">현재 평가금</div><div class="pe-val">${value != null ? money(value) : '—'}</div></div>
+          <div class="pe-item" title="${wTitle}"><div class="pe-label">포트폴리오 비중</div><div class="pe-val">${w}</div></div>
+        </div>${scenario}
+      </div>`;
+}
+
+// ── 이 종목 AI 봇 현황 (보유 중이거나 최근 7일 신호가 있는 봇만, 없으면 카드 자체를 숨김) ──
+let _stockBotsReq = null;   // { ticker, promise }
+async function renderStockBots(stock) {
+  const card = document.getElementById('botStatusCard');
+  const list = document.getElementById('botStatusList');
+  if (!card || !list || !stock || !stock.ticker) return;
+  const ticker = stock.ticker;
+  if (!_stockBotsReq || _stockBotsReq.ticker !== ticker) {
+    _stockBotsReq = { ticker, promise: fetch(`/api/stock-bots/${encodeURIComponent(ticker)}`).then(r => r.ok ? r.json() : null).catch(() => null) };
+  }
+  const data = await _stockBotsReq.promise;
+  if (currentAnalysisTicker !== ticker) return;
+  const bots = (data && data.bots) || [];
+  if (!bots.length) { card.classList.add('hidden'); list.innerHTML = ''; return; }
+  const cur = stock.currency || (/\.(KS|KQ)$/i.test(ticker) ? 'KRW' : 'USD');
+  const fmt = (v) => v == null ? '—' : cur === 'KRW'
+    ? Math.round(v).toLocaleString('ko-KR') + '원'
+    : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const price = Number(stock.current_price) || null;
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const DONE = { TARGET_HIT: '익절 청산', STOP_LOSS: '손절 청산', TRAILING_STOP: '추적 손절 청산', TIME_STOP: '기간 만료 청산',
+                 TREND_EXIT: '추세 이탈 청산', AI_RISK_EXIT: '위험 감지 청산', CANCELLED: '신호 취소' };
+  list.innerHTML = bots.map((b) => {
+    const sg = b.signal || {};
+    let state, cls;
+    if (b.holding) {
+      const entry = Number(b.holding.entry_price) || 0;
+      const r = entry && price ? (price / entry - 1) * 100 : null;
+      cls = r == null ? 'flat' : r > 0 ? 'up' : r < 0 ? 'down' : 'flat';
+      state = r == null ? '보유 중' : `보유 중 ${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r).toFixed(1)}%`;
+    } else if (sg.status === 'PENDING' || sg.status === 'ACTIVE') {
+      cls = 'sig'; state = sg.status === 'PENDING' ? '최근 매수 신호 · 체결 대기' : '최근 매수 신호';
+    } else {
+      cls = 'muted';
+      const pnl = sg.pnl_pct != null ? ` ${sg.pnl_pct > 0 ? '+' : sg.pnl_pct < 0 ? '−' : ''}${Math.abs(sg.pnl_pct).toFixed(1)}%` : '';
+      state = `최근 신호 · ${DONE[sg.status] || '종료'}${sg.status === 'CANCELLED' ? '' : pnl}`;
+    }
+    const lv = [];
+    if (sg.target_price) lv.push(`목표 <b>${fmt(sg.target_price)}</b>`);
+    if (sg.stop_price) lv.push(`손절 <b>${fmt(sg.stop_price)}</b>`);
+    if (!b.holding && sg.signal_date) lv.push(`신호일 ${esc(sg.signal_date.slice(5).replace('-', '/'))}`);
+    return `
+      <div class="bs-row" style="--bs-color:${esc(b.color || 'var(--accent)')}">
+        <div class="bs-main"><span class="bs-badge">${esc(b.emoji || '🤖')} ${esc(b.name)}</span><span class="bs-state ${cls}">${state}</span></div>
+        ${lv.length ? `<div class="bs-levels">${lv.join(' · ')}</div>` : ''}
+        <a class="bs-link" href="/ai-bots#${encodeURIComponent(b.key)}" aria-label="${esc(b.name)} AI 봇 보기">AI 봇 보기 →</a>
+      </div>`;
+  }).join('');
+  card.classList.remove('hidden');
+  _balanceStockColumns();
+}
+
+// ── 좌우 컬럼 길이 맞추기: '다가오는 이벤트'를 기본은 좌측(내 포지션 아래)에 두고,
+// PC 2열에서는 이벤트를 뺀 두 컬럼 높이를 재서 합쳤을 때 차이가 더 작은 쪽에 붙인다.
+// (AI 봇 카드·보유 정보로 좌측이 길어지는 종목은 우측으로) 1열(≤1024px)에서는 CSS order 로 맨 아래.
+function _balanceStockColumns() {
+  const ev = document.getElementById('eventsCard');
+  const L = document.querySelector('.col-chart'), R = document.querySelector('.col-side');
+  if (!ev || !L || !R) return;
+  if (innerWidth <= 1024 || ev.classList.contains('hidden')) {
+    if (ev.parentElement !== L) L.appendChild(ev);
+    return;
+  }
+  const evH = ev.getBoundingClientRect().height + 16;       // 카드 + --card-gap
+  const lH = L.getBoundingClientRect().height - (ev.parentElement === L ? evH : 0);
+  const rH = R.getBoundingClientRect().height - (ev.parentElement === R ? evH : 0);
+  const target = Math.abs(lH + evH - rH) <= Math.abs(rH + evH - lH) ? L : R;
+  if (ev.parentElement !== target) target.appendChild(ev);
+}
+let _balanceRaf = 0;
+function _scheduleBalance() {
+  cancelAnimationFrame(_balanceRaf);
+  _balanceRaf = requestAnimationFrame(_balanceStockColumns);
+}
+if (window.ResizeObserver) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const ro = new ResizeObserver(_scheduleBalance);
+    document.querySelectorAll('.col-chart > .card:not(#eventsCard), .col-side > .card:not(#eventsCard)').forEach((c) => ro.observe(c));
+  });
+}
+addEventListener('resize', _scheduleBalance);
+
 function renderPositionCard(position, stock) {
   const el = document.getElementById('positionContent');
   const manage = document.getElementById('posManageLink');
@@ -901,7 +1029,7 @@ function renderPositionCard(position, stock) {
     const ticker = currentAnalysisTicker;
     const name   = stock ? stock.name : ticker;
     const cur    = (stock && stock.currency) || 'USD';
-    const price  = stock ? stock.price : null;
+    const price  = stock ? (stock.current_price ?? stock.price) : null;
     const fmtP_ = (v) => v == null ? '—' : cur === 'KRW'
       ? Math.round(v / 10) * 10 + '원'
       : '$' + Number(v).toFixed(2);
@@ -984,6 +1112,8 @@ function renderPositionCard(position, stock) {
         <div class="pg-item"><div class="pg-label">매입</div><div class="pg-val">${fmtP(position.purchase_price, true)}</div></div>
         <div class="pg-item"><div class="pg-label">현재</div><div class="pg-val">${fmtP(position.current_price)}</div></div>
       </div>
+
+      ${_positionExtra(position, analysis, fmtP)}
 
       ${rec ? `
       <div class="position-rec ${rec.color}">
@@ -1107,6 +1237,7 @@ async function analyze() {
     renderScorecard(data.analysis.scorecard, data.stock);
     renderMetrics(data.stock, data.analysis);
     renderPositionCard(data.position || null, data.stock);
+    renderStockBots(data.stock);
     renderMarketContext(data.stock.market_context, data.stock.currency === 'KRW');
     renderUpcomingEvents(data.stock.upcoming_events);
     renderZones(data.analysis, data.stock);
@@ -2684,6 +2815,7 @@ function renderUpcomingEvents(events) {
     // 빈 상태 표시 (카드는 노출)
     list.innerHTML = `<div class="event-empty">확정된 다가오는 이벤트가 없습니다 (실적·배당)</div>`;
     card.classList.remove('hidden');
+    _scheduleBalance();
     return;
   }
   const rows = events.map(e => {
@@ -2700,6 +2832,7 @@ function renderUpcomingEvents(events) {
   }).join('');
   list.innerHTML = rows;
   card.classList.remove('hidden');
+  _scheduleBalance();
 }
 
 // ── 애널리스트 ────────────────────────────────────────

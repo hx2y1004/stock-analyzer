@@ -3421,8 +3421,47 @@ def _position_for(ticker, stock_data, current_price, ai_result):
                     current_price, holding.purchase_price, ai_result.get("score", 0),
                     ai_result=ai_result,
                 ),
+                "portfolio":        _portfolio_weight(holding, current_price, correct_currency),
             }
     return position_data
+
+
+def _portfolio_weight(holding, current_price, currency):
+    """내 포트폴리오 안에서 이 종목의 평가금 비중(%). 외부 시세는 부르지 않는다.
+    이 종목은 분석 현재가, 다른 종목은 스크리너 스냅샷 가격(섹터맵이 장중 15분마다 갱신)을 쓰고,
+    스냅샷에 없으면 매입가로 본다. 통화가 섞여 있으면 USD를 환율(10분 캐시)로 원화 환산한다."""
+    try:
+        rows = Holding.query.filter_by(user_id=holding.user_id).all()
+        if not rows:
+            return None
+        if len(rows) == 1:
+            return {"weight_pct": 100.0, "count": 1, "estimated": 0}
+        others = [h.ticker for h in rows if h.id != holding.id]
+        snap = dict(db.session.query(ScreenerSnapshot.ticker, ScreenerSnapshot.price)
+                    .filter(ScreenerSnapshot.ticker.in_(others), ScreenerSnapshot.price.isnot(None)).all())
+        curs = {("KRW" if (h.ticker.endswith(".KS") or h.ticker.endswith(".KQ")) else (h.currency or "USD")) for h in rows}
+        fx = _get_usd_krw_rate() if len(curs) > 1 else 1.0
+        total = mine = 0.0
+        estimated = 0
+        for h in rows:
+            cur = "KRW" if (h.ticker.endswith(".KS") or h.ticker.endswith(".KQ")) else (h.currency or "USD")
+            if h.id == holding.id:
+                price = current_price or h.purchase_price
+            else:
+                price = snap.get(h.ticker)
+                if not price:
+                    price = h.purchase_price
+                    estimated += 1
+            v = float(price or 0) * float(h.quantity or 0) * (fx if (cur == "USD" and len(curs) > 1) else 1.0)
+            total += v
+            if h.id == holding.id:
+                mine = v
+        if total <= 0:
+            return None
+        return {"weight_pct": round(mine / total * 100, 1), "count": len(rows), "estimated": estimated}
+    except Exception as e:
+        app.logger.debug(f"[position] 비중 계산 실패: {e}")
+        return None
 
 
 # ── 분석 응답 캐시 (종목·봉 단위, 5분) ─────────────────────────────────────
@@ -6830,6 +6869,38 @@ def ai_bots_detail(key):
 
 
 _BOT_SIG_RE = re.compile(r"신호 #(\d+)")
+
+
+@app.route("/api/stock-bots/<path:ticker>")
+def stock_bots(ticker):
+    """종목 상세의 'AI 봇 현황' 미니 카드. 이 종목을 지금 보유 중이거나 최근 7일 안에 신호를 낸 봇만.
+    DB만 읽는다(시세 조회 없음). 수익률은 화면이 분석 현재가로 계산한다."""
+    from datetime import timedelta as _td
+    ticker = (ticker or "").strip().upper()[:30]
+    if not ticker:
+        return jsonify({"ticker": ticker, "bots": []})
+    since = datetime.utcnow() - _td(days=7)
+    open_pos = {p.strategy_key: p for p in BotPosition.query.filter_by(ticker=ticker, status="OPEN").all()}
+    recent = {}
+    for sg in (AiSignal.query.filter(AiSignal.ticker == ticker, AiSignal.created_at >= since)
+               .order_by(AiSignal.created_at.desc(), AiSignal.id.desc()).all()):
+        recent.setdefault(sg.strategy_key, sg)
+    keys = set(open_pos) | set(recent)
+    bots = []
+    for st in BotStrategy.query.order_by(BotStrategy.id).all():
+        if st.key not in keys:
+            continue
+        pos = open_pos.get(st.key)
+        sig = AiSignal.query.get(pos.signal_id) if pos else recent.get(st.key)
+        bots.append({
+            "key": st.key, "name": st.name, "emoji": st.emoji, "color": BOT_COLORS.get(st.key),
+            "holding": ({"entry_price": pos.entry_price, "quantity": pos.quantity, "currency": pos.currency,
+                         "opened_at": pos.opened_at.isoformat() + "Z" if pos.opened_at else None} if pos else None),
+            "signal": ({"id": sig.id, "side": sig.side, "status": sig.status, "signal_date": sig.signal_date.isoformat() if sig.signal_date else None,
+                        "entry_price": sig.entry_price, "target_price": sig.target_price, "stop_price": sig.stop_price,
+                        "pnl_pct": sig.pnl_pct} if sig else None),
+        })
+    return jsonify({"ticker": ticker, "bots": bots})
 
 
 @app.route("/api/ai-bots/<key>/trades")
