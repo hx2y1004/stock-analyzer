@@ -45,6 +45,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `screener.py` | 스크리너 스냅샷(`screener_snapshots`) 갱신·조회와 종목 비교. 가격은 섹터맵, 기술 지표는 봇 배치에서 받고 펀더멘탈은 7일 순환 |
 | `analysis/` | 기술적 분석(`indicators.py`, `advanced.py`), 종합 판단(`ai_analysis.py`), 밸류에이션과 DCF(`valuation.py`) |
 | `stock_db.json` | 종목 검색 DB (KOSPI, KOSDAQ, S&P500, NASDAQ). `build_stock_db.py`로 생성 |
+| `static/js/chart.js` | 종목 상세 기술적 분석 차트 (LightweightCharts 4.1: 툴바, 동기화, 터치, 전체화면). main.js 는 `renderCharts(data)` 만 부른다 |
 | `templates/`, `static/` | 프론트엔드 (바닐라 JS, LightweightCharts). 정적 파일 캐시 무효화는 `?v=` 쿼리 숫자를 올린다 |
 | `HANDOFF.md` | 세션별 작업 기록. 큰 작업 후 갱신 (민감 정보 금지 규칙 동일) |
 
