@@ -383,15 +383,7 @@ function renderAuthArea() {
     area.innerHTML = `<button class="login-btn" onclick="openLoginModal()">로그인</button>`;
     return;
   }
-  const img = currentUser.profile_image
-    ? `<img class="profile-img" src="${escapeHtmlMain(currentUser.profile_image)}" />`
-    : `<div class="profile-img" style="background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px">👤</div>`;
-  area.innerHTML = `
-    <div class="profile-area">
-      ${img}
-      <span class="profile-name">${escapeHtmlMain(currentUser.name || '사용자')}</span>
-    </div>
-    <a href="/auth/logout" class="logout-btn">로그아웃</a>`;
+  if (window.SAProfile) area.innerHTML = SAProfile.html(currentUser);     // 아바타 → 드롭다운(알림 설정 · 로그아웃)
 }
 
 // ── 포트폴리오 ───────────────────────────────────────────────────────────────
