@@ -997,7 +997,8 @@ def market_movers():
 
     def _split(rows):
         s = sorted(rows, key=lambda r: r["change_pct"], reverse=True)
-        return {"gainers": s[:5], "losers": s[-5:][::-1]}
+        n = min(8, len(s) // 2)                      # 급등·급락 각 8개 (유니버스 30종목이라 겹치지 않음)
+        return {"gainers": s[:n], "losers": s[-n:][::-1] if n else []}
 
     payload = {
         "KR": _split(kr),

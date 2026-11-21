@@ -236,13 +236,19 @@ function renderSectorMap(d) {
   _sectorHint(d);
   const groups = (d.groups || []).filter(g => g.market_cap > 0);
   if (!groups.length) { el.innerHTML = '<div class="empty-state">데이터 없음</div>'; return; }
-  const W = el.clientWidth || 600;
+  // .hm-treemap 은 좌우로 2px 씩 넓혀(바깥 테두리 상쇄) 그린다 → 계산 폭 = 카드 안쪽 폭 + 4
+  const W = (el.clientWidth || 600) + 4;
   const H = W < 520 ? Math.round(W * 0.95) : Math.max(300, Math.round(W * 0.56));
   const colorCls = (c) =>
     c >= 2 ? 'hm-up3' : c >= 1 ? 'hm-up2' : c > 0.15 ? 'hm-up1'
     : c <= -2 ? 'hm-dn3' : c <= -1 ? 'hm-dn2' : c < -0.15 ? 'hm-dn1' : 'hm-flat';
   const rects = _squarify(groups.map(g => ({ g, v: g.market_cap })), 0, 0, W, H);
-  el.innerHTML = `<div class="hm-treemap" style="height:${H}px">${rects.map(({ g, x, y, w, h }) => {
+  // 좌표를 정수 픽셀로: 이웃 칸이 같은 경계값을 반올림하므로 빈틈·겹침 없이 맞닿고, 2px 테두리 두 개 = 모든 틈 4px
+  const snapped = rects.map(r => {
+    const x0 = Math.round(r.x), y0 = Math.round(r.y), x1 = Math.round(r.x + r.w), y1 = Math.round(r.y + r.h);
+    return { g: r.g, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }).filter(r => r.w > 0 && r.h > 0);
+  el.innerHTML = `<div class="hm-treemap" style="height:${H}px">${snapped.map(({ g, x, y, w, h }) => {
     const c = g.change_pct;
     const big = w >= 150 && h >= 96, mid = w >= 74 && h >= 56, tiny = w < 40 || h < 30, narrow = !tiny && w < 84;
     const breadth = mid ? `<span class="hm-br">${g.advancing_count}↑ ${g.declining_count}↓</span>` : '';
@@ -251,7 +257,7 @@ function renderSectorMap(d) {
       `<span class="hm-mini"><span>${escapeHtmlMain(m.name)}</span><span>${fmtPct(m.change_pct)}</span></span>`).join('') : '';
     const label = `${g.name} ${fmtPct(c)} · 상승 ${g.advancing_count} 하락 ${g.declining_count} 보합 ${g.unchanged_count} · 시총 비중 ${g.cap_share}%`;
     return `<button type="button" class="hm-tile hm-abs ${colorCls(c)}${big ? ' hm-big' : ''}${tiny ? ' hm-tiny' : ''}${narrow ? ' hm-narrow' : ''}"
-        style="left:${(x / W * 100).toFixed(3)}%;top:${y.toFixed(1)}px;width:${(w / W * 100).toFixed(3)}%;height:${h.toFixed(1)}px"
+        style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"
         onclick="toggleSectorDrill('${g.key}')" title="${escapeHtmlMain(label)}" aria-label="${escapeHtmlMain(label)}">
         <span class="hm-in">${tiny ? '' : `<span class="hm-name">${escapeHtmlMain(g.name)}</span><span class="hm-chg">${fmtPct(c)}</span>`}${breadth}${preview}</span>
       </button>`;
@@ -354,6 +360,11 @@ function renderMovers() {
   const l = document.getElementById('mdLosers');
   if (g) g.innerHTML = (d.gainers || []).map(row).join('') || '<div class="empty-state">—</div>';
   if (l) l.innerHTML = (d.losers || []).map(row).join('') || '<div class="empty-state">—</div>';
+  // 하락장에서 '급등' 열에 마이너스 종목이 섞이면 '상대 강세'로 (반대로 '급락' 열에 플러스가 섞이면 '상대 약세')
+  const gt = document.getElementById('mdGainTitle'), lt = document.getElementById('mdLoseTitle');
+  const gRel = (d.gainers || []).some(s => s.change_pct <= 0), lRel = (d.losers || []).some(s => s.change_pct >= 0);
+  if (gt) { gt.textContent = gRel ? '상대 강세' : '급등'; gt.classList.toggle('rel', gRel); gt.title = gRel ? '오늘 오른 종목이 적어 덜 내린 순서로 보여 줍니다' : ''; }
+  if (lt) { lt.textContent = lRel ? '상대 약세' : '급락'; lt.classList.toggle('rel', lRel); lt.title = lRel ? '오늘 내린 종목이 적어 덜 오른 순서로 보여 줍니다' : ''; }
 }
 
 async function checkAuth() {
