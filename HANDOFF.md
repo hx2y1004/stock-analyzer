@@ -66,8 +66,10 @@
   (중복 시각 없음). 한국장 14:50~15:30(동시호가 15:30 봉 포함)과 당일 실시간 봉이 채워진다.
   source: `toss_hybrid`(병합) / `toss`(yfinance 실패) / `yfinance`(토스 실패·빈 응답·키 없음). `지연 시세` 배지는 한국 종목 + `yfinance` 일 때만.
 - **로그**: `[intraday] {ticker} {interval}: toss_1m=N → resampled=M, total=T, source=…` — 전용 로거 `stockanalyzer.intraday`(INFO, stderr).
-  ⚠️ `app.logger` 는 레벨 설정이 없어 운영(gunicorn)에서 **info 가 버려진다**(유효 레벨 WARNING). `[TRENDS]`·`[SCREENER]`·`[SECTORMAP]`·`[BOT]` 등
-  모듈 `log()` 가 info 로 남기는 줄은 운영 로그에 안 나올 가능성이 높다(로컬에서 확인: 레벨 미설정 시 출력 0줄). 경고(warning) 이상만 보임.
+  (PR #34 후속 커밋) 예전엔 `app.logger` 레벨 설정이 없어 운영(gunicorn)에서 info 가 전부 버려졌다(직전 main 을 gunicorn 으로 띄워
+  확인: 앱 info 0줄, `[TRENDS] 워밍업 확인 시작` 도 안 찍힘). → `LOG_LEVEL`(기본 INFO)로 `app.logger.setLevel`. 분·시간봉 로거는
+  `app.logger.getChild("intraday")`. 요청마다 여러 줄 나오던 `[KR qtr]`·종목별 `[DART]`·`[events]`·`[EPS est]`·`[analyze] DB 캐시` 19곳은 DEBUG 로.
+  확인(gunicorn 1워커·8스레드): INFO 에서 `[intraday]`·`[TRENDS]` 출력·중복 없음, WARNING 이면 숨김, `debug`(소문자)면 DEBUG 까지, 잘못된 값은 INFO.
 
 ### 차트 10분봉 · 1시간봉 (PR #33)
 - 봉 단위 `10분 · 1시간 · 일봉 · 주봉 · 월봉`. `/api/chart?interval=10m|1h` 만 분·시간봉을 주고, 종합 분석(`/api/analyze`)은 일봉 기준 그대로
