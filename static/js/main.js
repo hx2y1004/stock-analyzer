@@ -1224,7 +1224,7 @@ async function analyze() {
     renderMetrics(data.stock, data.analysis);
     renderPositionCard(data.position || null, data.stock);
     renderStockBots(data.stock);
-    renderMarketContext(data.stock.market_context, data.stock.currency === 'KRW');
+    renderMarketContext(data.stock.market_context, data.stock.currency === 'KRW', data.stock.market_mood);
     renderUpcomingEvents(data.stock.upcoming_events);
     renderZones(data.analysis, data.stock);
     if (data.extras_pending) {
@@ -2752,44 +2752,73 @@ function renderSignalSummary(analysis) {
 }
 
 // ── 시장 컨텍스트 ─────────────────────────────────────
-function renderMarketContext(market, isKRW) {
+function _esc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function renderMarketContext(market, isKRW, mood) {
   const card = document.getElementById('marketContextCard');
   const list = document.getElementById('marketContextList');
+  const moodEl = document.getElementById('marketMood');
   if (!card || !list) return;
+  card.classList.remove('hidden');
+  if (moodEl) {
+    const tones = { danger: 1, caution: 1, good: 1, info: 1, neutral: 1 };
+    if (mood && mood.title) {
+      moodEl.className = `mc-mood tone-${tones[mood.tone] ? mood.tone : 'neutral'}`;
+      moodEl.innerHTML = `<div class="mc-mood-title">${_esc(mood.title)}</div>${mood.text ? `<div class="mc-mood-text">${_esc(mood.text)}</div>` : ''}`;
+    } else {
+      moodEl.className = 'mc-mood hidden';
+      moodEl.innerHTML = '';
+    }
+  }
   if (!market || !Object.keys(market).length) {
     list.innerHTML = '<div class="mc-empty">시장 지표를 불러오지 못했습니다.</div>';
-    card.classList.remove('hidden');
     return;
   }
-  // 값 포맷 (지수는 정수 천단위, 환율은 원, VIX는 소수점)
-  const fmtVal = (label, v) => {
+  // 값 포맷 (지수는 천단위, 환율은 원, VIX는 소수점)
+  const fmtVal = (label, m) => {
+    const v = m.value;
     if (v == null) return '—';
-    if (label === '환율') return Math.round(v).toLocaleString() + '원';
-    if (label === 'VIX')  return v.toFixed(2);
+    if (label === '환율' || m.kind === 'fx') return Math.round(v).toLocaleString() + '원';
+    if (label === 'VIX') return v.toFixed(2);
     return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   };
-  const rows = Object.entries(market).map(([label, m]) => {
-    const chg = m.change_pct ?? 0;
-    const cls  = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
+  const chgHtml = (chg) => {
+    if (chg == null) return '';
+    const cls = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
     const icon = chg > 0 ? '▲' : chg < 0 ? '▼' : '·';
-    // VIX 는 낮은 게 좋고 높은 게 위험 → 반전 색상
-    const isVix = label === 'VIX';
-    const vixHint = isVix
+    return `<span class="mc-chg ${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</span>`;
+  };
+  const rows = Object.entries(market).map(([label, m]) => {
+    if (m.kind === 'sector') {
+      // 소속 섹터: 시총가중 등락률 + 상승/하락 종목 수 (섹터맵 스냅샷)
+      const breadth = (m.advancing != null && m.declining != null)
+        ? `<span class="mc-breadth" title="섹터 내 상승·하락 종목 수"><span class="up">${m.advancing}↑</span> <span class="down">${m.declining}↓</span></span>` : '';
+      return `
+      <div class="mc-row mc-sector" title="섹터맵 시총가중 등락률${m.data_date ? ' · ' + _esc(m.data_date) + ' 기준' : ''}">
+        <span class="mc-label">소속 섹터</span>
+        <div class="mc-right">
+          <span class="mc-val mc-sector-name">${_esc(m.name || '—')}</span>
+          ${chgHtml(m.change_pct)}${breadth}
+        </div>
+      </div>`;
+    }
+    // VIX 는 낮은 게 좋고 높은 게 위험 → 상태 태그
+    const vixHint = label === 'VIX'
       ? (m.value < 20 ? ' <span class="mc-tag safe">안정</span>'
                       : m.value < 30 ? ' <span class="mc-tag mid">경계</span>'
                                      : ' <span class="mc-tag danger">위험</span>')
       : '';
     return `
       <div class="mc-row">
-        <span class="mc-label">${label}</span>
+        <span class="mc-label">${_esc(label)}</span>
         <div class="mc-right">
-          <span class="mc-val">${fmtVal(label, m.value)}</span>
-          <span class="mc-chg ${cls}">${icon} ${Math.abs(chg).toFixed(2)}%</span>${vixHint}
+          <span class="mc-val">${fmtVal(label, m)}</span>
+          ${chgHtml(m.change_pct)}${vixHint}
         </div>
       </div>`;
   }).join('');
   list.innerHTML = rows;
-  card.classList.remove('hidden');
 }
 
 // ── 다가오는 이벤트 ───────────────────────────────────

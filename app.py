@@ -2497,6 +2497,115 @@ def fetch_market_context(is_korean: bool) -> dict:
     return result
 
 
+_CTX_REUSE_MAX_AGE = 12 * 3600    # 다른 화면이 받아 둔 캐시는 12시간까지 재사용 (주말·장 마감 뒤에도 마지막 값)
+
+
+def _cached_quote(label_or_symbol):
+    """이미 메모리에 있는 지수·환율 값만 찾는다 (외부 호출 없음).
+    순서: 종목 상세 시장 컨텍스트 캐시(KR/US) → 홈 시황 대시보드 캐시. → {value, change_pct} | None"""
+    now = time.time()
+    names = {"S&P 500": ("S&P 500", "^GSPC"), "VIX": ("VIX", "^VIX"), "USD/KRW": ("환율", "KRW=X")}
+    label, sym = names.get(label_or_symbol, (label_or_symbol, None))
+    for key in ("US", "KR"):
+        hit = _MARKET_CACHE.get(key)
+        if hit and (now - hit[0]) < _CTX_REUSE_MAX_AGE:
+            v = hit[1].get(label)
+            if v and v.get("value") is not None:
+                return {"value": v["value"], "change_pct": v.get("change_pct")}
+    ov = _MARKET_OVERVIEW_CACHE
+    if ov.get("data") and (now - ov["ts"]) < _CTX_REUSE_MAX_AGE:
+        for it in ov["data"].get("indices") or []:
+            if sym and it.get("symbol") == sym and it.get("value") is not None:
+                return {"value": it["value"], "change_pct": it.get("change_pct")}
+    return None
+
+
+def _stock_sector_context(ticker, market):
+    """섹터맵 스냅샷(메모리 → DB)에서 이 종목이 속한 섹터의 시총가중 등락률·상승/하락 수. 미매칭이면 None."""
+    try:
+        meta = (sector_map.universe().get(market) or {}).get(ticker)
+        if not meta or not meta.get("sector"):
+            return None
+        snap = sector_map.get(market)
+        if not snap:
+            return None
+        g = next((g for g in snap.get("groups") or [] if g.get("key") == meta["sector"]), None)
+        if not g:
+            return None
+        return {"kind": "sector", "name": g.get("name"), "change_pct": g.get("change_pct"),
+                "advancing": g.get("advancing_count"), "declining": g.get("declining_count"),
+                "total": g.get("total_count"), "data_date": snap.get("data_date")}
+    except Exception as e:
+        app.logger.debug(f"[market_ctx] sector {ticker}: {e}")
+        return None
+
+
+def build_market_context(ticker, is_korean, stock_change_pct=None):
+    """종목 상세 '시장 컨텍스트' 5줄 + 규칙 기반 '시장 분위기 요약'.
+    기본 3줄은 fetch_market_context(10분 캐시), 추가 2줄은 이미 메모리·DB에 있는 값만 쓴다.
+      - 미국 종목: S&P 500 · Nasdaq · VIX + USD/KRW 환율 + 소속 섹터
+      - 한국 종목: KOSPI · KOSDAQ · 환율 + S&P 500 + 소속 섹터
+    → (rows: {label: {...}}, mood: {tone, title, text} | None)"""
+    base = fetch_market_context(is_korean)
+    rows = dict(base)                      # 캐시 dict 를 건드리지 않게 복사
+    if is_korean:
+        sp = _cached_quote("S&P 500")
+        if sp:
+            rows["S&P 500"] = {"symbol": "^GSPC", **sp}
+    else:
+        fx = _cached_quote("USD/KRW")
+        if not fx and _FX_CACHE.get("rate") and (time.time() - _FX_CACHE["ts"]) < _CTX_REUSE_MAX_AGE:
+            fx = {"value": round(_FX_CACHE["rate"], 2), "change_pct": None}     # 모의투자 환율 캐시 (등락률 없음)
+        if fx:
+            rows["USD/KRW 환율"] = {"symbol": "KRW=X", "kind": "fx", **fx}
+    sec = _stock_sector_context(ticker, "KR" if is_korean else "US")
+    if sec:
+        rows["소속 섹터"] = sec
+    vix = (rows.get("VIX") or _cached_quote("VIX") or {}).get("value")
+    if is_korean:
+        idx_label = "KOSDAQ" if ticker.endswith(".KQ") else "KOSPI"
+    else:
+        idx_label = "S&P 500"
+    idx = (rows.get(idx_label) or {}).get("change_pct")
+    return rows, market_mood(vix, idx_label, idx, sec, stock_change_pct)
+
+
+def market_mood(vix, idx_label, idx_chg, sector, stock_chg):
+    """VIX · 대표 지수 · 소속 섹터 · 종목 등락을 조합한 1~2줄 요약 (규칙 기반, AI 호출 없음).
+    tone: danger | caution | good | info | neutral"""
+    sec_chg = sector.get("change_pct") if sector else None
+    sec_name = (sector or {}).get("name")
+    f = lambda v: f"{'+' if v > 0 else ''}{v:.2f}%"
+    if vix is not None and vix >= 30:
+        return {"tone": "danger", "title": f"변동성 경계 (VIX {vix:.2f})",
+                "text": "시장 전반 약세 구간, 신규 진입·추격 매수 주의"}
+    if idx_chg is None:
+        return None
+    up, down = idx_chg >= 0.3, idx_chg <= -0.3
+    strong = (sec_chg is not None and sec_chg > 0) or (sec_chg is None and stock_chg is not None and stock_chg > 0)
+    if down and strong:
+        who = f"소속 섹터({sec_name} {f(sec_chg)})" if sec_chg is not None else f"종목({f(stock_chg)})"
+        return {"tone": "info", "title": "시장 대비 상대 강세",
+                "text": f"{idx_label} {f(idx_chg)} 약세장 속에서도 {who} 방어력 양호"}
+    if vix is not None and vix >= 20 and down:
+        return {"tone": "caution", "title": f"변동성 확대 (VIX {vix:.2f})",
+                "text": f"{idx_label} {f(idx_chg)} 약세, 분할 접근·손절 기준 점검"}
+    if up and sec_chg is not None and sec_chg > 0:
+        return {"tone": "good", "title": "우호적 시장 환경",
+                "text": f"지수({idx_label} {f(idx_chg)})와 소속 섹터({sec_name} {f(sec_chg)})가 함께 강세 흐름"}
+    if down and sec_chg is not None and sec_chg < 0:
+        return {"tone": "caution", "title": "동반 약세",
+                "text": f"지수({idx_label} {f(idx_chg)})와 소속 섹터({sec_name} {f(sec_chg)})가 함께 하락, 보수적 접근"}
+    if up and sec_chg is not None and sec_chg < 0:
+        return {"tone": "neutral", "title": "섹터 소외",
+                "text": f"지수({idx_label} {f(idx_chg)})는 올랐지만 소속 섹터({sec_name} {f(sec_chg)})는 약세"}
+    if up:
+        return {"tone": "good", "title": "지수 강세", "text": f"{idx_label} {f(idx_chg)} 상승 흐름"}
+    if down:
+        return {"tone": "caution", "title": "지수 약세", "text": f"{idx_label} {f(idx_chg)} 하락, 보수적 접근"}
+    return {"tone": "neutral", "title": "보합권", "text": f"{idx_label} {f(idx_chg)}, 뚜렷한 방향성 없는 시장"}
+
+
 def _norm_dt(d):
     """다양한 타입(timestamp/int/datetime/str)을 tz-naive Timestamp 로 통일."""
     if d is None:
@@ -4468,7 +4577,8 @@ def analyze():
 
         # ── 시장 컨텍스트 + 다가오는 이벤트 ──────────────────────────────
         try:
-            stock_data["market_context"]  = fetch_market_context(is_kr_stock)
+            stock_data["market_context"], stock_data["market_mood"] = build_market_context(
+                ticker, is_kr_stock, stock_data.get("price_change_pct"))
         except Exception as e:
             app.logger.warning(f"market_context: {e}")
         try:
