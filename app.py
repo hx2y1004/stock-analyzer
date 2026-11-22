@@ -2497,6 +2497,21 @@ def fetch_market_context(is_korean: bool) -> dict:
     return result
 
 
+def extended_hours_flag(current_price, regular_close, source, market_open, is_korean, session=None):
+    """상단 현재가가 정규장 종가가 아닌 시간외(프리·애프터마켓, 국내 시간외·대체거래소) 체결가인가.
+    토스 실시간가이고 정규장이 아닐 때, 최신 일봉 종가와 0.05% 이상이면서 최소 단위(1원 / 0.01달러) 이상 다르면 True.
+    토스 응답에 세션 필드가 있어 'extended' 면 가격이 조금이라도 다를 때 True, 'regular' 면 False."""
+    if source != "toss" or market_open or not current_price or not regular_close:
+        return False
+    diff = abs(current_price - regular_close)
+    if session == "regular":
+        return False
+    if session == "extended":
+        return diff > 1e-9
+    unit = 1.0 if is_korean else 0.01
+    return diff >= unit - 1e-9 and diff / regular_close * 100 >= 0.05
+
+
 _CTX_REUSE_MAX_AGE = 12 * 3600    # 다른 화면이 받아 둔 캐시는 12시간까지 재사용 (주말·장 마감 뒤에도 마지막 값)
 
 
@@ -4138,14 +4153,16 @@ def analyze():
 
         realtime_price  = None
         realtime_source = None  # "toss" | "naver" | "yfinance"
+        toss_session    = None  # 토스 응답에 세션 구분 필드가 있을 때만 "extended" | "regular"
 
         # 1) 토스증권 우선 (한국+미국 모두 실시간)
         if toss_api.is_enabled() and toss_api.is_eligible(ticker):
             try:
-                tp = toss_api.get_price(ticker)
-                if tp:
-                    realtime_price  = safe_float(tp)
+                tp = toss_api.get_price_info(ticker)
+                if tp and tp.get("price"):
+                    realtime_price  = safe_float(tp["price"])
                     realtime_source = "toss"
+                    toss_session    = tp.get("session")
             except Exception:
                 pass
 
@@ -4192,6 +4209,9 @@ def analyze():
 
         price_change     = round(current_price - prev_close, 2) if (current_price and prev_close) else None
         price_change_pct = round((price_change / prev_close) * 100, 2) if (price_change and prev_close) else None
+        regular_close = history_close
+        is_extended_hours_price = extended_hours_flag(
+            current_price, regular_close, realtime_source, is_market_open_now, is_korean, toss_session)
 
         # 데이터 기준 시각 (히스토리 마지막 봉)
         try:
@@ -4486,6 +4506,8 @@ def analyze():
             "data_timestamp": data_timestamp,
             "fetched_at": datetime.utcnow().isoformat() + "Z",
             "realtime_source": realtime_source,  # "toss" | "naver" | "yfinance" | null
+            "regular_close": regular_close,      # 최신 일봉(정규장) 종가
+            "is_extended_hours_price": is_extended_hours_price,   # 현재가에 시간외(프리·애프터마켓) 체결 반영
             "chart_source": price_source,        # "toss" | "yfinance" (디버그용)
             "market_cap": info.get("marketCap"),
             "volume": safe_float(df["Volume"].iloc[-1]),
