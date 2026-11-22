@@ -4809,8 +4809,19 @@ def me():
             "email":         current_user.email,
             "profile_image": current_user.profile_image,
             "provider":      current_user.provider,
+            # 토스 계좌 불러오기 버튼 노출용. 실제 권한 검사는 POST /api/portfolio/import-toss 가 그대로 한다(403).
+            "can_import_toss": _can_import_toss(),
         }
     })
+
+
+def _can_import_toss() -> bool:
+    """토스 계좌 연동이 가능한 계정인가: 토스 API 설정 + 소유자(TOSS_OWNER_EMAIL / TOSS_OWNER_USER_IDS).
+    소유자 판정은 import-toss 와 같은 _is_toss_owner() (소유자 미지정이면 로컬 개발에서만 허용)."""
+    try:
+        return bool(toss_api.is_enabled() and _is_toss_owner())
+    except Exception:
+        return False
 
 
 # ── 포트폴리오 조회 ───────────────────────────────────────────────────────────
