@@ -2497,11 +2497,12 @@ def fetch_market_context(is_korean: bool) -> dict:
     return result
 
 
-def extended_hours_flag(current_price, regular_close, source, market_open, is_korean, session=None):
+def extended_hours_flag(current_price, regular_close, live, market_open, is_korean, session=None):
     """상단 현재가가 정규장 종가가 아닌 시간외(프리·애프터마켓, 국내 시간외·대체거래소) 체결가인가.
-    토스 실시간가이고 정규장이 아닐 때, 최신 일봉 종가와 0.05% 이상이면서 최소 단위(1원 / 0.01달러) 이상 다르면 True.
-    토스 응답에 세션 필드가 있어 'extended' 면 가격이 조금이라도 다를 때 True, 'regular' 면 False."""
-    if source != "toss" or market_open or not current_price or not regular_close:
+    live: 현재가가 실시간 시세(토스·네이버·Yahoo)이거나 일봉 끝에 붙은 시간외 봉에서 왔는가.
+    정규장이 아닐 때 정규장 종가와 0.05% 이상이면서 최소 단위(1원 / 0.01달러) 이상 다르면 True.
+    토스 응답에 세션 필드가 있으면(현재 토스 시세 응답에는 없음) 'extended' 는 작은 차이도 True, 'regular' 는 False."""
+    if not live or market_open or not current_price or not regular_close:
         return False
     diff = abs(current_price - regular_close)
     if session == "regular":
@@ -2510,6 +2511,42 @@ def extended_hours_flag(current_price, regular_close, source, market_open, is_ko
         return diff > 1e-9
     unit = 1.0 if is_korean else 0.01
     return diff >= unit - 1e-9 and diff / regular_close * 100 >= 0.05
+
+
+def last_regular_session_date(is_korean, now=None):
+    """가장 최근에 '끝난' 정규장 날짜 (시장 현지). 주말은 건너뛰고 공휴일은 모른다
+    (공휴일엔 그날 봉이 없으니 아래 비교에서 문제되지 않는다)."""
+    tz = "Asia/Seoul" if is_korean else "America/New_York"
+    now = now if now is not None else pd.Timestamp.now(tz=tz)
+    close_t = pd.Timestamp("15:30").time() if is_korean else pd.Timestamp("16:00").time()
+    if now.weekday() < 5 and now.time() >= close_t:
+        return now.date()
+    d = now.normalize() - pd.Timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= pd.Timedelta(days=1)
+    return d.date()
+
+
+def regular_session_close(df, is_korean, market_open, now=None):
+    """일봉에서 '끝난 정규장'의 종가를 찾는다. 토스 일봉은 프리마켓·주간거래 체결로 다음 거래일 봉을 미리 만들 때가 있어
+    마지막 봉 종가가 시간외 가격일 수 있다. → (정규장 종가, 그 전 종가, 끝에 시간외 봉이 붙었나, 정규장 봉 시각)"""
+    n = len(df)
+    last = (safe_float(df["Close"].iloc[-1]), safe_float(df["Close"].iloc[-2]) if n >= 2 else None, False, df.index[-1])
+    if market_open or n == 0:
+        return last
+    try:
+        sess = last_regular_session_date(is_korean, now)
+        tz = "Asia/Seoul" if is_korean else "America/New_York"
+        idx = df.index
+        if getattr(idx, "tz", None) is not None:
+            idx = idx.tz_convert(tz)
+        dates = [ts.date() for ts in idx]
+        i = max((k for k, d in enumerate(dates) if d <= sess), default=None)
+        if i is None or i == n - 1:
+            return last
+        return (safe_float(df["Close"].iloc[i]), safe_float(df["Close"].iloc[i - 1]) if i >= 1 else None, True, df.index[i])
+    except Exception:
+        return last
 
 
 _CTX_REUSE_MAX_AGE = 12 * 3600    # 다른 화면이 받아 둔 캐시는 12시간까지 재사용 (주말·장 마감 뒤에도 마지막 값)
@@ -3594,6 +3631,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
+_ANALYZE_VER = "v2"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
@@ -3605,9 +3643,9 @@ def _analyze_cache_get(key):
     return None
 
 
-def _analyze_cache_put(key, body, ctx):
+def _analyze_cache_put(key, body, ctx, ts=None):
     with _ANALYZE_LOCK:
-        _ANALYZE_CACHE[key] = (time.time(), body, ctx)
+        _ANALYZE_CACHE[key] = (ts or time.time(), body, ctx)
         # 오래된 것부터 지워 전체 크기를 제한 (운영 메모리 1GB)
         total = sum(len(v[1]) for v in _ANALYZE_CACHE.values())
         for k, v in sorted(_ANALYZE_CACHE.items(), key=lambda kv: kv[1][0]):
@@ -3976,12 +4014,12 @@ def analyze():
     if not cached:
         # 다른 프로세스나 재시작 전에 만든 결과가 DB 에 있으면 그것을 쓴다
         try:
-            dbb = ai_cache.get(f"analysis_body:{ticker}:{interval}", use_mem=False)
+            dbb = ai_cache.get(f"analysis_body:{_ANALYZE_VER}:{ticker}:{interval}", use_mem=False)
             dbc = ai_cache.get(f"analysis_ctx:{ticker}") if dbb else None
             if dbb and dbc:
                 import gzip as _gz, base64 as _b64
                 body = _gz.decompress(_b64.b64decode(dbb[0]["b"])).decode("utf-8")
-                _analyze_cache_put((ticker, interval), body, dbc[0])
+                _analyze_cache_put((ticker, interval), body, dbc[0], ts=dbb[0].get("ts"))   # 남은 수명만큼만
                 cached = _analyze_cache_get((ticker, interval))
                 app.logger.debug(f"[analyze] ticker={ticker} DB 캐시 사용")
         except Exception as e:
@@ -4209,13 +4247,22 @@ def analyze():
 
         price_change     = round(current_price - prev_close, 2) if (current_price and prev_close) else None
         price_change_pct = round((price_change / prev_close) * 100, 2) if (price_change and prev_close) else None
-        regular_close = history_close
+        # 정규장 종가: 장이 닫혀 있을 때 일봉 끝에 시간외 봉(토스 프리마켓·주간거래)이 붙어 있으면 그 앞 봉
+        regular_close, regular_prev, extended_bar, regular_bar_ts = regular_session_close(df, is_korean, is_market_open_now)
+        if extended_bar:
+            # 마지막 봉 종가(=시간외 가격)와 토스 실시간가가 같아 '실시간 아님'으로 빠지던 경우도 시간외 가격으로 본다
+            if not realtime_useful:
+                current_price = history_close
+                realtime_source = price_source
+            prev_close = regular_close
+            price_change     = round(current_price - prev_close, 2) if (current_price and prev_close) else None
+            price_change_pct = round((price_change / prev_close) * 100, 2) if (price_change and prev_close) else None
         is_extended_hours_price = extended_hours_flag(
-            current_price, regular_close, realtime_source, is_market_open_now, is_korean, toss_session)
+            current_price, regular_close, bool(realtime_source) or extended_bar, is_market_open_now, is_korean, toss_session)
 
-        # 데이터 기준 시각 (히스토리 마지막 봉)
+        # 데이터 기준 시각 (정규장 마지막 봉; 시간외 봉은 '장 마감 · ○/○ 기준' 에 쓰지 않는다)
         try:
-            last_bar_ts = df.index[-1]
+            last_bar_ts = regular_bar_ts if extended_bar else df.index[-1]
             data_timestamp = last_bar_ts.isoformat() if last_bar_ts else None
         except Exception:
             data_timestamp = None
@@ -4633,8 +4680,8 @@ def analyze():
             _BG_EXEC.submit(ai_cache.put, f"analysis_ctx:{ticker}", ticker, "analysis_ctx", _ctx_json, None, 3600)
             # 분석 본문(차트 포함, 수 MB)도 압축해 5분 보관 → 다른 프로세스·재시작 후 재진입도 즉시
             import gzip as _gz, base64 as _b64
-            _packed = {"b": _b64.b64encode(_gz.compress(base_body.encode("utf-8"), 5)).decode("ascii")}
-            _BG_EXEC.submit(ai_cache.put, f"analysis_body:{ticker}:{interval}", ticker, "analysis_body",
+            _packed = {"b": _b64.b64encode(_gz.compress(base_body.encode("utf-8"), 5)).decode("ascii"), "ts": time.time()}
+            _BG_EXEC.submit(ai_cache.put, f"analysis_body:{_ANALYZE_VER}:{ticker}:{interval}", ticker, "analysis_body",
                             _packed, None, _ANALYZE_TTL, False, True)
         except Exception as e:
             app.logger.warning(f"[analyze] ticker={ticker} 맥락 저장 실패: {e}")

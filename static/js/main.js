@@ -1463,6 +1463,12 @@ function startStockPricePolling(stock) {
 // 봉 timestamp(ISO)를 "5/21 (수)" 또는 "2026-05-21" 형식으로
 function _formatBarTimestamp(iso) {
   if (!iso) return '데이터 없음';
+  // 일봉 시각은 시장 현지 자정(예: 2026-11-20T00:00:00+09:00) → 브라우저 시간대로 바꾸면 하루 밀리므로 문자열의 날짜를 그대로 쓴다
+  const m_ = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (m_) {
+    const dow = ['일','월','화','수','목','금','토'][new Date(Date.UTC(+m_[1], +m_[2] - 1, +m_[3])).getUTCDay()];
+    return `${+m_[2]}/${+m_[3]} (${dow})`;
+  }
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso.slice(0, 10);
