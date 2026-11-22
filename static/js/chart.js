@@ -38,7 +38,7 @@
     subs: null,                  // { rsi, macd } — 저장값 없으면 폭에 따라 기본값
     color: store.get('chartColor', 'auto'),   // 'auto' | 'kr' | 'us'
     range: null,                 // 현재 기간 프리셋 (사용자가 직접 확대·이동하면 null)
-    data: null, charts: [], main: null, fs: false,
+    data: null, charts: [], main: null, fs: false, mainFit: 0,   // mainFit: PC 2열에서 Row 1 높이에 맞춘 메인 차트 높이
   };
   const savedSubs = store.get('chartSubs', null);
   S.subs = savedSubs || (isMobile() ? { rsi: false, macd: false } : { rsi: true, macd: true });
@@ -181,7 +181,27 @@
     }
     if (isMobile()) return { main: 340, sub: 104 };
     if (window.innerWidth <= 1024) return { main: 380, sub: 120 };
-    return { main: 420, sub: 130 };
+    return { main: S.mainFit || 420, sub: 130 };
+  }
+
+  // Row 1: 차트 카드 높이가 우측 컬럼(sideH)과 같아지도록 메인 차트 높이만 조정 (360~760px).
+  // 보조 차트 구성이 바뀌거나 우측 카드 높이가 바뀌면 main.js 가 다시 부른다.
+  const FIT_MIN = 360, FIT_MAX = 760;
+  function fitTo(sideH) {
+    if (S.fs || isMobile() || window.innerWidth <= 1024 || !S.main || !sideH) { if (S.mainFit && !S.fs) { S.mainFit = 0; } return; }
+    const card = document.querySelector('.chart-card');
+    const mainEl = $('mainChart');
+    if (!card || !mainEl) return;
+    const cur = S.main.chart.options().height;
+    // 카드의 '자연 높이' = 카드 안 내용 합 (stretch 로 늘어난 부분 제외)
+    const cs = getComputedStyle(card);
+    const natural = [...card.children].filter((c) => !c.hidden && getComputedStyle(c).display !== 'none' && getComputedStyle(c).position !== 'absolute')
+      .reduce((a, c) => { const m = getComputedStyle(c); return a + c.getBoundingClientRect().height + parseFloat(m.marginTop) + parseFloat(m.marginBottom); }, 0)
+      + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const want = Math.max(FIT_MIN, Math.min(FIT_MAX, Math.round(cur + (sideH - natural))));
+    if (Math.abs(want - cur) < 2) return;
+    S.mainFit = want;
+    S.main.chart.applyOptions({ height: want });
   }
 
   function addChart(el, height, timeVisible, kind) {
@@ -487,6 +507,7 @@
       if (r) S.charts.forEach((t) => t.chart.timeScale().setVisibleLogicalRange(r));
       syncPriceScaleWidths();
       setTimeout(syncPriceScaleWidths, 250);
+      if (typeof window._fitRow1 === 'function') window._fitRow1();   // Row 1: 우측 높이에 메인 차트 높이 맞춤
     });
   }
 
@@ -554,6 +575,6 @@
   // ── main.js 가 부르는 전역 함수 ───────────────────────────────────────────
   window.renderCharts = function (data) { bindToolbar(); render(data, false); };
   window.setChartType = function (type) { S.type = type; if (S.data) render(S.data, true); };
-  window.SAChart = { state: S, applyRange, resetView, setFullscreen, render: (d) => render(d || S.data, true) };
+  window.SAChart = { state: S, applyRange, resetView, setFullscreen, fitTo, render: (d) => render(d || S.data, true) };
   if (document.readyState !== 'loading') bindToolbar(); else document.addEventListener('DOMContentLoaded', bindToolbar);
 })();

@@ -245,11 +245,11 @@ body {
   display: grid;
   grid-template-columns: 3fr 2fr;
   gap: 16px;
-  align-items: start;          /* 좌우 컬럼은 각자 콘텐츠 높이 (억지로 늘리지 않음) */
+  align-items: stretch;        /* Row 1: 차트 카드 높이를 우측(종합 판단 + 주요 지표)에 맞춘다 (차트 높이는 JS 가 조정) */
   margin-bottom: 16px;
 }
 
-/* 왼쪽: 차트 컬럼 (차트 + 트레이드 + 내 포지션) */
+/* 왼쪽: 차트 컬럼 (차트만) */
 .col-chart {
   min-width: 0;
   display: flex;
@@ -511,7 +511,7 @@ body {
 
 /* 태블릿 (≤ 1024px): 그리드 → 1열 전환 */
 @media (max-width: 1024px) {
-  .main-grid { grid-template-columns: 1fr; }   /* 1열: '다가오는 이벤트'는 JS가 우측 컬럼 끝(맨 아래)으로 옮긴다 */
+  .main-grid { grid-template-columns: 1fr; }
   .bottom-grid {
     grid-template-columns: 1fr;
     align-items: start;       /* 모바일에선 stretch 불필요 */
@@ -5734,14 +5734,22 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .pos-manage-link.hidden { display: none; }
 @media (max-width: 480px) { .pos-card-head { margin-bottom: 12px; } }
 
-/* 종목 상세 'AI 봇 현황' 미니 카드 (보유 중이거나 최근 7일 신호가 있는 봇만) */
+
+/* ── 종목 상세 Row 1 · 배너 · Row 2 ──────────────────────────────────────── */
+.col-chart > .chart-card { flex: 1 1 auto; }          /* 차트 카드는 Row 1 높이만큼 (차트 자체 높이는 JS 가 맞춤) */
+.col-side > .card:last-child { flex: 1 1 auto; }      /* 반대로 차트가 더 길 때(차트 최소 높이) 주요 지표가 채움 */
+
+/* 조건부 전폭 배너: 이 종목 AI 봇 현황 */
+.bot-banner { display: flex; align-items: center; gap: 10px 20px; padding: 12px 20px; margin-bottom: var(--card-gap); }
+.bot-banner .pos-card-head { flex-direction: column; align-items: flex-start; gap: 2px; margin: 0; flex: 0 0 auto; }
+.bot-banner .card-title { font-size: 14px; margin: 0; }
 .bot-status-note { font-size: 11px; color: var(--text2); white-space: nowrap; }
-.bot-status-list { display: flex; flex-direction: column; gap: 8px; }
+.bot-status-list { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px; }
 .bs-row {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
-  padding: 8px 12px; background: var(--bg3); border-radius: 8px; border-left: 3px solid var(--bs-color, var(--accent));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-width: 0;
+  padding: 7px 12px; background: var(--bg3); border-radius: 8px; border-left: 3px solid var(--bs-color, var(--accent));
 }
-.bs-main { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.bs-main { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
 .bs-badge { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
 .bs-state { font-size: 12px; font-weight: 700; white-space: nowrap; }
 .bs-state.up { color: var(--green); } .bs-state.down { color: var(--red); } .bs-state.flat, .bs-state.sig { color: var(--accent); }
@@ -5750,19 +5758,39 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .bs-levels b { font-weight: 600; color: var(--text); }
 .bs-link { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--text2); text-decoration: none; white-space: nowrap; }
 .bs-link:hover { color: var(--accent); }
-/* 좁은 화면: 배지·상태 / 목표·손절 + 링크 2줄 */
-@media (max-width: 600px) {
+.bs-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 640px) {
+  .bot-banner { flex-direction: column; align-items: stretch; padding: 12px 14px; }
+  .bot-banner .pos-card-head { flex-direction: row; align-items: baseline; justify-content: space-between; }
+  .bot-status-list { grid-template-columns: 1fr; }
   .bs-main { flex-basis: 100%; }
 }
-.bs-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
-/* 내 포지션: 금액·비중 / 시나리오 줄 */
+/* Row 2: 내 포지션 | 시장 컨텍스트 | 다가오는 이벤트 (항상 이 자리, 같은 높이) */
+.info-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--card-gap); align-items: stretch; margin-bottom: var(--card-gap); }
+.info-grid > .card { min-width: 0; display: flex; flex-direction: column; }
+.info-grid .events-list { max-height: 300px; }
+.mc-empty { font-size: 13px; color: var(--text2); padding: 8px 2px; }
+@media (max-width: 1024px) {                       /* 태블릿: 내 포지션 전폭, 아래에 시장 컨텍스트 | 이벤트 */
+  .info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .info-grid > #positionCard { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .info-grid { grid-template-columns: 1fr; }
+}
+
+/* 내 포지션 (3열 폭 ~430px 기준으로 정돈) */
+#positionCard .position-head { padding: 12px 10px; }
+#positionCard .ph-pct { font-size: 24px; }
+#positionCard .position-grid { padding: 6px; gap: 4px; }
 .position-extra { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.pe-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; background: var(--bg3); border-radius: 8px; padding: 8px; }
+.pe-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: var(--bg3); border-radius: 8px; padding: 6px; }
 .pe-row.scenario { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.pe-item { text-align: center; padding: 2px 4px; min-width: 0; }
+.pe-item { text-align: center; padding: 2px; min-width: 0; }
 .pe-label { font-size: 10px; color: var(--text2); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pe-val { font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pe-val { font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -0.2px; }
 .pe-val.up { color: var(--green); } .pe-val.down { color: var(--red); }
-.pe-sub { font-weight: 600; opacity: .85; }
-.pe-note { font-size: 10px; color: var(--text2); text-align: right; }
+.pe-sub { font-weight: 600; opacity: .85; font-size: 11px; }
+#positionCard .position-rec { padding: 10px 12px; }
+.info-grid #positionContent { flex: 1 1 auto; display: flex; flex-direction: column; }
+.info-grid #positionContent > .position-empty { flex: 1 1 auto; justify-content: center; }   /* 미보유·비로그인: 늘어난 카드 안 세로 가운데 */
