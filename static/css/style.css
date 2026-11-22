@@ -5794,3 +5794,27 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 #positionCard .position-rec { padding: 10px 12px; }
 .info-grid #positionContent { flex: 1 1 auto; display: flex; flex-direction: column; }
 .info-grid #positionContent > .position-empty { flex: 1 1 auto; justify-content: center; }   /* 미보유·비로그인: 늘어난 카드 안 세로 가운데 */
+
+/* 시장 컨텍스트: 소속 섹터 행 · 하단 '시장 분위기 요약' (규칙 기반) */
+.mc-row { gap: 8px; min-width: 0; }
+.mc-label { white-space: nowrap; }
+.mc-right { min-width: 0; justify-content: flex-end; flex-wrap: nowrap; }
+.mc-val { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mc-sector-name { overflow: hidden; text-overflow: ellipsis; max-width: 9em; }
+.mc-breadth { font-size: 11px; font-weight: 700; white-space: nowrap; color: var(--text2); }
+.mc-breadth .up { color: var(--green); } .mc-breadth .down { color: var(--red); }
+.mc-mood { margin-top: auto; padding: 10px 12px; border-radius: 8px; border-left: 3px solid var(--text2); background: var(--bg3); }
+.mc-list + .mc-mood { margin-top: auto; }
+.market-context-card .mc-list { margin-bottom: 12px; }
+.mc-mood-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+.mc-mood-text { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.mc-mood.tone-danger  { border-color: var(--red);   background: rgba(248,81,73,0.10); }
+.mc-mood.tone-danger .mc-mood-title { color: var(--red); }
+.mc-mood.tone-caution { border-color: rgb(255,185,30); background: rgba(255,185,30,0.10); }
+.mc-mood.tone-caution .mc-mood-title { color: rgb(255,185,30); }
+.mc-mood.tone-good    { border-color: var(--green); background: rgba(63,185,80,0.10); }
+.mc-mood.tone-good .mc-mood-title { color: var(--green); }
+.mc-mood.tone-info    { border-color: var(--accent); background: rgba(88,166,255,0.10); }
+.mc-mood.tone-info .mc-mood-title { color: var(--accent); }
+.mc-mood.tone-neutral .mc-mood-title { color: var(--text); }
+.mc-mood.hidden { display: none; }

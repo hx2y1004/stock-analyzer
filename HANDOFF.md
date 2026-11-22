@@ -57,6 +57,21 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 시장 컨텍스트 5줄 + 시장 분위기 요약 (PR #43)
+- `build_market_context(ticker, is_kr, 종목 등락률)`이 `stock_data["market_context"]`(5줄)와 `stock_data["market_mood"]`를 만든다. 추가 2줄은 **이미 메모리·DB에 있는 값만** 쓴다(외부 호출 0회, 단위 테스트에서 yfinance·requests를 막고 확인). 기본 3줄은 기존 `fetch_market_context`(10분 캐시) 그대로다.
+  - 미국 종목: S&P 500 · Nasdaq · VIX + **USD/KRW 환율** + **소속 섹터**
+  - 한국 종목: KOSPI · KOSDAQ · 환율 + **S&P 500** + **소속 섹터**
+  - 지수·환율은 `_cached_quote()`가 찾는다. 순서는 반대편 시장 컨텍스트 캐시(`_MARKET_CACHE`) → 홈 시황 캐시(`_MARKET_OVERVIEW_CACHE`)이고, 12시간 넘은 값은 쓰지 않는다. 환율은 마지막으로 모의투자 환율 캐시(`_FX_CACHE`, 등락률 없음)를 본다. 다 비어 있으면(서버 재시작 직후 아무도 홈·다른 시장을 안 본 경우) 그 줄은 생략한다.
+  - 소속 섹터는 `sector_universe.json`으로 종목 → 섹터 키를 찾고, 섹터맵 스냅샷(`sector_map.get`, 메모리 → DB)의 시총가중 등락률과 상승·하락 수를 쓴다. 미매칭이면 생략한다.
+- `market_mood()`(규칙 기반, AI 없음) 우선순위:
+  1. VIX ≥ 30 → 변동성 경계(빨강)
+  2. 지수 ≤ -0.3% & 섹터(없으면 종목) 강세 → 상대 강세(파랑)
+  3. VIX ≥ 20 & 지수 약세 → 변동성 확대(주황)
+  4. 지수 ≥ +0.3% & 섹터 강세 → 우호적(초록)
+  5. 동반 약세(주황) / 섹터 소외(중립) / 지수 강세·약세 / 보합권
+  - 대표 지수는 미국 S&P 500, 한국 KOSPI(.KQ는 KOSDAQ)다.
+- 화면: `#marketMood`가 카드 맨 아래(`margin-top: auto`)에 오고, 톤별 색은 `.mc-mood.tone-*`이다.
+
 ### 종목 상세 Row 레이아웃 개편 (PR #42) — 세로 2컬럼 → 가로 행 분리
 - 상단을 큰 세로 2컬럼으로 묶어 두면 카드 조합(보유·이벤트 개수·봇 유무)에 따라 한쪽 아래에 구멍이 생겨, 행 단위로 나눴다. PR #41의 `_balanceStockColumns()`(이벤트 카드 좌우 이동·짧은 쪽 늘리기)는 지웠다.
   - **Row 1** `.main-grid`: 차트 ↔ 종합 분석 판단 + 주요 지표. `align-items: stretch`이고, 차트 카드 높이가 우측과 같아지도록 `SAChart.fitTo(우측 높이)`가 메인 차트 높이만 360~760px 안에서 조정한다(`S.mainFit`). 차트를 그린 직후(chart.js `render` 끝), 우측 카드 크기 변화(ResizeObserver), 창 크기 변경 때 main.js `_fitRow1()`이 부른다. 1열(≤1024px)과 전체화면에서는 조정하지 않는다. 차트가 최소 높이보다 더 필요하면 우측 마지막 카드(주요 지표)가 늘어나 채운다.
