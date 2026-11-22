@@ -57,6 +57,18 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 종목 헤더 `시간외 포함` 배지 (PR #44)
+- 토스 실시간가가 프리·애프터마켓(국내는 시간외·대체거래소) 체결가를 반영하면 상단 현재가와 차트 일봉 종가가 달라 보인다. 이를 안내한다.
+- `extended_hours_flag()`의 조건(모두 만족):
+  - `realtime_source == "toss"`
+  - 정규장이 아님
+  - 최신 일봉 종가(`regular_close`)와 0.05% 이상, 그리고 최소 단위(0.01달러 / 1원) 이상 차이
+  - 조건을 만족하면 응답에 `is_extended_hours_price: true`가 실린다. `regular_close`는 항상 실린다.
+- 토스 `/api/v1/prices` 응답에 세션 구분 필드가 있는지는 공식 스펙을 확인하지 못했다(이 세션 네트워크에서 openapi.tossinvest.com 접근 불가). 그래서 `toss_api._session_of()`가 이름에 session·marketStatus 류가 들어간 문자열 필드를 찾아 PRE/AFTER/EXTENDED…면 `extended`, REGULAR면 `regular`로 판단하고, 이 값이 가격 비교보다 우선한다. 필드가 없으면 가격 비교만 쓴다.
+  - 운영 서버에서 실제 응답 키를 한 번 확인해 두면 좋다.
+- 화면: 장 상태 줄(`🔒 장 마감 · 11/20 (금) 기준`) 옆에 `.ext-badge` `시간외 포함`과 `정규장 종가 $265.29`가 붙는다(한국은 `원` 정수). 모바일에서는 다음 줄로 내려간다.
+- 로컬 검증은 `scratchpad/fake_toss_server.py`(토스 가격만 흉내)로 했다.
+
 ### 시장 컨텍스트 5줄 + 시장 분위기 요약 (PR #43)
 - `build_market_context(ticker, is_kr, 종목 등락률)`이 `stock_data["market_context"]`(5줄)와 `stock_data["market_mood"]`를 만든다. 추가 2줄은 **이미 메모리·DB에 있는 값만** 쓴다(외부 호출 0회, 단위 테스트에서 yfinance·requests를 막고 확인). 기본 3줄은 기존 `fetch_market_context`(10분 캐시) 그대로다.
   - 미국 종목: S&P 500 · Nasdaq · VIX + **USD/KRW 환율** + **소속 섹터**

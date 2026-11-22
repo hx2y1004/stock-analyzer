@@ -228,6 +228,7 @@ def get_prices(tickers):
                     "price": price,
                     "currency": p.get("currency"),
                     "timestamp": p.get("timestamp"),
+                    "session": _session_of(p),
                 }
         except Exception as e:
             log.warning(f"[toss] get_prices failed: {e}")
@@ -239,6 +240,33 @@ def get_price(ticker):
     d = get_prices([ticker])
     info = d.get(ticker)
     return info["price"] if info else None
+
+
+def get_price_info(ticker):
+    """단일 종목 실시간 시세 + 부가 정보. → {"price", "currency", "timestamp", "session"} | None"""
+    return get_prices([ticker]).get(ticker)
+
+
+# 응답 스키마에 세션 구분 필드가 있는지 공식 문서로 확인하지 못해, 이름에 session·market status 류가
+# 들어간 필드를 찾아 값으로 판별한다. 없으면 None → app.py 가 가격 비교로 판단한다.
+_SESSION_KEYS = ("session", "marketstatus", "tradingstatus", "markettype", "pricetype", "tradingtype")
+_EXT_WORDS = ("PRE", "AFTER", "EXTENDED", "OVERTIME", "POST", "NIGHT", "NXT", "OUT_OF_HOURS")
+
+
+def _session_of(p):
+    """→ "extended" | "regular" | None"""
+    try:
+        for k, v in p.items():
+            if not isinstance(v, str) or not any(w in k.lower().replace("_", "") for w in _SESSION_KEYS):
+                continue
+            u = v.upper()
+            if any(w in u for w in _EXT_WORDS):
+                return "extended"
+            if "REGULAR" in u or u in ("OPEN", "NORMAL"):
+                return "regular"
+    except Exception:
+        pass
+    return None
 
 
 # ── 캔들 ───────────────────────────────────────────────────

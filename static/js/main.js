@@ -1408,6 +1408,15 @@ function renderStockInfo(stock) {
       freshEl.innerHTML = `🔒 장 마감 · ${tsLabel} 기준`;
       freshEl.className = 'price-freshness closed';
     }
+    // 시간외(프리·애프터마켓) 체결가가 반영돼 일봉 정규장 종가와 다를 때만: '시간외 포함' 배지 + 정규장 종가
+    if (stock.is_extended_hours_price && stock.regular_close) {
+      const rc = stock.currency === 'KRW'
+        ? Math.round(stock.regular_close).toLocaleString('ko-KR') + '원'
+        : '$' + Number(stock.regular_close).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      freshEl.insertAdjacentHTML('beforeend',
+        `<span class="ext-hours" title="현재가는 정규장 이후(또는 이전) 시간외 체결가를 반영했습니다. 차트 일봉은 정규장 종가 기준이라 다를 수 있어요.">` +
+        `<span class="ext-badge">시간외 포함</span><span class="ext-close">정규장 종가 ${rc}</span></span>`);
+    }
   }
 
   // 장중이면 현재가·등락을 1초마다 실시간 갱신

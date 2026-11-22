@@ -5818,3 +5818,13 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .mc-mood.tone-info .mc-mood-title { color: var(--accent); }
 .mc-mood.tone-neutral .mc-mood-title { color: var(--text); }
 .mc-mood.hidden { display: none; }
+
+/* 종목 헤더: 시간외 체결가 반영 안내 (장 상태 줄 옆) */
+.price-freshness { flex-wrap: wrap; }
+.ext-hours { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; white-space: nowrap; cursor: help; }
+.ext-badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; color: var(--text2);
+  background: var(--bg3); border: 1px solid var(--border); line-height: 1.5; }
+.ext-close { font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .ext-hours { margin-left: 0; flex-basis: 100%; margin-top: 2px; }
+}
