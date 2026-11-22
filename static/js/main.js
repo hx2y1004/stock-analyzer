@@ -372,6 +372,7 @@ async function checkAuth() {
     const data = await res.json();
     currentUser = data.user;
     renderAuthArea();
+    _syncTossButton();
     if (currentUser) loadPortfolio();
   } catch (e) {}
 }
@@ -421,6 +422,12 @@ async function loadPortfolio() {
   } catch (e) {
     cards.innerHTML = '<div class="pf-loading">불러오기 실패</div>';
   }
+}
+
+// 토스 계좌 불러오기 버튼: 연동 권한이 있는 소유자 계정에서만 (일반 사용자는 '+ 종목 추가'만)
+function _syncTossButton() {
+  const b = document.getElementById('pfTossBtn');
+  if (b) b.classList.toggle('hidden', !(currentUser && currentUser.can_import_toss === true));
 }
 
 // 토스 계좌 보유종목 → 실제 포트폴리오 동기화

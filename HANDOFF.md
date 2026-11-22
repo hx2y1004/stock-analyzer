@@ -57,6 +57,12 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 토스 계좌 불러오기 버튼: 소유자에게만 (PR #46)
+- `GET /api/me`의 `user.can_import_toss`는 `_can_import_toss()` = `toss_api.is_enabled()` 그리고 `_is_toss_owner()`이다. 소유자 판정은 import-toss와 같은 기준(TOSS_OWNER_EMAIL / TOSS_OWNER_USER_IDS, 목록이 비면 로컬 개발에서만)이다.
+- `POST /api/portfolio/import-toss`의 403 검사는 그대로 둔다(보안).
+- 홈: `#pfTossBtn`은 기본 `hidden`이고, `checkAuth()` 뒤 `_syncTossButton()`이 `can_import_toss === true`일 때만 보인다. 그래서 일반 사용자에게는 `+ 종목 추가`만 보이고, 로그인 확인 전에 깜빡이지도 않는다.
+- 모의투자 AI 포트폴리오 점검 `실제` 안내: 일반 사용자에게는 "…종목을 등록한 뒤 점검할 수 있어요", 소유자에게는 "…등록하거나 토스 계좌를 불러온 뒤…"를 보여 준다(`#reviewRealHintPlain` / `#reviewRealHintToss`).
+
 ### `시간외 포함` 배지가 NVDA에서 빠지던 문제 (PR #45)
 - 원인: 장이 닫혀 있을 때 토스 일봉 끝에 시간외 체결로 만들어진 다음 거래일 봉(예: 11/23)이 붙어 있으면 다음 일이 겹쳐 일어났다.
   - 그 봉 종가(130.03)가 토스 현재가와 같아 기존 로직이 '실시간 아님'(`realtime_source=None`)으로 처리했다.

@@ -798,6 +798,11 @@ function renderAiGates() {
   rP.textContent = rOk ? '' : `보유 ${held}/${REVIEW_MIN_HOLD}종목`;
   rP.classList.toggle('hidden', rOk);
   document.getElementById('reviewRealHint').classList.toggle('hidden', _reviewMode !== 'real');
+  // 토스 계좌 언급은 연동 권한이 있는 소유자에게만
+  const canToss = !!(currentUser && currentUser.can_import_toss === true);
+  const tossHint = document.getElementById('reviewRealHintToss'), plainHint = document.getElementById('reviewRealHintPlain');
+  if (tossHint) tossHint.classList.toggle('hidden', !canToss);
+  if (plainHint) plainHint.classList.toggle('hidden', canToss);
 }
 
 // ── AI 매매 코치 ───────────────────────────────────────────────────────────
