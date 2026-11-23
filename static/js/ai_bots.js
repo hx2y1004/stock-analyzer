@@ -292,7 +292,8 @@
       loadTrades(T);
     }));
     loadTrades(T);
-    if (scroll) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // 세로로만 이동한다. scrollIntoView 는 페이지가 조금이라도 넓으면 가로로도 밀어 표 왼쪽(종목·로고)이 잘려 보였다
+    if (scroll) window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY), left: 0, behavior: 'smooth' });
   }
 
   // ── 매매 이력 ─────────────────────────────────────────────────────────

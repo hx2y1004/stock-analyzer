@@ -4895,7 +4895,11 @@ button, input, select, textarea { font-family: inherit; }
 .ab-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 12px; background: var(--bg); border-radius: 10px; }
 .ab-kpis-sm { grid-template-columns: repeat(2, 1fr); margin: 10px 0; }
 .ab-h3 { font-size: 15px; font-weight: 700; margin: 18px 0 8px; }
-.ab-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.ab-scroll { position: relative; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* position: relative 가 핵심: 표 안의 position:absolute 요소(.sr-only 머리글 등)는 가장 가까운 '위치 지정' 조상을 기준으로 놓인다.
+   래퍼가 static 이면 그 요소가 스크롤 래퍼의 잘라내기를 빠져나가 표 오른쪽 끝(x≈800px)에 놓이고,
+   문서 폭이 넓어져 모바일 브라우저가 페이지 전체를 축소했다 (/ai-bots 보유 포지션 표 마지막 머리글 '모의 매수') */
+.ab-main > *, .ab-detail, .ab-panel, .ab-cards > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .ab-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .ab-table th { text-align: left; color: var(--text2); font-weight: 500; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .ab-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; white-space: nowrap; }
@@ -5053,7 +5057,7 @@ button, input, select, textarea { font-family: inherit; }
 .push-box .sub-hint { margin-top: 6px; }
 
 /* ── /screener: 원클릭 스크리너 · 종목 비교 ───────────────────────────── */
-.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.sr-only { position: absolute; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }  /* left:0 — 가로 스크롤 표 끝에 놓여 문서 폭을 넓히지 않게 */
 .sc-main { max-width: 1200px; margin: 0 auto; padding: 18px 24px 48px; display: flex; flex-direction: column; gap: 14px; }
 body.has-basket .sc-main { padding-bottom: 120px; }
 .sc-tabs { display: flex; gap: 4px; box-shadow: inset 0 -1px 0 var(--border); overflow-x: auto; scrollbar-width: none; }
@@ -5257,6 +5261,9 @@ body.has-basket .sc-main { padding-bottom: 120px; }
 /* ── 모바일 반응형 일괄 정리 (갤럭시 폴드 커버·펼침, 360~720px) ─────────────────── */
 /* 어떤 요소가 살짝 넘쳐도 페이지 전체가 좌우로 흔들리지 않게. clip 은 스크롤 컨테이너를 만들지 않아 sticky 헤더가 유지된다 */
 html, body { overflow-x: clip; }
+/* 위 규칙만으로는 모바일 브라우저의 '전체 축소'를 못 막는다 (축소 판단은 잘라내기 전 문서 폭 기준). 본문 컨테이너에서도 한 번 더 자른다.
+   clip 은 hidden 과 달리 스크롤 컨테이너를 만들지 않아 sticky 요소가 그대로 동작한다 */
+main { overflow-x: clip; }
 
 /* 로고: 좁은 화면에서는 글자 span 만 숨기고 아이콘 유지 */
 .logo { display: inline-flex; align-items: center; gap: 4px; }
