@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=96" />
+  <link rel="stylesheet" href="/static/css/style.css?v=97" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -87,6 +87,7 @@
           </div>
         </div>
         <div id="pfSummary" class="pf-summary hidden"></div>
+        <div id="pfSortBar" class="pf-sortbar hidden"><span class="pf-sortbar-count" id="pfSortCount"></span><span id="pfSortSlot" class="hsort-slot"></span></div>
         <div id="portfolioCards" class="portfolio-cards">
           <div class="pf-loading">불러오는 중...</div>
         </div>
@@ -565,6 +566,7 @@
   <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=7"></script>
-  <script src="/static/js/main.js?v=87"></script>
+  <script src="/static/js/hsort.js?v=1"></script>
+  <script src="/static/js/main.js?v=88"></script>
 </body>
 </html>
