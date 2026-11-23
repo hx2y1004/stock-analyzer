@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=93" />
+  <link rel="stylesheet" href="/static/css/style.css?v=94" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -66,7 +66,7 @@
       <!-- 관심종목 탭 -->
       <div id="pfTabWatch" class="pf-tab-panel hidden">
         <div class="pf-portfolio-note">
-          ⭐ 지켜보는 종목입니다. <button type="button" class="pf-note-link watch-alert-link" onclick="window.SANotify && SANotify.openSettings()">AI 봇 신호 알림 설정 →</button>
+          지켜보는 종목입니다. <button type="button" class="pf-note-link watch-alert-link" onclick="window.SANotify && SANotify.openSettings()">AI 봇 신호 알림 설정 →</button>
         </div>
         <div id="watchList" class="watch-list"></div>
       </div>
@@ -74,7 +74,7 @@
       <!-- 포트폴리오 탭 -->
       <div id="pfTabPortfolio" class="pf-tab-panel">
         <div class="pf-portfolio-note">
-          📌 <strong>실제 보유 종목</strong>입니다 (모의투자와 별개 · 랭킹 제외).
+          <strong>실제 보유 종목</strong>입니다 (모의투자와 별개 · 랭킹 제외).
           <a href="/trading" class="pf-note-link">모의투자 보러가기 →</a>
         </div>
         <div class="portfolio-top">
@@ -561,7 +561,8 @@
 
   {% include "_footer.html" %}
   <script src="/static/js/chart.js?v=5"></script>
-  <script src="/static/js/notify.js?v=5"></script>
-  <script src="/static/js/main.js?v=85"></script>
+  <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
+  <script src="/static/js/notify.js?v=6"></script>
+  <script src="/static/js/main.js?v=86"></script>
 </body>
 </html>
