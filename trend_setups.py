@@ -31,6 +31,8 @@ LIST_LIMIT = 40           # 시장별 최대 표시 개수
 REFRESH_MAX = 200         # '현시점 갱신' 대상 상한 (토스 1번 호출 = 200종목)
 REFRESH_COOLDOWN = 15     # 초
 BREAKOUT_PIN_MIN = 25     # ⚡ 장중 돌파를 맨 위로 올리는 최소 총점 (하락 추세 저점수 종목이 돌파만으로 1위가 되지 않게)
+DROP_LIMIT = 10            # 시장별로 목록 뒤에 붙여 보여 줄 장중 급락 종목 수 (경고 배지와 함께)
+INTRADAY_DROP_PCT = -5.0  # 장중 실시간 등락률이 이 이하면 '⚠️ 장중 급락' → 정렬 맨 뒤 그룹 (어제 종가 기준 패턴이 흔들리는 중)
 _CTX = {"ts": 0, "v": None}
 _LIVE_TS = {}             # market → 마지막 현시점 갱신 시각
 _REFRESH_LOCK = threading.Lock()
@@ -411,6 +413,8 @@ def _iso(dt):
 def item_dict(r):
     live = bool(r.live_at and r.computed_at and r.live_at >= r.computed_at and r.live_price)
     breakout = bool(live and r.pivot and r.live_price > r.pivot)
+    # 장중 급락: 확정(어제 종가 기준) 이후 받은 실시간 등락률이 -5% 이하. 장 마감 배치가 다시 확정하면 live 값이 지워져 자연히 풀린다
+    intraday_drop = bool(live and r.live_change_pct is not None and r.live_change_pct <= INTRADAY_DROP_PCT)
     vol_pace = None
     if live and breakout and r.live_volume and r.avg_volume20:
         prog = session_progress(r.market)
@@ -437,14 +441,21 @@ def item_dict(r):
         "near_high": bool(r.near_high), "bb_squeeze": bool(r.bb_squeeze),
         "pivot": r.pivot, "pivot_kind": r.pivot_kind, "breakout": breakout,
         "breakout_at": _iso(r.breakout_at) if breakout else None,
+        "intraday_drop": intraday_drop,
         "volume_pace": vol_pace, "base_date": r.base_date.isoformat() if r.base_date else None,
     }
 
 
 def _rank(d):
-    """정렬: 총점 BREAKOUT_PIN_MIN 이상인 ⚡ 장중 돌파 → 맨 위, 나머지는 총점·기술 점수 순 (저점수 돌파는 점수 자리에)."""
-    pinned = bool(d["breakout"] and (d["total_score"] or 0) >= BREAKOUT_PIN_MIN)
-    return (not pinned, -(d["total_score"] or 0), -(d["tech_score"] or 0))
+    """정렬 그룹: 0) 총점 BREAKOUT_PIN_MIN 이상 ⚡ 장중 돌파 → 1) 일반 셋업 → 2) ⚠️ 장중 급락(INTRADAY_DROP_PCT 이하).
+    같은 그룹 안에서는 총점·기술 점수 순. 저점수 돌파는 일반 그룹의 점수 자리, 급락 종목은 돌파여도 맨 뒤."""
+    if d.get("intraday_drop"):
+        group = 2
+    elif d["breakout"] and (d["total_score"] or 0) >= BREAKOUT_PIN_MIN:
+        group = 0
+    else:
+        group = 1
+    return (group, -(d["total_score"] or 0), -(d["tech_score"] or 0))
 
 
 def payload(market="ALL"):
@@ -464,12 +475,16 @@ def payload(market="ALL"):
         meta[m] = {
             "universe": universe_count(m), "analyzed": analyzed, "hits": len(ds),
             "breakouts": sum(1 for d in ds if d["breakout"]),
+            "intraday_drops": sum(1 for d in ds if d.get("intraday_drop")),
             "base_date": newest.base_date.isoformat() if newest and newest.base_date else None,
             "computed_at": _iso(newest.computed_at) if newest else None,
             "live_at": max(lives) if lives else None,
             "session_open": session_progress(m) is not None,
         }
-        items.extend(ds[:LIST_LIMIT])
+        # 급락 종목은 맨 뒤 그룹이라 상위 LIST_LIMIT 에서 잘려 사라지지 않게 따로 최대 DROP_LIMIT 개를 뒤에 붙인다
+        normal = [d for d in ds if not d.get("intraday_drop")][:LIST_LIMIT]
+        drops = [d for d in ds if d.get("intraday_drop")][:DROP_LIMIT]
+        items.extend(normal + drops)
     items.sort(key=_rank)
     st = build_status(market)
     return {
@@ -478,7 +493,7 @@ def payload(market="ALL"):
         "analyzed": sum(meta[m]["analyzed"] for m in markets),
         "hits": sum(meta[m]["hits"] for m in markets),
         "building": st["state"] == "running", "build": st if st["state"] != "idle" else None,
-        "min_score": MIN_SCORE, "breakout_pin_min": BREAKOUT_PIN_MIN, "refresh_cooldown": REFRESH_COOLDOWN,
+        "min_score": MIN_SCORE, "breakout_pin_min": BREAKOUT_PIN_MIN, "intraday_drop_pct": INTRADAY_DROP_PCT, "refresh_cooldown": REFRESH_COOLDOWN,
     }
 
 

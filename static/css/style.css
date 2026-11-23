@@ -5828,3 +5828,8 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 @media (max-width: 640px) {
   .ext-hours { margin-left: 0; flex-basis: 100%; margin-top: 2px; }
 }
+
+/* 추세 셋업: 장중 급락(-5% 이하) 경고 — 정렬은 맨 뒤 그룹, 카드는 붉은 테두리 + 배지, Perfect Setup 은 흐리게 */
+.tr-card.is-drop { border-color: rgba(248,81,73,.55); box-shadow: inset 0 0 0 1px rgba(248,81,73,.2); }
+.tr-badge.drop { color: var(--red); background: rgba(248,81,73,.14); border: 1px solid rgba(248,81,73,.35); white-space: normal; }
+.tr-badge.pf.muted { color: var(--text2); background: var(--bg3); text-decoration: line-through; text-decoration-color: rgba(248,81,73,.6); font-weight: 600; }
