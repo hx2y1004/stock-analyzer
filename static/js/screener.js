@@ -155,9 +155,9 @@
       <thead><tr><th>종목</th><th class="num">현재가</th><th class="num">등락률</th><th class="num">펀더멘탈</th><th class="num">RSI</th>
         <th class="num">PER (TTM)</th><th class="num">상승여력</th><th class="sc-act-h"><span class="sr-only">관심 · 비교</span></th></tr></thead>
       <tbody>${d.items.map((r) => `<tr>
-        <td data-label="종목"><a href="/stock/${encodeURIComponent(r.ticker)}" class="sc-name">${esc(r.name)}</a>
+        <td data-label="종목"><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(r.ticker, r.name, 'md') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(r.ticker)}" class="sc-name">${esc(r.name)}</a>
           <span class="ab-muted">${esc(r.ticker)}${r.sector_name ? ' · ' + esc(r.sector_name) : ''}</span>
-          ${r.ai_strategies ? `<span class="sc-ai">AI 신호 ${r.ai_strategies.length}</span>` : ''}</td>
+          ${r.ai_strategies ? `<span class="sc-ai">AI 신호 ${r.ai_strategies.length}</span>` : ''}</div></div></td>
         <td class="num" data-label="현재가">${px(r.price, r.ticker)}</td>
         <td class="num ${dir(r.change_pct)}" data-label="등락률">${pct(r.change_pct)}</td>
         <td class="num" data-label="펀더멘탈">${r.fundamental_score == null ? '<span class="ab-muted">집계 중</span>' : `<span class="sc-score s${Math.floor(r.fundamental_score / 20)}">${Math.round(r.fundamental_score)}</span>`}</td>
@@ -237,7 +237,7 @@
 
   function renderPicked() {
     $('#cmpPicked').innerHTML = S.cmp.length ? S.cmp.map((t, i) =>
-      `<span class="sc-chip" style="--c:${COLORS[i]}"><i class="sc-dot" aria-hidden="true"></i>${names[t] ? `${esc(names[t])}<span class="ab-muted">${esc(t)}</span>` : esc(t)}
+      `<span class="sc-chip" style="--c:${COLORS[i]}"><i class="sc-dot" aria-hidden="true"></i>${(window.renderStockLogo ? renderStockLogo(t, names[t], 'xs') : '')}${names[t] ? `${esc(names[t])}<span class="ab-muted">${esc(t)}</span>` : esc(t)}
         <button type="button" data-t="${esc(t)}" aria-label="${esc(names[t] || t)} 빼기">${ICON_X}</button></span>`).join('')
       : '<span class="ab-muted">비교할 종목을 2~3개 골라 주세요.</span>';
     $$('#cmpPicked button').forEach((b) => b.addEventListener('click', () => { S.cmp = S.cmp.filter((x) => x !== b.dataset.t); loadCompare(); }));
@@ -257,7 +257,7 @@
       acIdx = -1;
       if (!acItems.length) { ac.classList.add('hidden'); return; }
       ac.innerHTML = acItems.map((it, i) => `<div class="autocomplete-item" role="option" data-i="${i}">
-        <span class="ac-symbol">${esc(it.symbol)}</span><span class="ac-name">${esc(it.name)}</span><span class="ac-exchange">${esc(it.exchange || '')}</span></div>`).join('');
+        ${(window.renderStockLogo ? renderStockLogo(it.symbol, it.name, 'xs') : '')}<span class="ac-symbol">${esc(it.symbol)}</span><span class="ac-name">${esc(it.name)}</span><span class="ac-exchange">${esc(it.exchange || '')}</span></div>`).join('');
       $$('.autocomplete-item', ac).forEach((el) => el.addEventListener('mousedown', (e) => { e.preventDefault(); pick(acItems[+el.dataset.i]); }));
       ac.classList.remove('hidden');
     }, 180);
@@ -406,7 +406,7 @@
       ['1년', (x) => (x.returns || {})['1Y'], (x) => `<span class="${dir((x.returns || {})['1Y'])}">${pct((x.returns || {})['1Y'], 1)}</span>`, 'high'],
     ];
     const head = `<thead><tr><th scope="col">항목</th>${items.map((x, i) =>
-      `<th scope="col"><span class="sc-dot" style="--c:${COLORS[i]}" aria-hidden="true"></span><a href="/stock/${encodeURIComponent(x.ticker)}">${esc(x.name)}</a><div class="ab-muted">${esc(x.ticker)}</div></th>`).join('')}</tr></thead>`;
+      `<th scope="col"><div class="lg-id sc-cmp-id"><span class="sc-dot" style="--c:${COLORS[i]}" aria-hidden="true"></span>${(window.renderStockLogo ? renderStockLogo(x.ticker, x.name, 'md') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(x.ticker)}">${esc(x.name)}</a><div class="ab-muted">${esc(x.ticker)}</div></div></div></th>`).join('')}</tr></thead>`;
     const body = rows.map((r) => {
       if (r.length === 1) return `<tr class="sc-sec"><th colspan="${items.length + 1}" scope="rowgroup">${r[0]}</th></tr>`;
       const [label, get, show, better, dec = 1] = r;
@@ -579,6 +579,7 @@
     return `<article class="card tr-card${i.breakout && !drop ? ' is-breakout' : ''}${drop ? ' is-drop' : ''}">
       <div class="tr-top">
         <span class="tr-rank" aria-label="${rank}위">${rank}</span>
+        ${(window.renderStockLogo ? renderStockLogo(i.ticker, i.name, 'md') : '')}
         <div class="tr-id"><a href="/stock/${encodeURIComponent(i.ticker)}" class="sc-name">${esc(i.name || i.ticker)}</a>
           <span class="ab-muted">${esc(i.ticker)} · ${MK[i.market]}</span></div>
         <span class="tr-score sc-score s${Math.min(4, Math.floor((i.total_score || 0) / 20))}" title="기술 ${i.tech_score} · 모멘텀 ${i.momentum_score} · 펀더멘탈 ${i.fund_score}">${i.total_score}<small>/100</small></span>

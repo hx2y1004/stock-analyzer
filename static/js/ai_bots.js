@@ -225,7 +225,7 @@
       ${b.positions.length ? `<div class="ab-scroll"><table class="ab-table">
         <thead><tr><th>종목</th><th>진입가</th><th>현재가</th><th>수익률</th><th>목표까지</th><th>손절까지</th><th>보유</th><th><span class="sr-only">모의 매수</span></th></tr></thead>
         <tbody>${b.positions.map((p) => `<tr>
-          <td><a href="/stock/${encodeURIComponent(p.ticker)}">${esc(p.name || p.ticker)}</a> <span class="ab-muted">${esc(p.ticker)} · ${p.quantity}주</span></td>
+          <td><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(p.ticker, p.name, 'sm') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(p.ticker)}">${esc(p.name || p.ticker)}</a> <span class="ab-muted">${esc(p.ticker)} · ${p.quantity}주</span></div></div></td>
           <td>${px(p.entry_price, p.currency)}</td><td>${px(p.current_price, p.currency)}</td>
           <td class="${dirCls(p.return_pct)}">${pct(p.return_pct)}</td>
           <td>${pct(p.to_target_pct)} <span class="ab-muted">${px(p.target_price, p.currency)}</span></td>
@@ -247,7 +247,7 @@
         <thead><tr><th>신호일</th><th>종목</th><th>결과</th><th>진입 → 청산</th><th>수익률</th><th>신뢰도</th><th>근거</th></tr></thead>
         <tbody>${b.signals.map((x) => `<tr>
           <td>${esc(x.signal_date)}</td>
-          <td><a href="/stock/${encodeURIComponent(x.ticker)}">${esc(x.name || x.ticker)}</a>${x.account && x.account.status === 'SKIPPED' ? ` <span class="ab-muted" title="${esc(x.account.skip_reason)}">계좌 미체결</span>` : ''}</td>
+          <td><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(x.ticker, x.name, 'sm') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(x.ticker)}">${esc(x.name || x.ticker)}</a>${x.account && x.account.status === 'SKIPPED' ? ` <span class="ab-muted" title="${esc(x.account.skip_reason)}">계좌 미체결</span>` : ''}</div></div></td>
           <td>${badge(x.status, x.pnl_pct)}${x.status_reason ? `<div class="ab-muted ab-reason">${esc(x.status_reason)}</div>` : ''}
             ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, x.market === 'KR' ? 'KRW' : 'USD', b.name, x.name) : ''}</td>
           <td>${px(x.fill_price || x.entry_price, x.market === 'KR' ? 'KRW' : 'USD')} → ${x.exit_price ? px(x.exit_price, x.market === 'KR' ? 'KRW' : 'USD') : '—'}</td>
@@ -354,7 +354,7 @@
           return `<tr>
             <td data-label="체결 일시">${esc(fmtTime(t.time))}</td>
             <td data-label="구분"><span class="ab-side ${sell ? 'ab-side-sell' : 'ab-side-buy'}">${sell ? '매도' : '매수'}</span></td>
-            <td data-label="종목"><a href="/stock/${encodeURIComponent(t.ticker)}">${esc(t.name || t.ticker)}</a> <span class="ab-muted">${esc(t.ticker)}</span></td>
+            <td data-label="종목"><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(t.ticker, t.name, 'sm') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(t.ticker)}">${esc(t.name || t.ticker)}</a> <span class="ab-muted">${esc(t.ticker)}</span></div></div></td>
             <td class="num" data-label="수량">${Number(t.quantity).toLocaleString('ko-KR')}주</td>
             <td class="num" data-label="체결 단가">${px(t.price, t.currency)}${t.currency === 'USD' && t.exchange_rate ? `<div class="ab-muted">환율 ${Math.round(t.exchange_rate).toLocaleString('ko-KR')}</div>` : ''}</td>
             <td class="num" data-label="거래 금액">${Math.round(t.amount_krw).toLocaleString('ko-KR')}원</td>

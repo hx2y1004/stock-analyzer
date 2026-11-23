@@ -477,7 +477,7 @@ function _pfRowHTML(h) {
   const cls = pct == null ? 'flat' : pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
   const tk = escapeHtmlMain(h.ticker), nm = escapeHtmlMain(h.name || h.ticker);
   const pctTxt = pct == null ? '' : `${pct > 0 ? '+' : pct < 0 ? '-' : ''}${Math.abs(pct).toFixed(2)}%`;
-  const logo = window.SALogo ? SALogo.html(h.ticker, h.name, 32) : '';
+  const logo = window.renderStockLogo ? renderStockLogo(h.ticker, h.name, 'md') : '';
   return `
     <div class="pft-row pf-${cls}" role="link" tabindex="0" data-t="${tk}" aria-label="${nm} 종목 분석 보기">
       <div class="pft-stock">${logo}<div class="pft-id"><div class="pft-name">${nm}</div><div class="pft-tk">${tk}</div></div></div>
@@ -1342,6 +1342,8 @@ const exchangeKo = (e) => (e && EXCHANGE_KO[e]) || e || '';
 
 function renderStockInfo(stock) {
   document.getElementById('stockName').textContent = stock.name;
+  const _lgSlot = document.getElementById('stockLogo');
+  if (_lgSlot) _lgSlot.innerHTML = window.renderStockLogo ? renderStockLogo(stock.ticker, stock.name, 'lg') : '';
   document.getElementById('stockTicker').textContent = stock.ticker;
   if (document.getElementById('notifyBell') && window.SAWatch) SAWatch.bindStar(document.getElementById('watchStar'), stock.ticker, stock.name);
   document.getElementById('stockSector').textContent = sectorKo(stock.sector);
@@ -3031,6 +3033,7 @@ function renderAC() {
   if (!acItems.length) { hideAC(); return; }
   acList.innerHTML = acItems.map((item, i) => `
     <div class="autocomplete-item" data-i="${i}" onmousedown="selectAC(acItems[${i}])">
+      ${(window.renderStockLogo ? renderStockLogo(item.symbol, item.name, 'xs') : '')}
       <span class="ac-symbol">${item.symbol}</span>
       <span class="ac-name">${item.name}</span>
       <span class="ac-exchange">${item.exchange}</span>
@@ -3102,6 +3105,7 @@ function renderAddAC() {
   if (!list || !addAcItems.length) { hideAddAC(); return; }
   list.innerHTML = addAcItems.map((item, i) => `
     <div class="autocomplete-item" data-i="${i}" onmousedown="selectAddAC(addAcItems[${i}])">
+      ${(window.renderStockLogo ? renderStockLogo(item.symbol, item.name, 'xs') : '')}
       <span class="ac-symbol">${item.symbol}</span>
       <span class="ac-name">${item.name}</span>
       <span class="ac-exchange">${item.exchange}</span>
