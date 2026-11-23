@@ -282,7 +282,11 @@ def held_tickers(market=None):
 
 
 def check_market(market):
-    """장 마감 배치 시작에서 1일 1회: 그 시장 보유 종목 전체."""
+    """장 마감 배치 시작에서 1일 1회: 그 시장 보유 종목 전체. 오래된 급락 보류 상태도 이때 정리."""
+    try:
+        prune_hold_states()
+    except Exception:
+        pass
     return apply_tickers(held_tickers(market))
 
 
@@ -305,19 +309,26 @@ def guard_drop(tickers):
 
 
 # ── 이중 방어: yfinance splits 반영이 늦을 때 ─────────────────────────────────────
-# ① 가격 기록으로 분할 의심: (a) 수정주가 일봉의 매수일 종가가 매입가의 1/1.8 이하로 내려와 있다(이미 분할 반영된 기록)
-#    또는 (b) 아직 수정 안 된 기록에서 하룻밤 갭이 흔한 분할 비율(2·3·4·5·8·10…)과 거의 같다.
-#    → 자동 손절 보류 (최대 24시간, 그 사이 yfinance splits 가 들어오면 보정).
-# ② 증거가 없어도 -40% 이하 급락을 처음 본 체크에서는 1회 보류하고, 다음 체크(4분 이상 뒤)에 재판정한다.
-#    한 보유 건은 한 번만 보류하므로 실제 폭락·상장폐지가 계속 미뤄지지 않는다.
-SPLIT_EVIDENCE = 1.8            # 매입가 ÷ 매수일 수정 종가 ≥ 1.8 이면 분할 의심
+# ① 가격 기록으로 분할 의심 → 증거 강도별로 자동 손절 보류 상한을 다르게 둔다
+#    strong: 수정주가 일봉의 매수일 종가가 매입가의 1/1.8 이하 (이미 분할이 반영된 기록)        → 최대 6시간
+#    weak  : 수정주가 하락은 없고 최근 하룻밤 갭만 흔한 분할 비율(2·3·4·5·8·10…)과 ±4% 일치  → 최대 1시간
+#            (정확히 -50% 같은 실제 폭락도 여기 걸릴 수 있어 짧게). 1시간 안에 strong 이 확인되면 승급.
+#    그 사이 yfinance splits 가 들어오면 guard_drop 이 보정하고 손절을 취소한다.
+# ② 근거가 없으면(none) -40% 이하 급락을 처음 본 체크에서 1회(4분) 보류하고, 다음 체크에 재판정한다.
+#    어떤 경우든 상한이 지나면 released=True → 그 뒤로는 바로 정상 판정 (실제 폭락·상장폐지가 계속 미뤄지지 않음).
+# 상태는 DB(drop_hold_states)에 두어 재시작·재배포에도 타이머와 released 를 이어 간다. DB 오류면 메모리로 폴백.
+SPLIT_EVIDENCE = 1.8            # 매입가 ÷ 매수일 수정 종가 ≥ 1.8 이면 strong
 COMMON_RATIOS = (1.5, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 25, 30, 40, 50)
-GAP_TOL = 0.04                  # 갭이 분할 비율과 ±4% 안이면 분할 의심
-HOLD_MIN_SEC = 4 * 60           # 1회 보류: 다음 5분 체크까지
-EVIDENCE_MAX_SEC = 24 * 3600    # 분할 의심 보류 상한
-_HOLD = {}                      # (kind, id) → {"first": ts, "released": bool, "ev_first": ts}
+GAP_TOL = 0.04                  # 갭이 분할 비율과 ±4% 안이면 weak
+HOLD_MIN_SEC = 4 * 60           # none: 1회 보류 (다음 5분 체크까지)
+WEAK_MAX_SEC = 3600             # weak 보류 상한
+STRONG_MAX_SEC = 6 * 3600       # strong 보류 상한
+HOLD_TTL_DAYS = 7               # 이보다 오래 손대지 않은 보류 상태는 정리
+_LEVEL_RANK = {"none": 0, "weak": 1, "strong": 2}
+_HOLD = {}                      # 메모리 폴백: (kind, id) → {"first": ts, "ev_first": ts|None, "ev_level": str, "released": bool}
 _BARS = {}                      # ticker → (받은 시각, df)
 _BARS_TTL = 600
+_LAST_PRUNE = {"ts": 0.0}
 
 
 def _daily_bars(ticker):
@@ -346,30 +357,29 @@ def _daily_bars(ticker):
 
 
 def _local_dates(df):
-    idx = df.index
     try:
-        return [ts.date() for ts in idx]
+        return [ts.date() for ts in df.index]
     except Exception:
         return []
 
 
 def history_evidence(ticker, buy_price, buy_date, df=None):
-    """가격 기록으로 본 분할 의심. → (의심 여부, 이유, 추정 비율)"""
+    """가격 기록으로 본 분할 의심. → (강도 "strong"|"weak"|"none", 이유, 추정 비율)"""
     if df is None:
         df = _daily_bars(ticker)
     if df is None or len(df) == 0 or not buy_price:
-        return False, "", None
+        return "none", "", None
     try:
         closes = df["Close"].astype(float)
         dates = _local_dates(df)
-        # (a) 매수일(또는 그 직전 거래일) 수정 종가가 매입가보다 1.8배 이상 낮다
+        # strong: 매수일(또는 그 직전 거래일) 수정 종가가 매입가보다 1.8배 이상 낮다
         if buy_date is not None:
             prior = [i for i, d in enumerate(dates) if d <= buy_date]
             if prior:
                 c = float(closes.iloc[prior[-1]])
                 if c > 0 and buy_price / c >= SPLIT_EVIDENCE:
-                    return True, f"수정주가: 매수일 종가 {c:,.2f} = 매입가 {buy_price:,.2f}의 1/{buy_price / c:.1f}", round(buy_price / c, 2)
-        # (b) 최근 거래일 사이 하룻밤 갭이 흔한 분할 비율과 같다 (수정 안 된 기록)
+                    return "strong", f"수정주가: 매수일 종가 {c:,.2f} = 매입가 {buy_price:,.2f}의 1/{buy_price / c:.1f}", round(buy_price / c, 2)
+        # weak: 최근 거래일 사이 하룻밤 갭만 흔한 분할 비율과 같다 (수정 안 된 기록 · 실제 폭락일 수도)
         opens = df["Open"].astype(float) if "Open" in df else closes
         for i in range(max(1, len(closes) - 3), len(closes)):
             prev, now_o = float(closes.iloc[i - 1]), float(opens.iloc[i]) or float(closes.iloc[i])
@@ -377,31 +387,117 @@ def history_evidence(ticker, buy_price, buy_date, df=None):
                 g = prev / now_o
                 for r in COMMON_RATIOS:
                     if r >= SPLIT_EVIDENCE and abs(g / r - 1) <= GAP_TOL:
-                        return True, f"갭 {g:.2f}배 = 분할 비율 {r:g}과 일치 ({dates[i - 1]} → {dates[i]})", float(r)
+                        return "weak", f"갭 {g:.2f}배 = 분할 비율 {r:g}과 일치 ({dates[i - 1]} → {dates[i]})", float(r)
     except Exception as e:
         log(f"{ticker} 기록 확인 실패: {e}")
-    return False, "", None
+    return "none", "", None
+
+
+# ── 보류 상태 저장 (DB 우선, 실패하면 메모리) ─────────────────────────────────────
+def _to_dt(ts):
+    return datetime.utcfromtimestamp(ts) if ts is not None else None
+
+
+def _to_ts(dt):
+    return (dt - datetime(1970, 1, 1)).total_seconds() if dt is not None else None
+
+
+def _load_state(kind, hid):
+    """→ (state dict | None, DB 사용 가능 여부)"""
+    M = D.get("DropHoldState")
+    if M is not None:
+        try:
+            row = M.query.filter_by(kind=kind, target_id=hid).first()
+            if row is None:
+                return None, True
+            return {"first": _to_ts(row.first_seen_at), "ev_first": _to_ts(row.ev_first_at),
+                    "ev_level": row.ev_level or "none", "released": bool(row.released)}, True
+        except Exception as e:
+            try:
+                D["db"].session.rollback()
+            except Exception:
+                pass
+            log(f"보류 상태 조회 실패 → 메모리 폴백: {e}")
+    st = _HOLD.get((kind, hid))
+    return (dict(st) if st else None), False
+
+
+def _save_state(kind, hid, ticker, st, use_db, now):
+    _HOLD[(kind, hid)] = dict(st)                          # 메모리에도 항상 남긴다 (DB 오류 대비)
+    if not use_db or D.get("DropHoldState") is None:
+        return
+    M, db = D["DropHoldState"], D["db"]
+    try:
+        row = M.query.filter_by(kind=kind, target_id=hid).first()
+        if row is None:
+            row = M(kind=kind, target_id=hid)
+            db.session.add(row)
+        row.ticker = ticker
+        row.first_seen_at, row.ev_first_at = _to_dt(st["first"]), _to_dt(st.get("ev_first"))
+        row.ev_level, row.released, row.updated_at = st.get("ev_level") or "none", bool(st.get("released")), _to_dt(now)
+        db.session.commit()
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        log(f"보류 상태 저장 실패 → 메모리만 사용: {e}")
+
+
+def prune_hold_states(now=None):
+    """HOLD_TTL_DAYS 넘게 손대지 않은 보류 상태 정리 (DB · 메모리). → 지운 행 수"""
+    now = now if now is not None else time.time()
+    cutoff = now - HOLD_TTL_DAYS * 86400
+    for k in [k for k, v in _HOLD.items() if (v.get("first") or now) < cutoff]:
+        _HOLD.pop(k, None)
+    M = D.get("DropHoldState")
+    if M is None:
+        return 0
+    try:
+        n = M.query.filter(M.updated_at < _to_dt(cutoff)).delete(synchronize_session=False)
+        D["db"].session.commit()
+        return n
+    except Exception as e:
+        try:
+            D["db"].session.rollback()
+        except Exception:
+            pass
+        log(f"보류 상태 정리 실패: {e}")
+        return 0
 
 
 def drop_decision(kind, hid, ticker, buy_price, buy_date, price, df=None, now=None):
-    """-40% 이하 급락 손절 직전 판정. → ("hold" | "proceed", 이유)
-    hold: 분할 의심(최대 24시간) 또는 첫 감지 1회 보류. proceed: 정상 판정(손절 실행)."""
+    """-40% 이하 급락 손절 직전 판정. → ("hold" | "proceed", 이유)"""
     now = now if now is not None else time.time()
     if not buy_price or not price or price > buy_price * DROP_GUARD:
         return "proceed", ""
-    if len(_HOLD) > 5000:                                   # 오래된 기록 정리
-        for k in [k for k, v in _HOLD.items() if now - v["first"] > 2 * 86400]:
-            _HOLD.pop(k, None)
-    st = _HOLD.setdefault((kind, hid), {"first": now, "released": False})
-    ev, why, _ = history_evidence(ticker, buy_price, buy_date, df=df)
-    if ev:
-        st.setdefault("ev_first", now)
-        if now - st["ev_first"] < EVIDENCE_MAX_SEC:
-            return "hold", f"분할 의심 → 자동 손절 보류: {why}"
-        return "proceed", "분할 의심 24시간 경과 → 정상 판정"
-    if st["released"]:
+    if now - _LAST_PRUNE["ts"] > 3600:                     # 가볍게 한 시간에 한 번 정리
+        _LAST_PRUNE["ts"] = now
+        prune_hold_states(now)
+    st, use_db = _load_state(kind, hid)
+    if st is None:
+        st = {"first": now, "ev_first": None, "ev_level": "none", "released": False}
+    if st.get("released"):
+        _save_state(kind, hid, ticker, st, use_db, now)
         return "proceed", "보류했던 건 → 정상 판정"
+    level, why, _ = history_evidence(ticker, buy_price, buy_date, df=df)
+    # 강도는 한 번 확인된 가장 강한 값을 유지 (weak → strong 승급, 거꾸로 내려가지 않음)
+    if _LEVEL_RANK[level] > _LEVEL_RANK.get(st.get("ev_level") or "none", 0):
+        st["ev_level"] = level
+        if st.get("ev_first") is None:
+            st["ev_first"] = now
+    lv = st.get("ev_level") or "none"
+    if lv in ("strong", "weak"):
+        cap = STRONG_MAX_SEC if lv == "strong" else WEAK_MAX_SEC
+        if now - (st.get("ev_first") or now) < cap:
+            _save_state(kind, hid, ticker, st, use_db, now)
+            return "hold", f"분할 의심({lv}) → 자동 손절 보류 (최대 {cap // 3600}시간): {why or '이전 체크에서 확인'}"
+        st["released"] = True
+        _save_state(kind, hid, ticker, st, use_db, now)
+        return "proceed", f"분할 의심({lv}) {cap // 3600}시간 동안 splits 확인 안 됨 → 정상 판정"
     if now - st["first"] < HOLD_MIN_SEC:
+        _save_state(kind, hid, ticker, st, use_db, now)
         return "hold", "-40% 이하 급락 첫 감지 → 1회 보류, 다음 체크에서 재판정"
     st["released"] = True
+    _save_state(kind, hid, ticker, st, use_db, now)
     return "proceed", "1회 보류 후 분할 확인 안 됨 → 정상 판정"

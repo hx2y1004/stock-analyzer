@@ -675,10 +675,10 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                     continue
                 last = float(df["Close"].iloc[-1])
                 if last <= buy * 0.60:
-                    ev = D["split_evidence"](r.ticker, buy, r.filled_date or r.signal_date) if D.get("split_evidence") else (False, "", None)
-                    if not ev[0]:
+                    ev = D["split_evidence"](r.ticker, buy, r.filled_date or r.signal_date) if D.get("split_evidence") else ("none", "", None)
+                    if ev[0] == "none":
                         ev = D["split_evidence"](r.ticker, buy, r.filled_date or r.signal_date, df) if D.get("split_evidence") else ev
-                    if ev[0]:
+                    if ev[0] != "none":                     # strong(최대 6시간) · weak(최대 1시간)
                         verdict, why = D["drop_decision"]("batch", r.id, r.ticker, buy, r.filled_date or r.signal_date, last, df)
                         if verdict == "hold":
                             skip.add(r.ticker)
