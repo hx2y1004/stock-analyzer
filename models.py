@@ -410,3 +410,18 @@ class TrendSetup(db.Model):
     live_volume     = db.Column(db.Float)
     live_at         = db.Column(db.DateTime)
     breakout_at     = db.Column(db.DateTime)       # 이번 세션에 처음 기준가를 넘은 시각
+
+
+class AppliedStockSplit(db.Model):
+    """이미 반영한 액면분할 (멱등성). 같은 보유 건(account_type + holding_id)에 같은 분할(ticker + split_date)은 한 번만.
+    account_type: paper(사용자 모의) | bot(봇 모의 계좌) | botpos(봇 포지션) | signal(봇 신호) | real(실제 포트폴리오)"""
+    __tablename__ = "applied_stock_splits"
+    id           = db.Column(db.Integer, primary_key=True)
+    account_type = db.Column(db.String(10), nullable=False)
+    holding_id   = db.Column(db.Integer, nullable=False)
+    ticker       = db.Column(db.String(30), nullable=False, index=True)
+    split_date   = db.Column(db.Date, nullable=False)
+    ratio        = db.Column(db.Float, nullable=False)          # 8.0 = 8:1 분할, 0.1 = 1:10 병합
+    detail       = db.Column(db.Text)                           # 보정 전후 값 (JSON)
+    applied_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("account_type", "holding_id", "ticker", "split_date", name="uq_applied_split"),)
