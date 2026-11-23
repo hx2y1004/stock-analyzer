@@ -57,6 +57,19 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### iOS Safe Area · 빠른 선택 칩 1줄 (PR #51)
+- `.header`: `position: -webkit-sticky; sticky; top 0` + `padding-top: env(safe-area-inset-top, 0px)`(좌우 inset 포함). 배경은 노치 끝까지 칠하고 `.header-inner`는 안전 영역 아래에 둔다. 안드로이드·PC는 0이다.
+- 5개 템플릿 모두 `viewport-fit=cover`, `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style: black-translucent`로 맞췄다(screener·ai_bots·leaderboard에 추가).
+- 하단 플로팅 요소는 `+ env(safe-area-inset-bottom)`을 더한다: `.sc-basket`, `.sc-toast`, `.tr-toast`, `.badge-toast`, `.site-footer`. 전체화면 차트는 원래 적용돼 있었다.
+- 로그인 등 모달 `.modal-overlay`는 4방향 safe-area padding을 준다.
+- `html, body { overflow-x: clip }`은 유지한다. `clip`은 스크롤 컨테이너를 만들지 않아 sticky를 깨지 않는다(`hidden`과 다름). 지원하지 않는 옛 WebKit은 무시할 뿐 sticky에 영향이 없다.
+- 서비스 워커 `sa-v59`:
+  - `/auth/*`·`/login`·`/logout`은 가로채지 않는다(OAuth 리다이렉트·쿠키 응답을 캐시하거나 오프라인 폴백으로 옛 화면을 주지 않게).
+  - 런타임 캐시는 `res.ok`이면서 리다이렉트가 아닌 응답만 저장한다.
+  - Google·카카오 로그인은 `<a href>` 같은 창 이동이다(팝업 아님).
+- 모바일(≤640px) `.quick-tickers`: 1줄 가로 스크롤(`nowrap`, `overflow-x: auto`, 스크롤바 숨김, 오른쪽 끝 흐림, 칩 `flex-shrink: 0`). 검색 카드가 212px에서 182px로 줄었다.
+- 검증은 Chromium CDP `Emulation.setSafeAreaInsetsOverride`(top 59, bottom 34)로 했다. 실제 iOS 기기·WebKit에서는 확인하지 못했다.
+
 ### 모의투자 보유 종목 카드 사용성 (PR #50)
 - 단가 줄 `.tr-unit`: `매입 177,700원 → 현재 177,500원 · 10주`. 항상 **종목 통화**(`fmtNative`)로 표시해 익절·손절과 바로 비교할 수 있다. 오른쪽 평가금은 기존대로 원/$ 토글을 따른다.
 - 위치 바 `_exitBar(p)`:
