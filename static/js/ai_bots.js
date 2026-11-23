@@ -386,6 +386,20 @@ function followLink(ticker, target, stop, currency, botName, name) {
   return `<a class="ab-follow" href="/trading?${q.toString()}" aria-label="${esc(name || ticker)} 따라 사기 (모의 매수)">따라 사기</a>`;
 }
 
+// 진입 근거 모달: 내부 키 → 한국어 라벨. bot_engine.fundamentals_for() 의 missing 은 지금
+// fund_score · dcf_fair · analyst_target 세 가지이고, 나머지는 앞으로 늘어날 수 있는 키를 미리 둔 것.
+// 표에 없는 키는 원문 그대로(이스케이프) 보여 준다.
+const MISSING_LABELS = {
+  fund_score: '펀더멘탈 점수', dcf_fair: 'DCF 적정가', dcf_reliability: 'DCF 신뢰도', analyst_target: '애널리스트 목표가',
+  earnings_date: '실적 발표일', events: '일정(실적·배당)', news: '뉴스', fundamentals: '재무 데이터', financials: '재무제표',
+  per: 'PER', forward_per: '선행 PER', pbr: 'PBR', eps: 'EPS', roe: 'ROE', dividend_yield: '배당수익률',
+  market_cap: '시가총액', revenue_growth: '매출 성장률', sector: '섹터', vix: 'VIX', volume: '거래량', rsi: 'RSI',
+  price: '현재가', ai: 'AI 평가',
+};
+const missingLabel = (k) => MISSING_LABELS[k] || String(k);
+const VERDICT_LABELS = { pass: '통과', caution: '주의', reject: '제외' };
+const verdictLabel = (v) => VERDICT_LABELS[String(v || '').toLowerCase()] || (v || '—');
+
 async function openWhy(id) {
     const body = $('#abModalBody');
     body.innerHTML = '<div class="ab-muted">불러오는 중...</div>';
@@ -412,9 +426,9 @@ async function openWhy(id) {
           <div><strong>긍정</strong><ul>${(ai.positives || []).map((t) => `<li>${esc(t)}</li>`).join('') || '<li>—</li>'}</ul></div>
           <div><strong>위험</strong><ul>${(ai.risks || []).map((t) => `<li>${esc(t)}</li>`).join('') || '<li>—</li>'}</ul></div>
         </div>
-        <p class="ab-muted">판정 ${esc(ai.verdict)} · AI 확신도 ${ai.confidence ?? '—'} · 단기 호재 ${ai.catalyst ? '있음' : '없음'} · 치명적 악재 ${ai.fatal_risk ? '있음' : '없음'}</p>`
+        <p class="ab-muted">판정 ${esc(verdictLabel(ai.verdict))} · AI 확신도 ${ai.confidence ?? '—'} · 단기 호재 ${ai.catalyst ? '있음' : '없음'} · 치명적 악재 ${ai.fatal_risk ? '있음' : '없음'}</p>`
         : '<p class="ab-muted">이 신호는 AI 검증 없이 정량 규칙으로만 만들어졌습니다.</p>'}
-      ${(fd.missing || []).length ? `<p class="ab-muted">당시 비어 있던 데이터: ${esc(fd.missing.join(', '))}</p>` : ''}`;
+      ${(fd.missing || []).length ? `<p class="ab-muted">당시 비어 있던 데이터: ${esc(fd.missing.map(missingLabel).join(', '))}</p>` : ''}`;
   }
 
   // ── 시작 ──────────────────────────────────────────────────────────────
