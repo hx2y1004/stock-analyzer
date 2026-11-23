@@ -57,6 +57,37 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 실시간 시세 토스 1순위 통일 (PR #47)
+- **공용 캐시** `toss_api.get_prices_cached(tickers, ttl=20)`:
+  - 종목별 인메모리 캐시이고, 만료된 종목만 200개씩 묶어 `get_prices`를 부른다.
+  - 스레드 락이 있고, 4,000개를 넘으면 오래된 것부터 정리한다.
+  - 토스 미설정·실패·미지원(지수·환율) 종목은 결과에서 빠진다 → 호출하는 쪽이 기존 네이버/yfinance로 채운다.
+  - `/api/debug/toss`(소유자)의 `price_cache`에서 적중·호출·크기를 볼 수 있다.
+  - `_fetch_current_price`(종목 상세 1초 폴링 등)도 이 캐시를 3초 TTL로 쓴다.
+- **등락률**: `toss_api.change_pct(현재가, 전일 종가, info)`. 전일 종가는 저장된 값을 우선한다.
+  - `app._snapshot_prev_closes()`: 스크리너 스냅샷이 오늘 것이면 `가격 ÷ (1 + 등락률)`, 지난 날짜 것이면 그 가격.
+  - 추세 셋업은 확정 종가(`price`, `base_date < 오늘`)를 쓴다.
+  - 섹터맵·급등락은 그날 전체 받기 결과를 쓴다.
+  - 토스 응답에 `prev_close`·`change_pct`류 필드가 있으면(스키마 미확인) 마지막 대안으로 쓴다. 거래량은 기존 경로 값을 유지한다.
+- **추세 셋업** `refresh_live`:
+  - 대상은 돌파 후보 + 화면 상위 셋업(시장당 상위 40, 합쳐 200 이하)이다. 토스를 먼저 쓰고, 빠진 종목만 `_fetch_kr_live`/`_fetch_us_live`로 채운다.
+  - `apply_live`는 이제 돌파 후보뿐 아니라 받은 종목 전부에 `live_price`를 쓴다(돌파 판정은 pivot이 있는 종목만).
+  - 쿨다운은 15초다. 화면은 버튼에 남은 초를 표시하고, 쿨다운 중 누르면 `방금 갱신했어요 (N초 후 다시 가능)`를 띄운다.
+  - 정렬 `_rank`: 총점 `BREAKOUT_PIN_MIN`(25) 이상인 ⚡ 장중 돌파만 맨 위에 고정한다. 저점수 돌파는 점수 자리에 둔다.
+- **스크리너**: `/api/screener`의 필터·정렬은 스냅샷 그대로다. 반환 상위 60종목 중 장이 열린 시장만 `_screener_live_overlay()`로 현재가·등락률(시총도 비례)을 덧씌운다.
+- **관심종목·내 포트폴리오**: `live_quotes()`·`/api/portfolio`가 토스 1회 배치를 먼저 쓰고, 빠진 종목만 `_quote`/yfinance로 채운다.
+- **급등락**: 10분 캐시(전일 종가 포함 `_MOVERS_BASE`)는 그대로 두고, 요청 때 장이 열린 시장만 토스 현재가로 순위를 다시 매긴다(`_movers_live`).
+- **섹터맵** `refresh(intraday)`:
+  - 그날 첫 슬롯과 1시간마다(`FULL_EVERY`)는 전체 받기(네이버/Yahoo)로 `_BASE`(전일 종가·시총·거래량)를 잡는다.
+  - 그 사이 슬롯은 `fetch_toss`(200종목씩, 미국 3회)만 부른다. 토스 결과가 절반 미만이면 전체 받기로 돌아간다.
+  - 장 마감 확정(`close`)은 항상 전체 받기다.
+  - 측정: 미국 1회 갱신이 54.9초·최대 RSS +18.2MB에서 토스 경로 +1.4MB(네트워크 3회)로 줄었다.
+- **봇 장중 체크** `bot_engine.overlay_live()`:
+  - Yahoo 5분봉(시가·고가·저가) 위에 토스 현재가를 덮어 고가·저가를 넓힌다.
+  - Yahoo에 오늘 봉이 없는 보유 신호는 토스 가격 한 점으로 판정한다(체결 대기 신호는 시가가 필요해 건너뜀).
+  - 모의투자 자동 청산 `paper_auto_exits`도 토스 1회 배치를 쓴다.
+- 로컬 검증: `scratchpad/fake_toss_server3.py`(스냅샷 가격 × 1.02), `test_rt.py` 43개.
+
 ### 토스 계좌 불러오기 버튼: 소유자에게만 (PR #46)
 - `GET /api/me`의 `user.can_import_toss`는 `_can_import_toss()` = `toss_api.is_enabled()` 그리고 `_is_toss_owner()`이다. 소유자 판정은 import-toss와 같은 기준(TOSS_OWNER_EMAIL / TOSS_OWNER_USER_IDS, 목록이 비면 로컬 개발에서만)이다.
 - `POST /api/portfolio/import-toss`의 403 검사는 그대로 둔다(보안).

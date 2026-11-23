@@ -8,8 +8,9 @@
 2단 (장중 경량 갱신, 계산 없음)
   · 섹터맵 15분 갱신(sector_map.refresh → on_rows)의 현재가·등락률·거래량을 돌파 후보에만 덮어쓴다.
   · 전날 'BB 수축' 또는 '52주 고점 -3% 이내' 후보의 현재가가 돌파 기준가(pivot)를 넘으면 ⚡ 장중 돌파.
-  · '현시점 갱신'(refresh_live) 은 돌파 후보 상위 50개 이하만 네이버(한국 다종목 폴링) / Yahoo(미국 묶음)로
-    다시 받아 2~3초 안에 끝낸다. 시장별 60초 쿨다운.
+  · '현시점 갱신'(refresh_live) 은 돌파 후보 + 화면에 보이는 상위 셋업(합쳐 200종목 이하)을 토스 실시간 시세
+    (200종목 1번 호출, 20초 공용 캐시)로 다시 받는다. 토스 미설정·실패 종목만 네이버(한국) / Yahoo(미국)로 채운다.
+    등락률은 확정 종가(전일 종가) 대비로 계산하고 거래량은 기존 값을 둔다. 시장별 15초 쿨다운.
 요청은 DB 조회만 한다. app.py 와 순환 import 를 피하려고 필요한 것은 init(deps) 로 받는다.
 """
 from __future__ import annotations
@@ -21,13 +22,15 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+import toss_api
 import trends_scanner
 
 D = {}
 MIN_SCORE = 15            # 목록에 올릴 최소 총점 (장중 돌파 종목은 예외)
 LIST_LIMIT = 40           # 시장별 최대 표시 개수
-REFRESH_MAX = 50          # '현시점 갱신' 대상 상한
-REFRESH_COOLDOWN = 60     # 초
+REFRESH_MAX = 200         # '현시점 갱신' 대상 상한 (토스 1번 호출 = 200종목)
+REFRESH_COOLDOWN = 15     # 초
+BREAKOUT_PIN_MIN = 25     # ⚡ 장중 돌파를 맨 위로 올리는 최소 총점 (하락 추세 저점수 종목이 돌파만으로 1위가 되지 않게)
 _CTX = {"ts": 0, "v": None}
 _LIVE_TS = {}             # market → 마지막 현시점 갱신 시각
 _REFRESH_LOCK = threading.Lock()
@@ -216,12 +219,16 @@ def build_status(market):
 
 # ── 2단: 장중 경량 갱신 ──────────────────────────────────────────────────────────
 def apply_live(market, rows):
-    """현재가 목록(rows: ticker·price·change_pct·volume)을 돌파 후보에만 덮어쓴다. → 반영한 종목 수"""
+    """현재가 목록(rows: ticker·price·change_pct·volume)을 셋업 종목에 덮어쓴다. 돌파 판정은 기준가(pivot)가 있는 종목만.
+    → 반영한 종목 수"""
     M, db = D["Model"], D["db"]
     try:
         with D["app"].app_context():
             today = market_today(market)
-            cands = {r.ticker: r for r in M.query.filter(M.market == market, M.pivot.isnot(None)).all()}
+            want = {x.get("ticker") for x in rows if x.get("ticker")}
+            if not want:
+                return 0
+            cands = {r.ticker: r for r in M.query.filter(M.market == market).all() if r.ticker in want}
             if not cands:
                 return 0
             now = datetime.utcnow()
@@ -262,6 +269,25 @@ def _as_date(v):
         return v if hasattr(v, "year") else datetime.strptime(str(v)[:10], "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _fetch_toss_live(market, base):
+    """토스 실시간 시세 (공용 20초 캐시, 200종목씩). base: {ticker: (확정 종가, 확정일)} → rows.
+    등락률은 확정 종가가 오늘 이전 것이면 그것을 전일 종가로 보고 계산한다. 거래량은 넣지 않는다(기존 값 유지)."""
+    got = toss_api.get_prices_cached(list(base))
+    if not got:
+        return []
+    today = market_today(market)
+    out = []
+    for t, info in got.items():
+        p = info.get("price")
+        if not p:
+            continue
+        close, bdate = base.get(t, (None, None))
+        prev = close if (close and bdate and bdate < today) else None
+        out.append({"ticker": t, "price": float(p), "change_pct": toss_api.change_pct(p, prev, info),
+                    "volume": None, "date": today, "source": "toss"})
+    return out
 
 
 def _fetch_kr_live(tickers):
@@ -344,15 +370,27 @@ def refresh_live(market="ALL"):
         if not todo:
             return res
         per = max(1, REFRESH_MAX // len(todo))
+        res["sources"] = {}
         for m in todo:
             with D["app"].app_context():
-                tickers = [t for (t,) in M.query.filter(M.market == m, M.pivot.isnot(None))
-                           .order_by(M.total_score.desc()).limit(per).with_entities(M.ticker).all()]
-            rows = _fetch_kr_live(tickers) if m == "KR" else _fetch_us_live(tickers)
+                # 대상: 돌파 후보(점수순) + 화면에 보이는 상위 셋업 → 합쳐 per 개 이하
+                cand = M.query.filter(M.market == m, M.pivot.isnot(None)).order_by(M.total_score.desc()).limit(per).all()
+                top = M.query.filter(M.market == m, M.total_score >= MIN_SCORE).order_by(M.total_score.desc()).limit(LIST_LIMIT).all()
+                base = {}
+                for r in top + cand:
+                    if len(base) >= per:
+                        break
+                    base.setdefault(r.ticker, (r.price, r.base_date))
+            rows = _fetch_toss_live(m, base)
+            got = {x["ticker"] for x in rows}
+            rest = [t for t in base if t not in got]           # 토스 미설정·실패·미지원 → 기존 경로
+            if rest:
+                rows += _fetch_kr_live(rest) if m == "KR" else _fetch_us_live(rest)
             n = apply_live(m, rows)
             _LIVE_TS[m] = time.time()
             res["markets"][m] = "ok"
             res["refreshed"] += n
+            res["sources"][m] = {"toss": len(got), "fallback": len(rest), "targets": len(base)}
         return res
     finally:
         _REFRESH_LOCK.release()
@@ -396,6 +434,12 @@ def item_dict(r):
     }
 
 
+def _rank(d):
+    """정렬: 총점 BREAKOUT_PIN_MIN 이상인 ⚡ 장중 돌파 → 맨 위, 나머지는 총점·기술 점수 순 (저점수 돌파는 점수 자리에)."""
+    pinned = bool(d["breakout"] and (d["total_score"] or 0) >= BREAKOUT_PIN_MIN)
+    return (not pinned, -(d["total_score"] or 0), -(d["tech_score"] or 0))
+
+
 def payload(market="ALL"):
     """GET /api/trends/setups → 시장별 상위 셋업 + 기준 시각·종목 수. DB 조회만."""
     M = D["Model"]
@@ -407,7 +451,7 @@ def payload(market="ALL"):
         rows = q.filter((M.total_score >= MIN_SCORE) | (M.live_price > M.pivot)).all()
         ds = [item_dict(r) for r in rows]
         ds = [d for d in ds if d["total_score"] >= MIN_SCORE or d["breakout"]]
-        ds.sort(key=lambda d: (not d["breakout"], -(d["total_score"] or 0), -(d["tech_score"] or 0)))
+        ds.sort(key=_rank)
         newest = M.query.filter(M.market == m).order_by(M.computed_at.desc()).first()
         lives = [d["live_at"] for d in ds if d["live_at"]]
         meta[m] = {
@@ -419,7 +463,7 @@ def payload(market="ALL"):
             "session_open": session_progress(m) is not None,
         }
         items.extend(ds[:LIST_LIMIT])
-    items.sort(key=lambda d: (not d["breakout"], -(d["total_score"] or 0), -(d["tech_score"] or 0)))
+    items.sort(key=_rank)
     st = build_status(market)
     return {
         "market": market, "items": items, "meta": meta,
@@ -427,7 +471,7 @@ def payload(market="ALL"):
         "analyzed": sum(meta[m]["analyzed"] for m in markets),
         "hits": sum(meta[m]["hits"] for m in markets),
         "building": st["state"] == "running", "build": st if st["state"] != "idle" else None,
-        "min_score": MIN_SCORE,
+        "min_score": MIN_SCORE, "breakout_pin_min": BREAKOUT_PIN_MIN, "refresh_cooldown": REFRESH_COOLDOWN,
     }
 
 

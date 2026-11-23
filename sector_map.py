@@ -155,6 +155,50 @@ def fetch_us(chunk=40, pause=1.0):
     return rows, data_date
 
 
+# ── 토스 실시간 경량 갱신 ─────────────────────────────────────────────────────────
+# 전체 받기(네이버 시총순 목록 / Yahoo 5일 일봉 묶음)는 무겁고(미국 540종목 다운로드) 시세가 늦다.
+# 그날 처음(또는 1시간마다) 한 번 전체로 받아 전일 종가·시총·거래량 기준을 잡아 두고,
+# 그 사이 15분 슬롯은 토스 실시간 시세(200종목씩 묶음, 공용 20초 캐시)만 받아 현재가·등락률·시총을 다시 계산한다.
+_BASE = {}                  # market → {"date": 시세 날짜, "rows": {ticker: row}, "full_at": epoch}
+FULL_EVERY = 3600           # 이 간격마다는 전체로 받아 거래량·기준을 새로 고침
+
+
+def _toss_enabled():
+    try:
+        import toss_api
+        return toss_api.is_enabled()
+    except Exception:
+        return False
+
+
+def fetch_toss(market):
+    """→ (rows, 데이터 날짜) | None. 오늘 기준(_BASE)이 없거나 토스가 절반 이상 실패하면 None → 전체 받기."""
+    import toss_api
+    base = _BASE.get(market)
+    today = str(datetime.now(_tz(market)).date())
+    if not base or base["date"] != today:
+        return None
+    tickers = list(base["rows"])
+    got = toss_api.get_prices_cached(tickers)
+    if len(got) < len(tickers) * 0.5:
+        log(f"{market} 토스 시세 {len(got)}/{len(tickers)} → 전체 받기로")
+        return None
+    rows = []
+    for t, b in base["rows"].items():
+        info = got.get(t)
+        r = dict(b)
+        if info and info.get("price") and b.get("price") and b.get("change_pct") is not None:
+            prev = b["price"] / (1 + b["change_pct"] / 100)          # 기준 시점의 전일 종가
+            p = float(info["price"])
+            r["price"] = round(p, 2) if market == "US" else p
+            r["change_pct"] = round((p / prev - 1) * 100, 2)
+            if b.get("market_cap"):
+                r["market_cap"] = b["market_cap"] * p / b["price"]
+            r["date"] = today
+        rows.append(r)
+    return rows, today
+
+
 # ── 집계 ───────────────────────────────────────────────────────────────────────
 def aggregate(rows, sector_defs):
     """섹터별 시총가중 등락률·총시총·상승/하락/보합 수. 시총 없는 종목은 가중치에서만 빠지고 분포에는 들어간다."""
@@ -215,7 +259,17 @@ def refresh(market, reason="manual"):
         return None
     t0 = time.time()
     try:
-        rows, data_date = fetch_kr() if market == "KR" else fetch_us()
+        got, via = None, "full"
+        base = _BASE.get(market)
+        if reason == "intraday" and _toss_enabled() and base and time.time() - base["full_at"] < FULL_EVERY:
+            got = fetch_toss(market)
+            via = "toss" if got else "full"
+        if got:
+            rows, data_date = got
+        else:
+            rows, data_date = fetch_kr() if market == "KR" else fetch_us()
+            if rows:
+                _BASE[market] = {"date": data_date, "rows": {r["ticker"]: r for r in rows}, "full_at": time.time()}
         if not rows:
             log(f"{market} 시세 없음 ({reason}) → 이전 스냅샷 유지")
             return None
@@ -228,7 +282,9 @@ def refresh(market, reason="manual"):
             "declining_count": sum(g["declining_count"] for g in groups),
             "unchanged_count": sum(g["unchanged_count"] for g in groups),
             "basis": "시가총액 가중 평균 등락률", "groups": groups,
-            "source": "네이버 증권" if market == "KR" else "Yahoo Finance (시총 = 현재가 × 발행주식수)",
+            "source": ("토스증권 실시간 (전일 종가·거래량은 " + ("네이버 증권" if market == "KR" else "Yahoo Finance") + ")") if via == "toss"
+                      else ("네이버 증권" if market == "KR" else "Yahoo Finance (시총 = 현재가 × 발행주식수)"),
+            "via": via,
         }
         _MEM[market] = payload
         if D.get("on_rows"):
@@ -241,7 +297,7 @@ def refresh(market, reason="manual"):
                 D["ai_cache"].put(_key(market), None, "sectormap", payload, None, None, use_mem=False)
         except Exception as e:
             log(f"{market} DB 저장 실패: {e}")
-        log(f"{market} 갱신({reason}) {len(rows)}/{len(univ[market])}종목 data_date={data_date} {time.time() - t0:.1f}s")
+        log(f"{market} 갱신({reason}, {via}) {len(rows)}/{len(univ[market])}종목 data_date={data_date} {time.time() - t0:.1f}s")
         return payload
     except Exception as e:
         log(f"{market} 갱신 실패({reason}): {e}")

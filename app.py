@@ -958,6 +958,7 @@ _MOVERS_US = [
 ]
 _MOVERS_CACHE = {"ts": 0.0, "data": None}
 _MOVERS_TTL = 60 * 10              # 10분 캐시
+_MOVERS_BASE = {}                  # market → {ticker: row(전일 종가 포함)}
 
 
 @app.route("/api/market/movers")
@@ -966,7 +967,7 @@ def market_movers():
     now = time.time()
     c = _MOVERS_CACHE
     if c["data"] and (now - c["ts"]) < _MOVERS_TTL:
-        return jsonify(c["data"])
+        return jsonify(_movers_live(c["data"]))
 
     def _calc(tickers, market):
         rows = []
@@ -999,6 +1000,7 @@ def market_movers():
                     "ticker": t, "name": name, "market": market,
                     "price": round(cur, 2),
                     "change_pct": round((cur / prev - 1) * 100, 2),
+                    "prev_close": prev,
                 })
             except Exception:
                 continue
@@ -1006,6 +1008,9 @@ def market_movers():
 
     kr = _calc(_MOVERS_KR, "KR")
     us = _calc(_MOVERS_US, "US")
+    for m, rows in (("KR", kr), ("US", us)):
+        if rows:
+            _MOVERS_BASE[m] = {r["ticker"]: r for r in rows}      # 전체 30종목 (실시간 순위 재계산용)
 
     def _split(rows):
         s = sorted(rows, key=lambda r: r["change_pct"], reverse=True)
@@ -1019,7 +1024,39 @@ def market_movers():
     }
     if kr or us:
         _MOVERS_CACHE.update(ts=now, data=payload)
-    return jsonify(payload)
+    return jsonify(_movers_live(payload))
+
+
+def _movers_live(payload):
+    """급등락: 10분 캐시의 종목·전일 종가는 그대로 두고, 장이 열린 시장은 현재가·등락률을 토스 실시간(20초 공용 캐시)으로
+    다시 계산해 순위를 매긴다. 토스 미설정·실패면 캐시 그대로."""
+    import copy
+    out = copy.deepcopy(payload)
+    for m in ("KR", "US"):
+        blk = out.get(m) or {}
+        rows = (blk.get("gainers") or []) + (blk.get("losers") or [])
+        if not rows or not _session_open(m):
+            continue
+        base = _MOVERS_BASE.get(m) or {}
+        try:
+            got = toss_api.get_prices_cached([r["ticker"] for r in base.values()] or [r["ticker"] for r in rows])
+        except Exception:
+            got = {}
+        if not got:
+            continue
+        pool = list(base.values()) or rows
+        live = []
+        for r in pool:
+            info, prev = got.get(r["ticker"]), r.get("prev_close")
+            if info and info.get("price") and prev:
+                live.append({**r, "price": round(float(info["price"]), 2), "change_pct": toss_api.change_pct(info["price"], prev), "live": True})
+            else:
+                live.append(r)
+        srt = sorted([r for r in live if r.get("change_pct") is not None], key=lambda r: r["change_pct"], reverse=True)
+        n = min(8, len(srt) // 2)
+        out[m] = {"gainers": srt[:n], "losers": srt[-n:][::-1] if n else []}
+        out["live"] = True
+    return out
 
 
 @app.route("/api/sectors/strength", methods=["GET"])
@@ -1522,7 +1559,8 @@ def api_trends_setups():
 
 @app.route("/api/trends/refresh", methods=["POST"])
 def api_trends_refresh():
-    """'현시점 갱신': 장이 열린 시장의 돌파 후보 상위 50개 이하만 현재가를 다시 받아 돌파 여부 갱신 (시장별 60초 쿨다운)."""
+    """'현시점 갱신': 장이 열린 시장의 돌파 후보 + 화면 상위 셋업(200종목 이하) 현재가를 토스 실시간으로 다시 받아
+    돌파 여부 갱신 (토스 실패분은 네이버/Yahoo, 시장별 15초 쿨다운)."""
     market = _trends_market()
     res = trend_setups.refresh_live(market)
     out = trend_setups.payload(market)
@@ -4836,9 +4874,15 @@ def get_portfolio():
     if not holdings:
         return jsonify({"holdings": [], "summary": None} if want_summary else [])
 
-    # 현재가 일괄 조회 (fast_info 병렬)
+    # 현재가 일괄 조회: 토스 1회 배치(20초 공용 캐시) → 없는 종목만 yfinance fast_info 병렬
     tickers = list({h.ticker for h in holdings})
     prices  = {}
+    try:
+        for t, info in toss_api.get_prices_cached(tickers).items():
+            if info.get("price"):
+                prices[t] = float(info["price"])
+    except Exception:
+        pass
 
     def _fetch_price(ticker):
         try:
@@ -4848,11 +4892,13 @@ def get_portfolio():
         except Exception:
             return ticker, None
 
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        for t, p in ex.map(_fetch_price, tickers):
-            if p:
-                prices[t] = p
+    rest = [t for t in tickers if t not in prices]
+    if rest:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(rest))) as ex:
+            for t, p in ex.map(_fetch_price, rest):
+                if p:
+                    prices[t] = p
 
     # 통화·이름 자동 보정 (잘못 저장된 KRW 종목 USD 표시 / 이름이 티커로 저장된 경우)
     # STOCK_DB lookup helper
@@ -5158,7 +5204,8 @@ def _fetch_current_price_uncached(ticker):
     # 1순위: 토스
     if toss_api.is_enabled() and toss_api.is_eligible(ticker):
         try:
-            p = toss_api.get_price(ticker)
+            info = toss_api.get_prices_cached([ticker], ttl=_CURRENT_PRICE_TTL)   # 공용 캐시 (다른 화면의 배치 결과 재사용)
+            p = (info.get(ticker) or {}).get("price")
             if p:
                 return float(p)
         except Exception:
@@ -5783,9 +5830,17 @@ def paper_auto_exits(market, quotes=None):
         return {"checked": 0, "closed": 0}
     tickers = sorted({r.ticker for r in rows})
     if quotes is None:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=min(4, len(tickers))) as ex:
-            quotes = dict(zip(tickers, ex.map(_fetch_current_price, tickers)))
+        # 토스 1회 배치(20초 공용 캐시) → 없는 종목만 기존 경로(토스 단건 → 네이버 → yfinance)
+        quotes = {}
+        try:
+            quotes = {t: float(i["price"]) for t, i in toss_api.get_prices_cached(tickers).items() if i.get("price")}
+        except Exception:
+            pass
+        rest = [t for t in tickers if t not in quotes]
+        if rest:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(4, len(rest))) as ex:
+                quotes.update(dict(zip(rest, ex.map(_fetch_current_price, rest))))
     fx = _get_usd_krw_rate()
     closed = []
     for r in rows:
@@ -6550,6 +6605,7 @@ def debug_toss():
         out["toss_fx_usdkrw"] = toss_api.get_exchange_rate("USD", "KRW")
     except Exception:
         out["toss_fx_usdkrw"] = None
+    out["price_cache"] = toss_api.price_cache_stats()       # 공용 실시간 시세 캐시 (적중·호출·크기)
     return jsonify(out)
 
 # ── AI 매매 신호 봇 (Step 1: 신호 생성 파이프라인, Step 2: 관심종목·구독·알림) ──────────
@@ -6779,6 +6835,79 @@ def watchlist_remove(ticker):
     return jsonify({"ok": True})
 
 
+def _mkt_of(t):
+    return "KR" if t.upper().endswith((".KS", ".KQ")) else "US"
+
+
+def _session_open(market):
+    return trend_setups.session_progress(market) is not None
+
+
+def _snapshot_prev_closes(tickers):
+    """스크리너 스냅샷(섹터맵이 장중 15분마다 갱신)에서 '오늘 기준 전일 종가'. 외부 호출 없음.
+    스냅샷 가격이 오늘(시장 현지) 것이면 price / (1 + 등락률), 그 전 날짜 것이면 그 가격 자체가 전일 종가."""
+    if not tickers:
+        return {}
+    out = {}
+    try:
+        rows = (ScreenerSnapshot.query.filter(ScreenerSnapshot.ticker.in_(list(tickers)), ScreenerSnapshot.price.isnot(None))
+                .with_entities(ScreenerSnapshot.ticker, ScreenerSnapshot.market, ScreenerSnapshot.price,
+                               ScreenerSnapshot.change_pct, ScreenerSnapshot.price_updated_at).all())
+        for t, m, price, chg, at in rows:
+            if not price:
+                continue
+            today = trend_setups.market_today(m)
+            d = None
+            if at:
+                try:
+                    d = pd.Timestamp(at, tz="UTC").tz_convert(trend_setups._tz(m)).date()
+                except Exception:
+                    d = None
+            if d == today and chg is not None:
+                out[t] = price / (1 + chg / 100)
+            elif d is not None and d < today:
+                out[t] = price
+    except Exception as e:
+        app.logger.debug(f"[live] 전일 종가 조회 실패: {e}")
+    return out
+
+
+def live_quotes(tickers, ttl=20, fallback=True):
+    """여러 종목 실시간 현재가·등락률. 토스 get_prices(200종목 묶음, 공용 캐시) 1순위 →
+    등락률은 저장된 전일 종가(스냅샷) 대비 → 토스에 없거나 전일 종가를 모르는 종목만 기존 _quote(네이버·yfinance).
+    → {ticker: {"price", "prev_close", "change_pct", "source"}}"""
+    tickers = list(dict.fromkeys(t for t in tickers if t))
+    if not tickers:
+        return {}
+    got = {}
+    try:
+        got = toss_api.get_prices_cached(tickers, ttl=ttl)
+    except Exception as e:
+        app.logger.debug(f"[live] 토스 실패: {e}")
+    prevs = _snapshot_prev_closes([t for t in got]) if got else {}
+    out, rest = {}, []
+    for t in tickers:
+        info = got.get(t)
+        if info and info.get("price"):
+            prev = prevs.get(t) or info.get("prev_close")
+            out[t] = {"price": float(info["price"]), "prev_close": prev,
+                      "change_pct": toss_api.change_pct(info["price"], prev, info), "source": "toss"}
+            if out[t]["change_pct"] is None:
+                rest.append(t)                         # 등락률 기준(전일 종가)만 기존 경로에서
+        else:
+            rest.append(t)
+    if fallback and rest:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(rest))) as ex:
+            for t, q in zip(rest, ex.map(_quote, rest)):
+                if t in out:                           # 토스 현재가 + 기존 경로의 전일 종가
+                    prev = q.get("prev_close")
+                    out[t].update(prev_close=prev, change_pct=toss_api.change_pct(out[t]["price"], prev))
+                elif q.get("price"):
+                    out[t] = {**q, "source": "fallback"}
+    return out
+
+
 _QUOTE_CACHE = {}            # ticker → (ts, {"price", "prev_close", "change_pct"})
 _QUOTE_TTL = 30
 
@@ -6814,11 +6943,10 @@ def watchlist_quotes():
     """관심종목 현재가·등락률 (목록은 /api/watchlist 로 먼저 그리고, 시세는 이걸로 채운다)."""
     rows = WatchlistItem.query.filter_by(user_id=current_user.id).all()
     tickers = [r.ticker for r in rows]
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        quotes = dict(zip(tickers, ex.map(_quote, tickers)))
-    return jsonify({"quotes": {t: {**q, "currency": "KRW" if t.endswith((".KS", ".KQ")) else "USD"}
-                               for t, q in quotes.items()}})
+    quotes = live_quotes(tickers)          # 토스 1회 배치(20초 공용 캐시) → 없으면 네이버·yfinance
+    return jsonify({"quotes": {t: {**quotes.get(t, {"price": None, "prev_close": None, "change_pct": None}),
+                                   "currency": "KRW" if t.endswith((".KS", ".KQ")) else "USD"}
+                               for t in tickers}})
 
 
 # ── 신호 알림 구독 ─────────────────────────────────────────────────────────────
@@ -7221,8 +7349,42 @@ def screener_api():
     min_upside, sort_by, order, limit"""
     t0 = time.time()
     out = screener.query(request.args)
+    out["live"] = _screener_live_overlay(out.get("items") or [])
     out["took_ms"] = round((time.time() - t0) * 1000, 1)
     return jsonify(out)
+
+
+SCREENER_LIVE_MAX = 60
+
+
+def _screener_live_overlay(items):
+    """필터·정렬은 DB 스냅샷 그대로, 반환되는 상위 60종목 중 장이 열린 시장 종목의 현재가·등락률만
+    토스 실시간(20초 공용 캐시)으로 덧씌운다. 등락률은 스냅샷에서 구한 전일 종가 대비. → {count, at}"""
+    open_m = {m for m in ("KR", "US") if _session_open(m)}
+    targets = [it for it in items[:SCREENER_LIVE_MAX] if it.get("market") in open_m]
+    if not targets:
+        return {"count": 0}
+    try:
+        got = toss_api.get_prices_cached([it["ticker"] for it in targets])
+    except Exception:
+        got = {}
+    if not got:
+        return {"count": 0}
+    prevs = _snapshot_prev_closes(list(got))
+    n = 0
+    for it in targets:
+        info = got.get(it["ticker"])
+        if not info or not info.get("price"):
+            continue
+        p = float(info["price"])
+        chg = toss_api.change_pct(p, prevs.get(it["ticker"]), info)
+        if chg is None:
+            continue
+        if it.get("price") and it.get("market_cap"):
+            it["market_cap"] = it["market_cap"] * p / it["price"]
+        it["price"], it["change_pct"], it["live"] = p, chg, True
+        n += 1
+    return {"count": n, "at": datetime.utcnow().isoformat() + "Z"}
 
 
 _COMPARE_TICKER_RE = re.compile(r"^[A-Z0-9.\-^=]{1,30}$")

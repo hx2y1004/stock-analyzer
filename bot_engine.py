@@ -1005,6 +1005,34 @@ def download_intraday(tickers, market):
     return out
 
 
+def overlay_live(quotes, tickers, pending, market):
+    """토스 실시간 현재가(200종목 묶음, 공용 20초 캐시)를 Yahoo 5분봉 위에 덮어쓴다.
+    현재가 = 토스, 고가·저가는 토스 가격까지 넓힌다 → Yahoo 15~20분 지연 없이 손절·익절 판정.
+    Yahoo 에 오늘 봉이 없는 종목은 보유(ACTIVE) 신호만 토스 가격 한 점으로 판정한다(체결 대기 신호는 시가가 필요해 건너뜀)."""
+    try:
+        import toss_api
+        got = toss_api.get_prices_cached(tickers)
+    except Exception as e:
+        log(f"intraday 토스 시세 실패: {e}")
+        return quotes
+    if not got:
+        return quotes
+    out = dict(quotes)
+    today = datetime.now(_tz(market)).date()
+    for t, info in got.items():
+        p = info.get("price")
+        if not p:
+            continue
+        p = float(p)
+        if t in out:
+            o, h, l, c, day = out[t]
+            if day == today:
+                out[t] = (o, max(h, p), min(l, p), p, day)
+        elif t not in pending:
+            out[t] = (p, p, p, p, today)
+    return out
+
+
 def intraday_check(market, quotes=None):
     """장중: 대기 신호를 오늘 시가로 체결(B 방식), 보유 신호는 오늘 고가·저가로 손절·트레일링·익절 판정 후
     봇 계좌에 반영. 시간 청산·추세 이탈·AI 악재는 장 마감 배치에서 판정한다. quotes 는 테스트용."""
@@ -1015,7 +1043,9 @@ def intraday_check(market, quotes=None):
     if not rows:
         return {"checked": 0}
     if quotes is None:
-        quotes = download_intraday(sorted({r.ticker for r in rows}), market)
+        tickers = sorted({r.ticker for r in rows})
+        quotes = download_intraday(tickers, market)
+        quotes = overlay_live(quotes, tickers, {r.ticker for r in rows if r.status == "PENDING"}, market)
     strat = {s["key"]: s for s in load_strategies()}
     open_before = [r.id for r in rows]
     filled = closed = 0
