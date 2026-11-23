@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### AI 봇 진입 근거 모달 한국어 라벨 (PR #52)
+- `ai_bots.js` `MISSING_LABELS`가 `당시 비어 있던 데이터`의 내부 키를 한국어로 바꾼다.
+  - 지금 기록되는 키: `bot_engine.fundamentals_for()`의 `fund_score`·`dcf_fair`·`analyst_target`.
+  - 앞으로 늘 수 있는 키(PER·PBR·EPS·뉴스·일정·VIX·거래량 등)도 미리 넣었다. 표에 없는 키는 원문을 이스케이프해 그대로 보여 준다.
+  - bot_engine에 키를 추가하면 이 표에도 넣는다(주석 있음).
+- `VERDICT_LABELS`: AI 판정 `pass/caution/reject` → `통과/주의/제외`.
+
 ### iOS Safe Area · 빠른 선택 칩 1줄 (PR #51)
 - `.header`: `position: -webkit-sticky; sticky; top 0` + `padding-top: env(safe-area-inset-top, 0px)`(좌우 inset 포함). 배경은 노치 끝까지 칠하고 `.header-inner`는 안전 영역 아래에 둔다. 안드로이드·PC는 0이다.
 - 5개 템플릿 모두 `viewport-fit=cover`, `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style: black-translucent`로 맞췄다(screener·ai_bots·leaderboard에 추가).

@@ -332,6 +332,7 @@ def fundamentals(ticker, df):
                     break
         except Exception:
             pass
+    # 키를 늘리면 static/js/ai_bots.js 의 MISSING_LABELS(한국어 표시 이름)에도 추가한다
     out["missing"] = [k for k in ("fund_score", "dcf_fair", "analyst_target") if out.get(k) is None]
     out["info"] = info
     return out
