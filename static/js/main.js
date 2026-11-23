@@ -451,92 +451,46 @@ async function importTossPortfolio(btn) {
   }
 }
 
-function _pfCardHTML(h, rank, compact = false) {
-  const hasPrice = h.current_price != null;
-  const retPct   = h.return_pct;
-  const retAmt   = h.return_amount;
-  const retClass = retPct == null ? 'neutral' : retPct > 0 ? 'up' : retPct < 0 ? 'down' : 'neutral';
-  const retIcon  = retPct > 0 ? '▲' : retPct < 0 ? '▼' : '';
-  const cur      = h.currency || 'USD';
-  const fmtPrice = (v, noRound = false) => v == null ? '—' : cur === 'KRW'
-    ? (noRound ? Math.round(Number(v)) : Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
-    : '$' + Number(v).toLocaleString();
+// ── 내 포트폴리오: PC 는 증권사식 1줄 표, 모바일(≤768px)은 컴팩트 카드 (같은 마크업을 CSS grid 로 전환) ──
+// 숫자 표기: 부호는 통화 기호 앞(-$23.40), 달러 단가·금액은 소수 2자리, 원화는 정수 쉼표, 수량은 소수 최대 2자리
+function pfMoney(v, cur, signed = false) {
+  if (v == null || isNaN(v)) return '—';
+  const n = Number(v), sign = signed ? (n > 0 ? '+' : n < 0 ? '-' : '') : (n < 0 ? '-' : '');
+  const a = Math.abs(n);
+  return cur === 'KRW'
+    ? sign + Math.round(a).toLocaleString('ko-KR') + '원'
+    : sign + '$' + a.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function pfQty(q) {
+  if (q == null) return '—';
+  return Number(q).toLocaleString('en-US', { maximumFractionDigits: 2 }) + '주';      // 10.225972 → 10.23, 6 → 6
+}
+const _PF_EDIT_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const _PF_DEL_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>';
 
-  // 순위 + 메달 (수익률 양수일 때만 메달)
-  const medals = ['🥇', '🥈', '🥉'];
-  const showMedal = rank <= 3 && retPct != null && retPct > 0;
-  const rankBlock = showMedal
-    ? `<div class="trend-rank trend-rank-medal">${medals[rank - 1]}</div>`
-    : `<div class="trend-rank trend-rank-num">#${rank}</div>`;
-  const tierClass = showMedal ? `trend-tier-${rank}` : '';
-
-  // 수익률 뱃지 색상 — 방향 우선, 진하기는 절댓값
-  let retBadgeColor;
-  if (retPct == null)        retBadgeColor = 'flat';
-  else if (retPct >= 15)     retBadgeColor = 'gain-strong';
-  else if (retPct > 0)       retBadgeColor = 'gain';
-  else if (retPct === 0)     retBadgeColor = 'flat';
-  else if (retPct > -15)     retBadgeColor = 'loss';
-  else                       retBadgeColor = 'loss-strong';
-
-  // 카드 자체 방향 클래스 (좌측 보더/배경 틴트용)
-  const dirClass =
-    retPct == null   ? 'pf-dir-flat' :
-    retPct >  0      ? 'pf-dir-gain' :
-    retPct === 0     ? 'pf-dir-flat' : 'pf-dir-loss';
-
-  // 수익률 뱃지 콘텐츠 (% 큰 글씨, 변화 없으면 dash)
-  const retBadgeText = retPct != null
-    ? `${retIcon} ${Math.abs(retPct).toFixed(1)}<span class="score-suffix">%</span>`
-    : '—';
-
-  // 가격 / 손익금액 (방향에 따라 강조)
-  const retAmtStr = retAmt != null
-    ? (retAmt >= 0 ? '+' : '') + fmtPrice(Math.round(retAmt))
-    : '';
-  const priceBlock = `
-    <div class="trend-price-block">
-      <div class="trend-price-val">${hasPrice ? fmtPrice(h.current_price) : '<span class="pf-loading-price">로딩중</span>'}</div>
-      <div class="trend-chg pf-${retClass} pf-amount">${retAmtStr}</div>
-    </div>`;
-
-  // 컴팩트: 한 줄 (순위, 종목명, 현재가, 수익률뱃지)
-  if (compact) {
-    return `
-    <div class="pf-card trend-card-v2 ${tierClass} ${dirClass}" onclick="quickSearch('${h.ticker}')">
-      <div class="trend-card-row">
-        ${rankBlock}
-        <div class="trend-name-block">
-          <div class="pf-stock-name">${h.name}</div>
-          <div class="pf-ticker">${h.ticker}</div>
-        </div>
-        <div class="trend-spark-wrap"></div>
-        ${priceBlock}
-        <div class="trend-score-v2 score-${retBadgeColor}">${retBadgeText}</div>
-      </div>
-    </div>`;
-  }
-
-  // 풀: 보유수량 + 매입가 + 삭제 버튼 추가
+function _pfRowHTML(h) {
+  const cur = h.currency || 'USD';
+  const q = Number(h.quantity) || 0;
+  const hasPx = h.current_price != null;
+  const value = hasPx ? h.current_price * q : null;              // 평가금액은 원본 정밀 수량으로
+  const pl = h.return_amount, pct = h.return_pct;
+  const cls = pct == null ? 'flat' : pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+  const tk = escapeHtmlMain(h.ticker), nm = escapeHtmlMain(h.name || h.ticker);
+  const pctTxt = pct == null ? '' : `${pct > 0 ? '+' : pct < 0 ? '-' : ''}${Math.abs(pct).toFixed(2)}%`;
+  const logo = window.SALogo ? SALogo.html(h.ticker, h.name, 32) : '';
   return `
-  <div class="pf-card trend-card-v2 ${tierClass} ${dirClass}" onclick="quickSearch('${h.ticker}')">
-    <div class="trend-card-row">
-      ${rankBlock}
-      <div class="trend-name-block">
-        <div class="pf-stock-name">${h.name}</div>
-        <div class="pf-ticker">${h.ticker}</div>
+    <div class="pft-row pf-${cls}" role="link" tabindex="0" data-t="${tk}" aria-label="${nm} 종목 분석 보기">
+      <div class="pft-stock">${logo}<div class="pft-id"><div class="pft-name">${nm}</div><div class="pft-tk">${tk}</div></div></div>
+      <div class="pft-qty"><div>${pfQty(q)}</div><div class="pft-sub">평균 ${pfMoney(h.purchase_price, cur)}</div></div>
+      <div class="pft-px">${hasPx ? pfMoney(h.current_price, cur) : '<span class="pf-loading-price">로딩중</span>'}</div>
+      <div class="pft-val">${pfMoney(value, cur)}</div>
+      <div class="pft-pl ${cls}"><div>${pfMoney(pl, cur, true)}</div><div class="pft-sub">${pctTxt}</div></div>
+      <div class="pft-meta">${pfQty(q)} · ${pfMoney(h.purchase_price, cur)} → ${hasPx ? pfMoney(h.current_price, cur) : '—'}</div>
+      <div class="pft-acts">
+        <button type="button" class="pft-btn" onclick="openEditModal(event, ${h.id})" title="매입가·수량 수정" aria-label="${nm} 매입가·수량 수정">${_PF_EDIT_SVG}</button>
+        <button type="button" class="pft-btn del" onclick="deleteHolding(event, ${h.id})" title="삭제" aria-label="${nm} 삭제">${_PF_DEL_SVG}</button>
       </div>
-      <div class="trend-spark-wrap"></div>
-      ${priceBlock}
-      <div class="trend-score-v2 score-${retBadgeColor}">${retBadgeText}</div>
-    </div>
-    <div class="pf-meta-row">
-      <span class="pf-meta-item">📌 매입 ${fmtPrice(h.purchase_price, true)}</span>
-      <span class="pf-meta-item">📦 ${h.quantity}주</span>
-      <button class="pf-edit-btn" onclick="openEditModal(event, ${h.id})" title="매입가/수량 수정">✏️</button>
-      <button class="pf-delete-btn" onclick="deleteHolding(event, ${h.id})" title="삭제" aria-label="삭제"><svg class="icon-x" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg></button>
-    </div>
-  </div>`;
+    </div>`;
 }
 
 function renderPortfolioCards(holdings) {
@@ -544,8 +498,6 @@ function renderPortfolioCards(holdings) {
   const cards  = document.getElementById('portfolioCards');
   const footer = document.getElementById('pfMoreFooter');
   const btn    = document.getElementById('pfToggleBtn');
-
-  // 토글/푸터 사용 안 함 (전체 항상 렌더 + 내부 스크롤로 표시)
   if (footer) footer.classList.add('hidden');
   if (btn)    btn.classList.add('hidden');
   cards.classList.remove('collapsed');
@@ -554,10 +506,22 @@ function renderPortfolioCards(holdings) {
     cards.innerHTML = `<div class="pf-empty">보유 종목이 없습니다. 종목을 추가해보세요!</div>`;
     return;
   }
-
-  // 수익률 내림차순 정렬 → 전체 풀모드로 렌더
-  const byReturn = [...holdings].sort((a, b) => (b.return_pct ?? -9999) - (a.return_pct ?? -9999));
-  cards.innerHTML = byReturn.map((h, idx) => _pfCardHTML(h, idx + 1, false)).join('');
+  // 평가금액(원화 환산) 큰 순 — 증권사 보유 목록처럼
+  const fx = (window._pfFx || 1400);
+  const krw = (h) => (h.current_price != null ? h.current_price : h.purchase_price) * (Number(h.quantity) || 0) * (h.currency === 'USD' ? fx : 1);
+  const rows = [...holdings].sort((a, b) => krw(b) - krw(a));
+  cards.innerHTML = `
+    <div class="pft" role="table" aria-label="내 포트폴리오 보유 종목">
+      <div class="pft-head" role="row">
+        <span>종목</span><span>수량 · 매입가</span><span>현재가</span><span>평가금액</span><span>손익 · 수익률</span><span class="pft-h-acts">관리</span>
+      </div>
+      ${rows.map(_pfRowHTML).join('')}
+    </div>`;
+  cards.querySelectorAll('.pft-row').forEach((r) => {
+    const go = () => gotoStock(r.dataset.t);
+    r.addEventListener('click', (e) => { if (!e.target.closest('button, a')) go(); });
+    r.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === r) { e.preventDefault(); go(); } });
+  });
 }
 
 // 실제 포트폴리오 요약 헤더: 총 평가금액·투자금·손익, 통화/종목 비중
@@ -565,7 +529,8 @@ function renderPortfolioSummary(s) {
   const el = document.getElementById('pfSummary');
   if (!el) return;
   if (!s || !s.count) { el.classList.add('hidden'); el.innerHTML = ''; return; }
-  const won = (v) => Math.round(v).toLocaleString('ko-KR') + '원';
+  if (s.fx_usd_krw) window._pfFx = s.fx_usd_krw;
+  const won = (v) => (v < 0 ? '-' : '') + Math.round(Math.abs(v)).toLocaleString('ko-KR') + '원';
   const plCls = s.pl_krw > 0 ? 'up' : s.pl_krw < 0 ? 'down' : '';
   const sign = s.pl_krw > 0 ? '+' : '';
   const curLabel = { KRW: '원화', USD: '달러' };

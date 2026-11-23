@@ -1540,6 +1540,15 @@ def manifest():
 
 # ── 추세 셋업 (장 마감 확정 + 장중 경량 갱신, trend_setups.py) ──────────────────
 import trend_setups
+
+
+# 회사 로고: 키 없는 공개 로고 경로 ({symbol} 자리에 티커). 환경변수로 바꿀 수 있고 빈 값이면 이니셜 배지만.
+LOGO_URL_TEMPLATE = os.environ.get("LOGO_URL_TEMPLATE", "https://financialmodelingprep.com/image-stock/{symbol}.png")
+
+
+@app.context_processor
+def _inject_logo_tpl():
+    return {"logo_url_template": LOGO_URL_TEMPLATE}
 import krx_ref
 
 

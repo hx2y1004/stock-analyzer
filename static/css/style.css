@@ -5905,3 +5905,58 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 @media (max-width: 640px) {
   .tr-pos-card .trend-card-row { grid-template-columns: 32px minmax(0, 1fr) auto auto; }
 }
+
+/* ── 회사 로고 (원형) · 이니셜 배지 ── */
+.sa-logo { position: relative; flex: 0 0 auto; width: var(--lg-size, 32px); height: var(--lg-size, 32px); border-radius: 50%; overflow: hidden;
+  background: hsl(var(--lg-hue, 210) 45% 32%); display: inline-flex; align-items: center; justify-content: center; }
+.sa-logo-init { font-size: calc(var(--lg-size, 32px) * 0.38); font-weight: 800; color: hsl(var(--lg-hue, 210) 70% 88%); letter-spacing: -0.5px; line-height: 1; }
+.sa-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; opacity: 0; transition: opacity .15s; }
+.sa-logo img.ok { opacity: 1; }
+
+/* ── 내 포트폴리오: PC 1줄 표 ── */
+#portfolioCards:has(.pft) { display: block; }
+.pft { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.pft-head, .pft-row { display: grid; align-items: center; column-gap: 16px;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr) 72px; }
+.pft-head { padding: 8px 12px; font-size: 12px; color: var(--text2); border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg2); z-index: 1; }
+.pft-head > span:not(:first-child) { text-align: right; }
+.pft-head .pft-h-acts { text-align: center; }
+.pft-row { padding: 10px 12px; border-bottom: 1px solid var(--border-soft, var(--border)); cursor: pointer; border-radius: 8px; transition: background .12s; }
+.pft-row:hover { background: var(--bg3); }
+.pft-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pft-stock { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pft-id { min-width: 0; }
+.pft-name { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pft-tk { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pft-qty, .pft-px, .pft-val, .pft-pl { text-align: right; font-size: 14px; color: var(--text); white-space: nowrap; min-width: 0; }
+.pft-val { font-weight: 700; }
+.pft-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.pft-pl.up, .pft-pl.up .pft-sub { color: var(--green); }
+.pft-pl.down, .pft-pl.down .pft-sub { color: var(--red); }
+.pft-meta { display: none; }
+.pft-acts { display: flex; justify-content: center; gap: 4px; }
+.pft-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px;
+  border: 1px solid transparent; background: transparent; color: var(--text2); cursor: pointer; }
+.pft-btn:hover { border-color: var(--border); color: var(--accent); background: var(--bg2); }
+.pft-btn.del:hover { color: var(--red); }
+.pft-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ── 모바일(≤768px): 컴팩트 카드 ── */
+@media (max-width: 768px) {
+  .pft-head { display: none; }
+  .pft { gap: 8px; }
+  .pft-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "stock val" "stock pl" "meta acts";
+    row-gap: 2px; column-gap: 10px; padding: 12px; border: 1px solid var(--border); background: var(--bg2); }
+  .pft-stock { grid-area: stock; }
+  .pft-val { grid-area: val; font-size: 14px; }
+  .pft-pl { grid-area: pl; display: flex; gap: 6px; justify-content: flex-end; font-size: 12px; }
+  .pft-pl .pft-sub { margin: 0; font-size: 12px; }
+  .pft-qty, .pft-px { display: none; }
+  .pft-meta { display: block; grid-area: meta; font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 6px; }
+  .pft-acts { grid-area: acts; justify-content: flex-end; margin-top: 4px; }
+  .pft-btn { width: 28px; height: 28px; }
+}
+
+/* 관심종목 행: 로고 + 이름 */
+.watch-open { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.watch-id { display: inline-flex; flex-direction: column; min-width: 0; text-align: left; }

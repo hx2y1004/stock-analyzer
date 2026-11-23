@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=93" />
+  <link rel="stylesheet" href="/static/css/style.css?v=94" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -156,7 +156,8 @@
   </div>
 
   {% include "_footer.html" %}
-  <script src="/static/js/notify.js?v=5"></script>
+  <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
+  <script src="/static/js/notify.js?v=6"></script>
   <script src="/static/js/screener.js?v=6"></script>
 </body>
 </html>
