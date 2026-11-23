@@ -297,12 +297,13 @@ function renderPositions(positions) {
     const pnlConv = _convCur(((p.current_price || 0) - p.purchase_price) * p.quantity, p.currency, _posCur, rate);
     const buyConv = _convCur(p.purchase_price, p.currency, _posCur, rate);
     const tk = escapeHtml(p.ticker), nm = escapeHtml(p.name);
+    const href = `/stock/${encodeURIComponent(p.ticker)}`;
     return `
-      <div class="pf-card trend-card-v2 ${tierClass} ${dirClass}">
+      <div class="pf-card trend-card-v2 tr-pos-card ${tierClass} ${dirClass}" data-href="${href}" title="${nm} 종목 분석 보기">
         <div class="trend-card-row">
           ${rank}
           <div class="trend-name-block">
-            <div class="pf-stock-name">${nm}</div>
+            <a class="pf-stock-name tr-pos-link" href="${href}">${nm}</a>
             <div class="pf-ticker">${tk}</div>
           </div>
           <div class="trend-spark-wrap"></div>
@@ -313,18 +314,24 @@ function renderPositions(positions) {
           <div class="trend-score-v2 ${badgeCls}">${icon} ${Math.abs(p.pnl_pct || 0).toFixed(1)}<span class="score-suffix">%</span></div>
         </div>
         <div class="pf-meta-row">
-          <span class="pf-meta-item">매입 ${_fmtCur(buyConv, _posCur)}</span>
-          <span class="pf-meta-item">${p.quantity}주</span>
+          <span class="pf-meta-item tr-unit" title="1주 단가 (종목 통화 기준 — 익절·손절과 같은 단위)">매입 ${fmtNative(p.purchase_price, p.currency)} → 현재 <b class="pf-${cls}">${fmtNative(p.current_price, p.currency)}</b> · ${p.quantity}주</span>
           ${_exitBadge(p)}
           <button type="button" class="trade-action-btn exit" data-act="exit" data-t="${tk}" aria-label="${nm} 목표가·손절가 예약">목표/손절</button>
           <button type="button" class="trade-action-btn buy" data-act="buy" data-t="${tk}">추가매수</button>
           <button type="button" class="trade-action-btn sell" data-act="sell" data-t="${tk}">매도</button>
-          <a class="trade-action-btn analyze" href="/stock/${encodeURIComponent(p.ticker)}">분석</a>
         </div>
+        ${_exitBar(p)}
         ${p.note ? `<div class="pf-note">메모 · ${escapeHtml(p.note)}</div>` : ''}
       </div>`;
   }).join('');
-  el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => {
+  // 카드 아무 곳이나 누르면 종목 상세로 (안의 버튼·링크는 각자 동작, 텍스트를 드래그해 고를 때는 이동 안 함)
+  el.querySelectorAll('.tr-pos-card').forEach((card) => card.addEventListener('click', (e) => {
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    if (window.getSelection && String(window.getSelection())) return;
+    location.href = card.dataset.href;
+  }));
+  el.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
     const p = (dashboardData.positions || []).find(x => x.ticker === b.dataset.t);
     if (!p) return;
     if (b.dataset.act === 'buy') openBuyModalForHolding(p.ticker, p.name, p.currency, p.current_price || 0);
@@ -1139,6 +1146,25 @@ function _exitBadge(p) {
   if (p.target_price != null) parts.push(`<span class="xb-t">익절 ${fmtNative(p.target_price, p.currency)}</span>`);
   if (p.stop_loss_price != null) parts.push(`<span class="xb-s">손절 ${fmtNative(p.stop_loss_price, p.currency)}</span>`);
   return `<span class="exit-badge" title="도달하면 전량 자동 매도">${parts.join('<i aria-hidden="true">·</i>')}</span>`;
+}
+
+// 손절 ── 현재가 ── 익절 위치 바 (둘 다 예약된 종목만). 매입가는 은은한 눈금. 종목 통화 기준
+function _exitBar(p) {
+  const lo = p.stop_loss_price, hi = p.target_price, cur = p.current_price;
+  if (lo == null || hi == null || !(hi > lo) || cur == null) return '';
+  const pos = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+  const c = pos(cur), b = pos(p.purchase_price);
+  const toT = (hi / cur - 1) * 100, toS = (lo / cur - 1) * 100;
+  const zone = c >= 66 ? 'near-t' : c <= 33 ? 'near-s' : 'mid';
+  return `<div class="xbar ${zone}" role="img" aria-label="현재가 ${fmtNative(cur, p.currency)}: 손절 ${fmtNative(lo, p.currency)}까지 ${toS.toFixed(1)}%, 익절 ${fmtNative(hi, p.currency)}까지 +${toT.toFixed(1)}%">
+      <span class="xbar-end s">손절 ${fmtNative(lo, p.currency)}</span>
+      <span class="xbar-track" aria-hidden="true">
+        <span class="xbar-fill" style="width:${c.toFixed(1)}%"></span>
+        ${p.purchase_price > lo && p.purchase_price < hi ? `<span class="xbar-buy" style="left:${b.toFixed(1)}%" title="매입 ${fmtNative(p.purchase_price, p.currency)}"></span>` : ''}
+        <span class="xbar-dot" style="left:${c.toFixed(1)}%"></span>
+      </span>
+      <span class="xbar-end t">익절 ${fmtNative(hi, p.currency)}</span>
+    </div>`;
 }
 
 let _exitPos = null;
