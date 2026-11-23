@@ -302,3 +302,106 @@ def guard_drop(tickers):
     """장중 손절 직전 방어: -40% 이상 급락으로 보이는 종목은 분할 여부를 강제로 다시 확인해 반영. → 반영된 종목 집합"""
     res = apply_tickers(tickers, force=True)
     return {x["ticker"] for x in res}
+
+
+# ── 이중 방어: yfinance splits 반영이 늦을 때 ─────────────────────────────────────
+# ① 가격 기록으로 분할 의심: (a) 수정주가 일봉의 매수일 종가가 매입가의 1/1.8 이하로 내려와 있다(이미 분할 반영된 기록)
+#    또는 (b) 아직 수정 안 된 기록에서 하룻밤 갭이 흔한 분할 비율(2·3·4·5·8·10…)과 거의 같다.
+#    → 자동 손절 보류 (최대 24시간, 그 사이 yfinance splits 가 들어오면 보정).
+# ② 증거가 없어도 -40% 이하 급락을 처음 본 체크에서는 1회 보류하고, 다음 체크(4분 이상 뒤)에 재판정한다.
+#    한 보유 건은 한 번만 보류하므로 실제 폭락·상장폐지가 계속 미뤄지지 않는다.
+SPLIT_EVIDENCE = 1.8            # 매입가 ÷ 매수일 수정 종가 ≥ 1.8 이면 분할 의심
+COMMON_RATIOS = (1.5, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20, 25, 30, 40, 50)
+GAP_TOL = 0.04                  # 갭이 분할 비율과 ±4% 안이면 분할 의심
+HOLD_MIN_SEC = 4 * 60           # 1회 보류: 다음 5분 체크까지
+EVIDENCE_MAX_SEC = 24 * 3600    # 분할 의심 보류 상한
+_HOLD = {}                      # (kind, id) → {"first": ts, "released": bool, "ev_first": ts}
+_BARS = {}                      # ticker → (받은 시각, df)
+_BARS_TTL = 600
+
+
+def _daily_bars(ticker):
+    """수정주가 일봉 (토스 우선, 없으면 yfinance 1년). 10분 캐시."""
+    hit = _BARS.get(ticker)
+    if hit and time.time() - hit[0] < _BARS_TTL:
+        return hit[1]
+    df = None
+    try:
+        if D.get("bars"):
+            df = D["bars"](ticker)
+        else:
+            try:
+                import toss_api
+                df = toss_api.get_candles_df(ticker, interval="1d", min_bars=260)
+            except Exception:
+                df = None
+            if df is None or len(df) == 0:
+                import yfinance as yf
+                df = yf.Ticker(ticker).history(period="1y", interval="1d")
+    except Exception as e:
+        log(f"{ticker} 일봉 조회 실패: {e}")
+        df = None
+    _BARS[ticker] = (time.time(), df)
+    return df
+
+
+def _local_dates(df):
+    idx = df.index
+    try:
+        return [ts.date() for ts in idx]
+    except Exception:
+        return []
+
+
+def history_evidence(ticker, buy_price, buy_date, df=None):
+    """가격 기록으로 본 분할 의심. → (의심 여부, 이유, 추정 비율)"""
+    if df is None:
+        df = _daily_bars(ticker)
+    if df is None or len(df) == 0 or not buy_price:
+        return False, "", None
+    try:
+        closes = df["Close"].astype(float)
+        dates = _local_dates(df)
+        # (a) 매수일(또는 그 직전 거래일) 수정 종가가 매입가보다 1.8배 이상 낮다
+        if buy_date is not None:
+            prior = [i for i, d in enumerate(dates) if d <= buy_date]
+            if prior:
+                c = float(closes.iloc[prior[-1]])
+                if c > 0 and buy_price / c >= SPLIT_EVIDENCE:
+                    return True, f"수정주가: 매수일 종가 {c:,.2f} = 매입가 {buy_price:,.2f}의 1/{buy_price / c:.1f}", round(buy_price / c, 2)
+        # (b) 최근 거래일 사이 하룻밤 갭이 흔한 분할 비율과 같다 (수정 안 된 기록)
+        opens = df["Open"].astype(float) if "Open" in df else closes
+        for i in range(max(1, len(closes) - 3), len(closes)):
+            prev, now_o = float(closes.iloc[i - 1]), float(opens.iloc[i]) or float(closes.iloc[i])
+            if prev > 0 and now_o > 0:
+                g = prev / now_o
+                for r in COMMON_RATIOS:
+                    if r >= SPLIT_EVIDENCE and abs(g / r - 1) <= GAP_TOL:
+                        return True, f"갭 {g:.2f}배 = 분할 비율 {r:g}과 일치 ({dates[i - 1]} → {dates[i]})", float(r)
+    except Exception as e:
+        log(f"{ticker} 기록 확인 실패: {e}")
+    return False, "", None
+
+
+def drop_decision(kind, hid, ticker, buy_price, buy_date, price, df=None, now=None):
+    """-40% 이하 급락 손절 직전 판정. → ("hold" | "proceed", 이유)
+    hold: 분할 의심(최대 24시간) 또는 첫 감지 1회 보류. proceed: 정상 판정(손절 실행)."""
+    now = now if now is not None else time.time()
+    if not buy_price or not price or price > buy_price * DROP_GUARD:
+        return "proceed", ""
+    if len(_HOLD) > 5000:                                   # 오래된 기록 정리
+        for k in [k for k, v in _HOLD.items() if now - v["first"] > 2 * 86400]:
+            _HOLD.pop(k, None)
+    st = _HOLD.setdefault((kind, hid), {"first": now, "released": False})
+    ev, why, _ = history_evidence(ticker, buy_price, buy_date, df=df)
+    if ev:
+        st.setdefault("ev_first", now)
+        if now - st["ev_first"] < EVIDENCE_MAX_SEC:
+            return "hold", f"분할 의심 → 자동 손절 보류: {why}"
+        return "proceed", "분할 의심 24시간 경과 → 정상 판정"
+    if st["released"]:
+        return "proceed", "보류했던 건 → 정상 판정"
+    if now - st["first"] < HOLD_MIN_SEC:
+        return "hold", "-40% 이하 급락 첫 감지 → 1회 보류, 다음 체크에서 재판정"
+    st["released"] = True
+    return "proceed", "1회 보류 후 분할 확인 안 됨 → 정상 판정"
