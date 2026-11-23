@@ -5889,11 +5889,30 @@ def paper_auto_exits(market, quotes=None):
     except Exception as e:
         db.session.rollback()
         app.logger.warning(f"[paper_exit] 분할 확인 실패: {e}")
+    # 이중 방어: yfinance splits 가 아직 비어 있어도 (a) 가격 기록이 분할을 가리키면 보류, (b) 첫 감지면 1회 보류 후 재판정
+    hold_ids = set()
+    try:
+        for h in PaperHolding.query.filter(PaperHolding.id.in_([r.id for r in rows])).all():
+            px = quotes.get(h.ticker)
+            if (h.ticker in split_hit or not px or h.stop_loss_price is None or px > h.stop_loss_price
+                    or not h.purchase_price or px > h.purchase_price * splits.DROP_GUARD):
+                continue
+            first = (Transaction.query.filter(Transaction.user_id == h.user_id, Transaction.ticker == h.ticker,
+                                              db.func.lower(Transaction.type) == "buy")
+                     .order_by(Transaction.timestamp).first())
+            bdt = (first.timestamp if first else h.created_at)
+            verdict, why = splits.drop_decision("paper", h.id, h.ticker, h.purchase_price, bdt.date() if bdt else None, px)
+            if verdict == "hold":
+                hold_ids.add(h.id)
+                app.logger.info(f"[paper_exit] {h.ticker} #{h.id} 손절 보류: {why}")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning(f"[paper_exit] 급락 보류 판정 실패: {e}")
     fx = _get_usd_krw_rate()
     closed = []
     for r in rows:
         px = quotes.get(r.ticker)
-        if not px or px <= 0 or r.ticker in split_hit:
+        if not px or px <= 0 or r.ticker in split_hit or r.id in hold_ids:
             continue
         try:
             h = PaperHolding.query.filter_by(id=r.id).with_for_update().first()
@@ -6702,6 +6721,8 @@ splits.init({
 })
 bot_engine.D["split_market"] = splits.check_market
 bot_engine.D["split_guard"] = splits.guard_drop
+bot_engine.D["drop_decision"] = splits.drop_decision       # 이중 방어: 분할 의심 보류 · 급락 1회 보류
+bot_engine.D["split_evidence"] = splits.history_evidence
 bot_engine.start_scheduler()
 
 import sector_map

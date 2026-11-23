@@ -664,9 +664,31 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                 db.session.rollback()
                 log(f"액면분할 점검 실패: {e}")
 
+        # 1.6) 분할 의심 종목은 오늘 추적에서 뺀다: splits 가 아직 없는데 진입가 대비 -40% 이하이고
+        #      가격 기록(수정주가 매수일 종가 · 분할 비율과 같은 갭)이 분할을 가리키면 가짜 손절이 날 수 있다 (최대 24시간)
+        track_data = data
+        if not dry_run and D.get("drop_decision"):
+            skip = set()
+            for r in S.query.filter(S.market == market, S.status == "ACTIVE").all():
+                df, buy = data.get(r.ticker), (r.fill_price or r.entry_price)
+                if df is None or df.empty or not buy:
+                    continue
+                last = float(df["Close"].iloc[-1])
+                if last <= buy * 0.60:
+                    ev = D["split_evidence"](r.ticker, buy, r.filled_date or r.signal_date) if D.get("split_evidence") else (False, "", None)
+                    if not ev[0]:
+                        ev = D["split_evidence"](r.ticker, buy, r.filled_date or r.signal_date, df) if D.get("split_evidence") else ev
+                    if ev[0]:
+                        verdict, why = D["drop_decision"]("batch", r.id, r.ticker, buy, r.filled_date or r.signal_date, last, df)
+                        if verdict == "hold":
+                            skip.add(r.ticker)
+                            log(f"run {market}: {r.ticker} 분할 의심으로 오늘 추적 보류 — {why}")
+            if skip:
+                track_data = {k: v for k, v in data.items() if k not in skip}
+
         # 2) 사후 추적 (dry_run 이면 저장하지 않음)
         open_before = [r.id for r in S.query.filter(S.market == market, S.status.in_(["PENDING", "ACTIVE"])).all()]
-        summary["tracked"] = track_signals(market, data, strategies, commit=not dry_run)
+        summary["tracked"] = track_signals(market, track_data, strategies, commit=not dry_run)
         if not external and as_of != market_today(market):
             # 휴장일이거나 장중 수동 실행(오늘 봉 미완성) → 추적만 하고 신규 신호는 만들지 않음
             summary.update(ok=True, skipped="오늘 완성된 봉이 없음 (휴장일 또는 장 마감 전)",
@@ -1073,6 +1095,18 @@ def intraday_check(market, quotes=None):
                 db.session.rollback()
                 log(f"intraday 분할 확인 실패: {e}")
     rows = [r for r in rows if r.ticker not in split_hit]
+    # 이중 방어: splits 가 아직 없어도 가격 기록이 분할을 가리키거나(보류) 첫 감지면(1회 보류) 이번 회차 판정에서 뺀다
+    if D.get("drop_decision"):
+        keep = []
+        for r in rows:
+            q, buy = quotes.get(r.ticker), (r.fill_price or r.entry_price)
+            if q and buy and r.status == "ACTIVE" and q[3] <= buy * 0.60:
+                verdict, why = D["drop_decision"]("signal", r.id, r.ticker, buy, r.filled_date or r.signal_date, q[3])
+                if verdict == "hold":
+                    log(f"intraday {market}: 신호 #{r.id} {r.ticker} 판정 보류 — {why}")
+                    continue
+            keep.append(r)
+        rows = keep
     strat = {s["key"]: s for s in load_strategies()}
     open_before = [r.id for r in rows]
     filled = closed = 0
