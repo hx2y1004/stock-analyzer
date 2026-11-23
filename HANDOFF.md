@@ -57,6 +57,16 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### /ai-bots 모바일 페이지 축소·표 왼쪽 잘림 수정 (PR #59)
+- 원인: 보유 포지션 표 마지막 머리글의 `<span class="sr-only">`(position:absolute)가 위치 지정 조상이 없어 `.ab-scroll`(overflow-x:auto)의
+  잘라내기를 빠져나가 표 오른쪽 끝(x≈800px)에 놓였다 → 문서 폭 827px → 모바일 브라우저가 페이지 전체를 축소.
+  `html, body { overflow-x: clip }` 만으로는 축소를 막지 못했다. 상세를 열 때 `scrollIntoView` 가 가로로도 밀어 표 왼쪽(종목·로고)이 잘려 보였다.
+- 수정: `.ab-scroll { position: relative; width/max-width 100%; overflow-x: auto }`, `.sr-only { left: 0 }`(전역),
+  `.ab-main > *, .ab-detail, .ab-panel { min-width: 0; max-width: 100% }`, `main { overflow-x: clip }`(sticky 영향 없음),
+  상세 열기 스크롤은 `window.scrollTo({top, left: 0})` 세로 전용.
+- 교훈: 가로 스크롤 래퍼 안에 absolute 요소가 있으면 래퍼에 `position: relative` 를 준다. 모바일 넘침 점검은 `innerWidth === 기기 폭` 으로 한다
+  (축소되면 innerWidth 자체가 커져 scrollWidth <= innerWidth 가 항상 참).
+
 ### 회사 로고 공통 컴포넌트 · 6개 화면 확대 (PR #58)
 - `static/js/logo.js` (모든 페이지에서 notify.js 앞에 로드): `renderStockLogo(ticker, name, 'xs'|'sm'|'md'|'lg')` = `SALogo.html`.
   크기 xs 22 (자동완성·비교 칩) · sm 24 (AI 봇 표·모의투자 거래 내역) · md 32 (내 포트폴리오·모의투자 보유 카드) · lg 40 (종목 상세 헤더).
