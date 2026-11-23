@@ -57,6 +57,19 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 추세 셋업 장중 급락 안전장치 (PR #49)
+- `item_dict`의 `intraday_drop`: 장중 실시간 값(`live`)이 있고 `live_change_pct ≤ INTRADAY_DROP_PCT(-5.0)`이면 true다.
+  - 장 마감 배치가 새로 확정하면 `computed_at`이 바뀌어 live가 무효가 되므로 자동으로 풀린다.
+- `_rank` 그룹 순서:
+  1. 총점 25 이상 ⚡ 장중 돌파
+  2. 일반 셋업(점수순)
+  3. ⚠️ 장중 급락 — 돌파여도 여기로 간다.
+- `payload`는 시장별로 일반 셋업 상위 `LIST_LIMIT`(40) 뒤에 급락 종목을 최대 `DROP_LIMIT`(10)개 붙인다. 급락 종목이 잘려 사라지지 않고 경고와 함께 보인다.
+- `meta[시장].intraday_drops`, `intraday_drop_pct`를 함께 내린다.
+- 화면(`screener.js`):
+  - 급락 카드에 `.tr-badge.drop` `⚠️ 장중 급락 · 추세 훼손 주의`(툴팁에 오늘 등락률)와 붉은 테두리 `.is-drop`를 표시한다.
+  - Perfect Setup은 `🔥 Perfect Setup (어제 종가 기준)`으로 흐리게 취소선을 그어 추천처럼 보이지 않게 한다.
+
 ### 한국 종목 전일 종가 기준 통일 (PR #48) — `krx_ref.py`
 - 현상: 253450.KQ의 등락률이 화면마다 달랐다. 추세 셋업은 33,900원 +8.13%(전일 31,350), 종목 상세는 33,500원 +9.48%(전일 30,600)였다.
 - 원인:

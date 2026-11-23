@@ -569,11 +569,14 @@
     } else if (i.pivot) {
       line = `<p class="tr-pivot">돌파 기준가 <strong>${px(i.pivot, i.ticker)}</strong> <span class="ab-muted">${esc(i.pivot_kind || '')} · 현재가 대비 ${pct((i.pivot / i.price - 1) * 100, 1)}</span></p>`;
     }
+    const drop = !!i.intraday_drop;
     const badges = [
+      drop ? `<span class="tr-badge drop" title="어제 종가 기준 패턴이 오늘 ${pct(i.change_pct)} 급락으로 흔들리고 있어요. 장 마감 뒤 다시 확정됩니다.">⚠️ 장중 급락 · 추세 훼손 주의</span>` : '',
       i.breakout ? '<span class="tr-badge brk">⚡ 장중 돌파</span>' : '',
-      i.perfect ? '<span class="tr-badge pf">🔥 Perfect Setup</span>' : '',
+      // 급락 중이면 Perfect Setup 은 '어제 종가 기준'으로 낮춰 보여 추천처럼 보이지 않게
+      i.perfect ? (drop ? '<span class="tr-badge pf muted">🔥 Perfect Setup (어제 종가 기준)</span>' : '<span class="tr-badge pf">🔥 Perfect Setup</span>') : '',
     ].join('');
-    return `<article class="card tr-card${i.breakout ? ' is-breakout' : ''}">
+    return `<article class="card tr-card${i.breakout && !drop ? ' is-breakout' : ''}${drop ? ' is-drop' : ''}">
       <div class="tr-top">
         <span class="tr-rank" aria-label="${rank}위">${rank}</span>
         <div class="tr-id"><a href="/stock/${encodeURIComponent(i.ticker)}" class="sc-name">${esc(i.name || i.ticker)}</a>
