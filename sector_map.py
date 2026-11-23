@@ -110,6 +110,8 @@ def fetch_kr():
         rows.append({"ticker": t, "name": univ[t]["name"], "sector": univ[t]["sector"],
                      "market_cap": mv * 1e8 if mv else None,          # 네이버 시총 단위: 억원
                      "price": price, "change_pct": round(chg, 2),
+                     # KRX 공식 전일 종가 (종가 − 전일 대비). 토스 경량 갱신 때 등락률 기준으로 쓴다
+                     "prev_close": (price - _num(s.get("compareToPreviousClosePrice"))) if _num(s.get("compareToPreviousClosePrice")) is not None else None,
                      "volume": _num(s.get("accumulatedTradingVolume")),
                      "date": (s.get("localTradedAt") or "")[:10] or None})          # 시세 날짜 (장중 돌파 판정용)
     data_date = max(dates, key=dates.get) if dates else None
@@ -188,7 +190,7 @@ def fetch_toss(market):
         info = got.get(t)
         r = dict(b)
         if info and info.get("price") and b.get("price") and b.get("change_pct") is not None:
-            prev = b["price"] / (1 + b["change_pct"] / 100)          # 기준 시점의 전일 종가
+            prev = b.get("prev_close") or b["price"] / (1 + b["change_pct"] / 100)   # 전일 종가 (한국은 KRX 공식값)
             p = float(info["price"])
             r["price"] = round(p, 2) if market == "US" else p
             r["change_pct"] = round((p / prev - 1) * 100, 2)

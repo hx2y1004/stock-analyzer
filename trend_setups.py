@@ -278,13 +278,20 @@ def _fetch_toss_live(market, base):
     if not got:
         return []
     today = market_today(market)
+    kprev = {}
+    if market == "KR":
+        try:
+            import krx_ref                                  # 한국: KRX 공식 전일 종가 (종목 상세와 같은 기준)
+            kprev = krx_ref.prev_closes_today(list(got))
+        except Exception:
+            kprev = {}
     out = []
     for t, info in got.items():
         p = info.get("price")
         if not p:
             continue
         close, bdate = base.get(t, (None, None))
-        prev = close if (close and bdate and bdate < today) else None
+        prev = kprev.get(t) or (close if (close and bdate and bdate < today) else None)
         out.append({"ticker": t, "price": float(p), "change_pct": toss_api.change_pct(p, prev, info),
                     "volume": None, "date": today, "source": "toss"})
     return out

@@ -1045,9 +1045,10 @@ def _movers_live(payload):
         if not got:
             continue
         pool = list(base.values()) or rows
+        kprev = prev_closes_today([r["ticker"] for r in pool]) if m == "KR" else {}
         live = []
         for r in pool:
-            info, prev = got.get(r["ticker"]), r.get("prev_close")
+            info, prev = got.get(r["ticker"]), kprev.get(r["ticker"]) or r.get("prev_close")
             if info and info.get("price") and prev:
                 live.append({**r, "price": round(float(info["price"]), 2), "change_pct": toss_api.change_pct(info["price"], prev), "live": True})
             else:
@@ -1538,6 +1539,7 @@ def manifest():
 
 # ── 추세 셋업 (장 마감 확정 + 장중 경량 갱신, trend_setups.py) ──────────────────
 import trend_setups
+import krx_ref
 
 
 def _no_store(resp):
@@ -3669,7 +3671,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v2"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v3"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
@@ -4297,6 +4299,28 @@ def analyze():
             price_change_pct = round((price_change / prev_close) * 100, 2) if (price_change and prev_close) else None
         is_extended_hours_price = extended_hours_flag(
             current_price, regular_close, bool(realtime_source) or extended_bar, is_market_open_now, is_korean, toss_session)
+
+        # 한국 종목: 전일 종가·정규장 종가는 KRX 공식값(네이버 closePrice − 전일 대비)으로 맞춘다.
+        # 토스 일봉은 대체거래소(NXT) 시간외 체결이 섞여 전날 봉 종가가 KRX 종가와 다를 수 있어
+        # (253450 11/20: 토스 30,600 vs KRX 31,350) 화면마다 등락률이 달라지던 것을 막는다.
+        if is_korean and current_price:
+            try:
+                kref = krx_ref.refs([ticker]).get(ticker)
+            except Exception:
+                kref = None
+            if kref:
+                if is_market_open_now:
+                    if kref.get("date") == krx_ref.today_kst():
+                        prev_close = kref["prev"]
+                else:
+                    regular_close = kref["close"]                  # 마지막 정규장(KRX) 종가
+                    if not (realtime_useful or extended_bar):
+                        current_price = regular_close              # 실시간가가 없으면 토스 일봉 대신 KRX 종가
+                    is_extended_hours_price = extended_hours_flag(
+                        current_price, regular_close, bool(realtime_source) or extended_bar, False, True, toss_session)
+                    prev_close = regular_close if is_extended_hours_price else kref["prev"]
+                price_change     = round(current_price - prev_close, 2) if (current_price and prev_close) else None
+                price_change_pct = round((price_change / prev_close) * 100, 2) if (price_change and prev_close) else None
 
         # 데이터 기준 시각 (정규장 마지막 봉; 시간외 봉은 '장 마감 · ○/○ 기준' 에 쓰지 않는다)
         try:
@@ -6872,6 +6896,21 @@ def _snapshot_prev_closes(tickers):
     return out
 
 
+def prev_closes_today(tickers):
+    """오늘 시세의 등락률 기준이 되는 전일 종가. 한국 종목은 KRX 공식 기준가(krx_ref), 그 외·실패는 스크리너 스냅샷.
+    종목 상세·추세 셋업·스크리너·관심종목·급등락·섹터맵이 같은 값을 쓰게 하는 공용 함수."""
+    tickers = list(dict.fromkeys(t for t in tickers if t))
+    out = {}
+    try:
+        out.update(krx_ref.prev_closes_today([t for t in tickers if krx_ref.is_kr(t)]))
+    except Exception as e:
+        app.logger.debug(f"[live] KRX 기준가 실패: {e}")
+    rest = [t for t in tickers if t not in out]
+    if rest:
+        out.update(_snapshot_prev_closes(rest))
+    return out
+
+
 def live_quotes(tickers, ttl=20, fallback=True):
     """여러 종목 실시간 현재가·등락률. 토스 get_prices(200종목 묶음, 공용 캐시) 1순위 →
     등락률은 저장된 전일 종가(스냅샷) 대비 → 토스에 없거나 전일 종가를 모르는 종목만 기존 _quote(네이버·yfinance).
@@ -6884,7 +6923,7 @@ def live_quotes(tickers, ttl=20, fallback=True):
         got = toss_api.get_prices_cached(tickers, ttl=ttl)
     except Exception as e:
         app.logger.debug(f"[live] 토스 실패: {e}")
-    prevs = _snapshot_prev_closes([t for t in got]) if got else {}
+    prevs = prev_closes_today([t for t in got]) if got else {}
     out, rest = {}, []
     for t in tickers:
         info = got.get(t)
@@ -7370,7 +7409,7 @@ def _screener_live_overlay(items):
         got = {}
     if not got:
         return {"count": 0}
-    prevs = _snapshot_prev_closes(list(got))
+    prevs = prev_closes_today(list(got))
     n = 0
     for it in targets:
         info = got.get(it["ticker"])
