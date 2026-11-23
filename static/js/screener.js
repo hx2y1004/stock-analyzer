@@ -473,11 +473,34 @@
     if (wait) trTimer = setTimeout(() => { if (S.tab === 'trends' && !document.hidden) loadTrends(); else scheduleTrends(); }, wait);
   }
 
+  // 쿨다운 중 '현시점 갱신' 버튼에 남은 초를 보여 주고 끝나면 원래대로
+  let _trCdTimer = null;
+  function _trCooldown(sec) {
+    const b = document.getElementById('trRefresh');
+    if (!b) return;
+    b.dataset.label = '🔄 현시점 갱신';
+    clearInterval(_trCdTimer);
+    let left = sec;
+    const tick = () => {
+      if (left <= 0) { clearInterval(_trCdTimer); _trCdTimer = null; b.textContent = b.dataset.label; b.removeAttribute('aria-disabled'); return; }
+      b.textContent = `${b.dataset.label} (${left}초)`; b.setAttribute('aria-disabled', 'true'); left -= 1;
+    };
+    tick();
+    _trCdTimer = setInterval(tick, 1000);
+  }
+
   function refreshToast(res) {
     const ms = Object.entries(res.markets || {}).filter(([m]) => S.tMarket === 'ALL' || m === S.tMarket);
     if (res.busy) return toast('다른 갱신이 진행 중이에요. 잠시 후 다시 눌러 주세요.');
-    if (ms.some(([, v]) => v === 'ok')) return toast(`현재가 ${res.refreshed}종목을 다시 받아 돌파 여부를 갱신했어요.`);
-    if (ms.some(([, v]) => v === 'cooldown')) return toast(`방금 갱신했어요. ${res.cooldown || 60}초 뒤에 다시 받을 수 있어요.`);
+    if (ms.some(([, v]) => v === 'ok')) {
+      _trCooldown((S.trends && S.trends.refresh_cooldown) || 15);
+      return toast(`현재가 ${res.refreshed}종목을 실시간으로 다시 받아 갱신했어요.`);
+    }
+    if (ms.some(([, v]) => v === 'cooldown')) {
+      const left = res.cooldown || (S.trends && S.trends.refresh_cooldown) || 15;
+      _trCooldown(left);
+      return toast(`방금 갱신했어요 (${left}초 후 다시 가능)`);
+    }
     toast('지금은 장이 열려 있지 않아 장 마감 종가 기준입니다.');
   }
 
@@ -581,7 +604,8 @@
     const b = $('#trRefresh');
     b.disabled = true; b.textContent = '⏳ 갱신 중…';
     await loadTrends({ refresh: true });
-    b.disabled = false; b.textContent = '🔄 현시점 갱신';
+    b.disabled = false;
+    if (!_trCdTimer) b.textContent = '🔄 현시점 갱신';      // 쿨다운 중이면 남은 초 표시를 유지
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && S.tab === 'trends' && S.trends) loadTrends();

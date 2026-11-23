@@ -37,7 +37,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `auth.py` | Google, 카카오 OAuth 로그인. 콜백 주소는 `BASE_URL` 기준 |
 | `models.py` | SQLAlchemy 모델 (users, holdings, paper_holdings, transactions, asset_snapshots, user_badges, ai_cache, 봇·알림·푸시 테이블). 전체 목록은 README |
 | `badges.py` | 모의투자 배지 |
-| `toss_api.py` | 토스증권 Open API (실시간 시세, 캔들, 환율). 허용 IP 제한이 있어 운영 서버에서만 동작 |
+| `toss_api.py` | 토스증권 Open API (실시간 시세, 캔들, 환율). 허용 IP 제한이 있어 운영 서버에서만 동작. 여러 화면의 실시간가는 `get_prices_cached`(종목별 20초 공용 캐시, 200종목 묶음) 1순위, 실패 시 네이버/yfinance |
 | `trends_scanner.py`, `trend_setups.py` | 추세 셋업. 점수 계산(일봉 입력, 네트워크 없음)과 저장. 장 마감 배치가 봇 일봉을 재사용해 `trend_setups` 확정, 장중엔 섹터맵 시세로 돌파만 덮어씀. 화면은 `/screener?tab=trends` |
 | `sector_map.py` | 메인 섹터맵: 전체 유니버스 시총가중 집계와 백그라운드 스냅샷. 분류는 `sector_universe.json` (`build_sector_universe.py` 로 생성) |
 | `bot_engine.py`, `bot_trader.py`, `notifier.py` | AI 매매 신호 봇: 신호 생성·추적, 봇 가상 계좌 매매, 알림 |

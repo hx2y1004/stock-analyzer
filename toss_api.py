@@ -229,6 +229,9 @@ def get_prices(tickers):
                     "currency": p.get("currency"),
                     "timestamp": p.get("timestamp"),
                     "session": _session_of(p),
+                    # 응답에 있을 때만 (스키마 미확인 → 흔한 이름 몇 개만 본다). 호출하는 쪽은 DB 의 전일 종가를 우선한다
+                    "prev_close": _first_num(p, ("previousClosePrice", "prevClosePrice", "previousClose", "prevClose", "basePrice")),
+                    "change_pct": _first_num(p, ("changeRate", "fluctuationRate", "changePercent", "changeRatio")),
                 }
         except Exception as e:
             log.warning(f"[toss] get_prices failed: {e}")
@@ -240,6 +243,82 @@ def get_price(ticker):
     d = get_prices([ticker])
     info = d.get(ticker)
     return info["price"] if info else None
+
+
+def _first_num(p, keys):
+    for k in keys:
+        v = _f(p.get(k))
+        if v is not None:
+            return v
+    return None
+
+
+# ── 실시간 시세 공용 캐시 ─────────────────────────────────────
+# 여러 화면(종목 상세·모의투자·추세 셋업·스크리너·관심종목·섹터맵·봇 장중 체크)이 같은 종목을 겹쳐 부르므로
+# 종목별로 짧게(기본 20초) 기억해 토스 호출 수를 줄인다. 만료된 종목만 200개씩 묶어 다시 받는다.
+_PX_CACHE = {}                 # yfinance 티커 → (받은 시각, info)
+_PX_LOCK = threading.Lock()
+PX_TTL = 20
+_PX_MAX = 4000                 # 넘으면 오래된 것부터 정리 (유니버스 약 1,100종목)
+_PX_STATS = {"hits": 0, "fetched": 0, "calls": 0, "errors": 0}
+
+
+def get_prices_cached(tickers, ttl=PX_TTL):
+    """get_prices 와 같은 형식. 캐시에 ttl 초 안의 값이 있으면 그것을 쓰고, 나머지만 토스에 묻는다.
+    토스 미설정·실패·미지원 종목은 결과에서 빠진다 → 호출하는 쪽이 기존 네이버/yfinance 로 채운다."""
+    if not tickers or not is_enabled():
+        return {}
+    now = time.time()
+    want = list(dict.fromkeys(t for t in tickers if t and is_eligible(t)))
+    out, miss = {}, []
+    with _PX_LOCK:
+        for t in want:
+            hit = _PX_CACHE.get(t)
+            if hit and now - hit[0] < ttl:
+                out[t] = hit[1]
+            else:
+                miss.append(t)
+        _PX_STATS["hits"] += len(out)
+    for i in range(0, len(miss), 200):
+        part = miss[i:i + 200]
+        try:
+            got = get_prices(part)
+        except Exception as e:
+            log.warning(f"[toss] get_prices_cached 실패: {e}")
+            got = {}
+        _PX_STATS["calls"] += 1
+        if not got:
+            _PX_STATS["errors"] += 1
+        ts = time.time()
+        with _PX_LOCK:
+            for t, info in got.items():
+                _PX_CACHE[t] = (ts, info)
+                out[t] = info
+            _PX_STATS["fetched"] += len(got)
+            if len(_PX_CACHE) > _PX_MAX:
+                for k, _ in sorted(_PX_CACHE.items(), key=lambda kv: kv[1][0])[: len(_PX_CACHE) - _PX_MAX]:
+                    _PX_CACHE.pop(k, None)
+    return out
+
+
+def price_cache_stats():
+    with _PX_LOCK:
+        return {**_PX_STATS, "size": len(_PX_CACHE)}
+
+
+def change_pct(price, prev_close, info=None):
+    """실시간 등락률: (현재가 − 전일 종가) / 전일 종가. 전일 종가가 없으면 토스 응답 값(있다면)."""
+    try:
+        if price and prev_close:
+            return round((float(price) / float(prev_close) - 1) * 100, 2)
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
+    if info:
+        if info.get("prev_close") and price:
+            return round((float(price) / info["prev_close"] - 1) * 100, 2)
+        if info.get("change_pct") is not None:
+            return round(float(info["change_pct"]), 2)
+    return None
 
 
 def get_price_info(ticker):
