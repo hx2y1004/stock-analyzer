@@ -653,6 +653,17 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
         summary = {"market": market, "as_of": str(as_of), "tickers": len(feats), "vix": vix,
                    "tracked": 0, "candidates": {}, "rejected": {}, "signals": {}, "ai_calls_used": 0}
 
+        # 1.5) 액면분할 반영 (하루 1회, 추적 전): yfinance 일봉은 분할을 반영한 값이라 신호·계좌가 분할 전 그대로면
+        #      가짜 손절이 난다 → 신호 가격·봇 포지션·모의 보유를 먼저 맞춘다
+        if not dry_run and not external and D.get("split_market"):
+            try:
+                sp = D["split_market"](market)
+                if sp:
+                    log(f"run {market}: 액면분할 반영 {sp}")
+            except Exception as e:
+                db.session.rollback()
+                log(f"액면분할 점검 실패: {e}")
+
         # 2) 사후 추적 (dry_run 이면 저장하지 않음)
         open_before = [r.id for r in S.query.filter(S.market == market, S.status.in_(["PENDING", "ACTIVE"])).all()]
         summary["tracked"] = track_signals(market, data, strategies, commit=not dry_run)
@@ -1047,6 +1058,21 @@ def intraday_check(market, quotes=None):
         tickers = sorted({r.ticker for r in rows})
         quotes = download_intraday(tickers, market)
         quotes = overlay_live(quotes, tickers, {r.ticker for r in rows if r.status == "PENDING"}, market)
+    # 오손절 방어: 진입가 대비 -40% 이상(분할 비율만큼 떨어진 것처럼 보임)이면 판정 전에 액면분할부터 확인.
+    # 분할이면 신호·봇 포지션·계좌를 보정하고 그 종목은 이번 회차 판정을 건너뛴다 (다음 5분 체크에서 보정값으로)
+    split_hit = set()
+    if D.get("split_guard"):
+        sus = sorted({r.ticker for r in rows if r.ticker in quotes and (r.fill_price or r.entry_price)
+                      and quotes[r.ticker][3] <= (r.fill_price or r.entry_price) * 0.60})
+        if sus:
+            try:
+                split_hit = D["split_guard"](sus) or set()
+                if split_hit:
+                    log(f"intraday {market}: 액면분할 반영 → 판정 건너뜀 {sorted(split_hit)}")
+            except Exception as e:
+                db.session.rollback()
+                log(f"intraday 분할 확인 실패: {e}")
+    rows = [r for r in rows if r.ticker not in split_hit]
     strat = {s["key"]: s for s in load_strategies()}
     open_before = [r.id for r in rows]
     filled = closed = 0

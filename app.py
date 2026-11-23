@@ -64,6 +64,7 @@ from flask_login import LoginManager, login_required, current_user
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
+from models import AppliedStockSplit
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
                     BotPosition, PushSubscription, ScreenerSnapshot, TrendSetup)
@@ -4891,6 +4892,10 @@ def _can_import_toss() -> bool:
 def get_portfolio():
     if not current_user.is_authenticated:
         return jsonify([])
+    try:
+        splits.check_user(current_user.id)  # 하루 1회 액면분할 반영 (실제 포트폴리오 수량·매입가)
+    except Exception as e:
+        app.logger.warning(f"[SPLIT] 포트폴리오 점검 실패: {e}")
 
     holdings = Holding.query.filter_by(user_id=current_user.id)\
                             .order_by(Holding.created_at.desc()).all()
@@ -5506,6 +5511,10 @@ def _save_today_snapshot(user_id, total_assets_krw, cash_krw, positions_value_kr
 def trading_dashboard():
     """모의투자 대시보드: 총 자산, 현금, 보유 종목, 평가 손익."""
     user = current_user
+    try:
+        splits.check_user(user.id)          # 하루 1회: 보유 종목에 미반영 액면분할이 있으면 수량·단가 보정
+    except Exception as e:
+        app.logger.warning(f"[SPLIT] 대시보드 점검 실패: {e}")
     # 기존 유저 보호: NULL 이면 1억으로 초기화
     if user.cash_balance is None:
         user.cash_balance = INITIAL_CAPITAL_KRW
@@ -5865,11 +5874,26 @@ def paper_auto_exits(market, quotes=None):
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=min(4, len(rest))) as ex:
                 quotes.update(dict(zip(rest, ex.map(_fetch_current_price, rest))))
+    # 오손절 방어: 매입가 대비 -40% 이상(분할 비율만큼 떨어진 것처럼 보임)이면 먼저 액면분할 여부를 확인.
+    # 분할이면 수량·매입가·목표가·손절가를 보정하고 이번 회차 자동 청산은 건너뛴다 (다음 5분 체크에서 보정값으로 판정)
+    split_hit = set()
+    try:
+        held = PaperHolding.query.filter(PaperHolding.id.in_([r.id for r in rows])).all()
+        # 같은 종목을 여러 사람이 들고 있을 수 있어 보유 건마다 본다 (한 건이라도 -40% 이하면 확인)
+        sus = sorted({h.ticker for h in held if h.purchase_price and quotes.get(h.ticker)
+                      and quotes[h.ticker] <= h.purchase_price * splits.DROP_GUARD})
+        if sus:
+            split_hit = splits.guard_drop(sus)
+            if split_hit:
+                app.logger.info(f"[paper_exit] 액면분할 반영 → 이번 회차 자동 청산 건너뜀: {sorted(split_hit)}")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning(f"[paper_exit] 분할 확인 실패: {e}")
     fx = _get_usd_krw_rate()
     closed = []
     for r in rows:
         px = quotes.get(r.ticker)
-        if not px or px <= 0:
+        if not px or px <= 0 or r.ticker in split_hit:
             continue
         try:
             h = PaperHolding.query.filter_by(id=r.id).with_for_update().first()
@@ -6668,6 +6692,16 @@ with app.app_context():
         db.session.rollback()
         app.logger.warning(f"[BOT] 전략·계좌 초기화 실패: {e}")
 bot_engine.D["paper_exit"] = paper_auto_exits           # 장중 5분 체크 → 모의투자 목표가·손절가 자동 청산
+# 액면분할 자동 반영 (모의·봇·신호·실제 포트폴리오). 봇 장 마감 배치 시작 · 장중 급락 방어에서 부른다
+import splits
+splits.init({
+    "app": app, "db": db, "AppliedStockSplit": AppliedStockSplit, "PaperHolding": PaperHolding, "Holding": Holding,
+    "Transaction": Transaction, "User": User, "BotPosition": BotPosition, "AiSignal": AiSignal,
+    "bot_users": bot_trader.bot_users, "price": lambda t: _fetch_current_price(t), "fx": lambda: _get_usd_krw_rate(),
+    "notify_user": notifier.notify_user,
+})
+bot_engine.D["split_market"] = splits.check_market
+bot_engine.D["split_guard"] = splits.guard_drop
 bot_engine.start_scheduler()
 
 import sector_map

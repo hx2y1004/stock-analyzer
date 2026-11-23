@@ -41,6 +41,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `krx_ref.py` | 한국 종목 KRX 공식 전일 종가(네이버 실시간 폴링 `종가 − 전일 대비`, 50종목 묶음·1분 캐시). 종목 상세·추세 셋업·스크리너·섹터맵·급등락의 등락률 기준을 통일 |
 | `trends_scanner.py`, `trend_setups.py` | 추세 셋업. 점수 계산(일봉 입력, 네트워크 없음)과 저장. 장 마감 배치가 봇 일봉을 재사용해 `trend_setups` 확정, 장중엔 섹터맵 시세로 돌파만 덮어씀. 화면은 `/screener?tab=trends` |
 | `sector_map.py` | 메인 섹터맵: 전체 유니버스 시총가중 집계와 백그라운드 스냅샷. 분류는 `sector_universe.json` (`build_sector_universe.py` 로 생성) |
+| `splits.py` | 액면분할 자동 반영 (yfinance splits 12시간 캐시 → 모의·봇 계좌·봇 신호·실제 포트폴리오 수량·단가·목표/손절 보정, `applied_stock_splits` 로 멱등). 봇 장 마감 배치 시작·장중 -40% 급락 방어·사용자 화면 하루 1회 |
 | `bot_engine.py`, `bot_trader.py`, `notifier.py` | AI 매매 신호 봇: 신호 생성·추적, 봇 가상 계좌 매매, 알림 |
 | `webpush.py` | PWA 웹 푸시 (VAPID 키가 없으면 자동으로 꺼짐, pywebpush 는 보낼 때만 import) |
 | `screener.py` | 스크리너 스냅샷(`screener_snapshots`) 갱신·조회와 종목 비교. 가격은 섹터맵, 기술 지표는 봇 배치에서 받고 펀더멘탈은 7일 순환 |
