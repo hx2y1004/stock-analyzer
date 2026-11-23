@@ -298,6 +298,9 @@ function renderPositions(positions) {
     const buyConv = _convCur(p.purchase_price, p.currency, _posCur, rate);
     const tk = escapeHtml(p.ticker), nm = escapeHtml(p.name);
     const href = `/stock/${encodeURIComponent(p.ticker)}`;
+    // 줄 구성 고정: 단가 줄 → (손절↔익절 바 | 하나만 예약됐을 때 익절/손절 배지) → 버튼 3개 줄
+    const bar = _exitBar(p);                 // 익절·손절 둘 다 있으면 바 양 끝에 숫자가 있어 배지는 생략
+    const exitBadge = bar ? '' : _exitBadge(p);
     return `
       <div class="pf-card trend-card-v2 tr-pos-card ${tierClass} ${dirClass}" data-href="${href}" title="${nm} 종목 분석 보기">
         <div class="trend-card-row">
@@ -313,14 +316,15 @@ function renderPositions(positions) {
           </div>
           <div class="trend-score-v2 ${badgeCls}">${icon} ${Math.abs(p.pnl_pct || 0).toFixed(1)}<span class="score-suffix">%</span></div>
         </div>
-        <div class="pf-meta-row">
+        <div class="pf-meta-row tr-unit-row">
           <span class="pf-meta-item tr-unit" title="1주 단가 (종목 통화 기준 — 익절·손절과 같은 단위)">매입 ${fmtNative(p.purchase_price, p.currency)} → 현재 <b class="pf-${cls}">${fmtNative(p.current_price, p.currency)}</b> · ${p.quantity}주</span>
-          ${_exitBadge(p)}
+        </div>
+        ${bar || (exitBadge ? `<div class="tr-exit-row">${exitBadge}</div>` : '')}
+        <div class="tr-actions-row">
           <button type="button" class="trade-action-btn exit" data-act="exit" data-t="${tk}" aria-label="${nm} 목표가·손절가 예약">목표/손절</button>
           <button type="button" class="trade-action-btn buy" data-act="buy" data-t="${tk}">추가매수</button>
           <button type="button" class="trade-action-btn sell" data-act="sell" data-t="${tk}">매도</button>
         </div>
-        ${_exitBar(p)}
         ${p.note ? `<div class="pf-note">메모 · ${escapeHtml(p.note)}</div>` : ''}
       </div>`;
   }).join('');
