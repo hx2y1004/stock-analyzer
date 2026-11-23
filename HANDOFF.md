@@ -57,6 +57,16 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 모의투자 보유 카드 줄 구성 고정 (PR #53)
+- 한 `flex-wrap` 줄에 섞여 있던 단가·익절/손절 배지·버튼을 분리했다:
+  1. 첫 줄(종목명·평가금·수익률)
+  2. 단가 줄 `.tr-unit-row`(1줄)
+  3. 손절↔익절 바 `.xbar`, 또는 하나만 예약됐을 때 배지 줄 `.tr-exit-row`
+  4. 버튼 줄 `.tr-actions-row`(`grid repeat(3, minmax(0, 1fr))`, 항상 1줄)
+- 익절·손절이 둘 다 있으면 바 양 끝에 숫자가 있으므로 알약 배지 `_exitBadge`는 그리지 않는다.
+- 들여쓰기는 `--pos-indent`(PC 66px · 모바일 42px)로 줄마다 맞췄다.
+- 긴 종목명·티커는 한 줄 말줄임으로 처리한다(이름 링크가 inline이라 말줄임이 안 먹었고, 모바일 첫 줄 이름 칸이 `1fr`이라 평가금과 겹쳤다).
+
 ### AI 봇 진입 근거 모달 한국어 라벨 (PR #52)
 - `ai_bots.js` `MISSING_LABELS`가 `당시 비어 있던 데이터`의 내부 키를 한국어로 바꾼다.
   - 지금 기록되는 키: `bot_engine.fundamentals_for()`의 `fund_score`·`dcf_fair`·`analyst_target`.

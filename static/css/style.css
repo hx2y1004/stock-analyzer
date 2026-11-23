@@ -5881,3 +5881,27 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .quick-tickers .quick-btn { flex-shrink: 0; scroll-snap-align: start; white-space: nowrap; }
   .quick-tickers .quick-btn:last-child { margin-right: 28px; }   /* 오른쪽 끝 흐림(24px)에 마지막 칩이 걸리지 않게 */
 }
+
+/* 모의투자 보유 카드 줄 구성 고정 (가격 자릿수와 상관없이 버튼 3개가 항상 한 줄) */
+.tr-pos-card { --pos-indent: 66px; }
+.tr-pos-card .tr-unit-row { padding-left: var(--pos-indent); flex-wrap: nowrap; min-width: 0; }
+.tr-pos-card .tr-unit { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tr-pos-card .xbar { margin-left: var(--pos-indent); }
+.tr-exit-row { margin: 8px 0 0 var(--pos-indent); display: flex; }
+.tr-actions-row { margin: 10px 0 0 var(--pos-indent); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.tr-actions-row .trade-action-btn { margin: 0; width: 100%; min-width: 0; padding: 6px 4px; font-size: 12px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) {
+  .tr-pos-card { --pos-indent: 42px; }
+  .tr-pos-card .tr-unit-row { padding-left: var(--pos-indent); }
+}
+@media (max-width: 380px) {
+  .tr-actions-row .trade-action-btn { font-size: 11px; padding: 6px 2px; }
+}
+/* 보유 카드 첫 줄: 긴 종목명이 평가금과 겹치거나 2줄로 늘지 않게 한 줄 말줄임 */
+.tr-pos-card .tr-pos-link { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-pos-card .pf-ticker { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-pos-card .trend-price-block { min-width: 0; }
+@media (max-width: 640px) {
+  .tr-pos-card .trend-card-row { grid-template-columns: 32px minmax(0, 1fr) auto auto; }
+}
