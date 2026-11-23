@@ -278,9 +278,8 @@ function renderPositions(positions) {
   positions.sort((a, b) => (b.pnl_pct || 0) - (a.pnl_pct || 0));
   const rate = fx();
   el.innerHTML = positions.map((p, idx) => {
-    const medals = ['🥇', '🥈', '🥉'];
-    const rank = idx < 3 && p.pnl_pct > 0 ? `<div class="trend-rank trend-rank-medal">${medals[idx]}</div>`
-                                          : `<div class="trend-rank trend-rank-num">#${idx + 1}</div>`;
+    // 순위 메달·번호 대신 회사 로고 (홈 '내 포트폴리오'와 같은 원형 로고 · 실패 시 이니셜)
+    const rank = `<div class="trend-rank trend-rank-logo">${window.renderStockLogo ? renderStockLogo(p.ticker, p.name, 'md') : ''}</div>`;
     const cls = p.pnl_pct > 0 ? 'up' : p.pnl_pct < 0 ? 'down' : 'flat';
     const icon = p.pnl_pct > 0 ? '▲' : p.pnl_pct < 0 ? '▼' : '·';
     let badgeCls;
@@ -384,7 +383,7 @@ function renderTransactions() {
         <div class="tx-grid">
           <span class="tx-time">${fmtDateTime(parseServerTime(t.timestamp))}</span>
           <span><span class="tx-type ${sell ? 'sell' : 'buy'}">${sell ? '매도' : '매수'}</span></span>
-          <span class="tx-stock-cell"><a class="tx-stock" href="/stock/${encodeURIComponent(t.ticker)}">${escapeHtml(t.name)}</a><span class="tx-ticker">${escapeHtml(t.ticker)}</span></span>
+          <span class="tx-stock-cell lg-id">${(window.renderStockLogo ? renderStockLogo(t.ticker, t.name, 'sm') : '')}<span class="lg-id-text"><a class="tx-stock" href="/stock/${encodeURIComponent(t.ticker)}">${escapeHtml(t.name)}</a><span class="tx-ticker">${escapeHtml(t.ticker)}</span></span></span>
           <span class="num" data-l="수량 × 단가">${t.quantity}주 × ${fmtNative(t.price, t.currency)}</span>
           <span class="num" data-l="금액">${fmtKRW(t.amount_krw)}</span>
           <span class="num muted" data-l="수수료">${fmtKRW(t.fee_krw)}</span>
@@ -434,6 +433,7 @@ function setupQuickBuyAC() {
         } else {
           list.innerHTML = qbACItems.map((it, i) => `
             <div class="autocomplete-item qb-ac-item" id="qbOpt${i}" role="option" aria-selected="false" data-i="${i}">
+              ${(window.renderStockLogo ? renderStockLogo(it.symbol, it.name, 'xs') : '')}
               <span class="qb-mkt ${_qbMarket(it.symbol).toLowerCase()}">${_qbMarket(it.symbol)}</span>
               <span class="ac-name">${escapeHtml(it.name)}</span>
               <span class="ac-symbol">${escapeHtml(it.symbol)}</span>

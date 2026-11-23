@@ -19,35 +19,7 @@
   const ICON_X = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
     '<path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>';
 
-  // ── 회사 로고: 원형 로고 + 실패하면 이니셜 배지 (깨진 이미지가 보이지 않게) ──────────────
-  // 이니셜이 바닥에 깔려 있고, 로고는 다 받아진 뒤에만 보인다. 실패·빈 이미지면 <img> 를 지워 이니셜만 남는다.
-  // 로고 경로는 서버 LOGO_URL_TEMPLATE ({symbol}). 한국 종목은 키 없는 공개 로고가 없어 이니셜만.
-  const SALogo = {
-    initials(ticker, name) {
-      const t = String(ticker || '').toUpperCase(), n = String(name || '').trim();
-      if (/\.(KS|KQ)$/.test(t) || /[가-힣]/.test(n.slice(0, 2))) return (n || t).replace(/\s+/g, '').slice(0, 2);
-      return t.replace(/[^A-Z0-9]/g, '').slice(0, 2) || n.slice(0, 2).toUpperCase();
-    },
-    hue(ticker) {
-      let h = 0;
-      for (const c of String(ticker || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-      return h % 360;
-    },
-    url(ticker) {
-      const t = String(ticker || '').toUpperCase(), tpl = window.SA_LOGO_TPL;
-      if (!tpl || /\.(KS|KQ)$/.test(t) || /[\^=]/.test(t)) return null;
-      return tpl.replace('{symbol}', encodeURIComponent(t));
-    },
-    html(ticker, name, size = 32) {
-      const u = this.url(ticker);
-      return `<span class="sa-logo" style="--lg-size:${size}px;--lg-hue:${this.hue(ticker)}" aria-hidden="true">` +
-        `<span class="sa-logo-init">${esc(this.initials(ticker, name))}</span>` +
-        (u ? `<img src="${esc(u)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"` +
-             ` onload="if(this.naturalWidth<8){this.remove()}else{this.classList.add('ok')}" onerror="this.remove()">` : '') +
-        `</span>`;
-    },
-  };
-  window.SALogo = SALogo;
+  // 회사 로고는 static/js/logo.js (window.SALogo · renderStockLogo) — 이 파일보다 먼저 불러온다
 
   function fmtPx(v, cur) {
     if (v == null) return '—';
@@ -417,7 +389,7 @@
       el.innerHTML = [...m.values()].map((i) => `
         <div class="watch-row">
           <button type="button" class="watch-open" data-t="${esc(i.ticker)}">
-            ${SALogo.html(i.ticker, i.name, 28)}
+            ${window.renderStockLogo ? renderStockLogo(i.ticker, i.name, 'md') : ''}
             <span class="watch-id"><span class="watch-name">${esc(i.name)}</span><span class="watch-tk">${esc(i.ticker)}</span></span>
           </button>
           <span class="watch-quote" data-q="${esc(i.ticker)}"><span class="watch-px">…</span><span class="watch-chg"></span></span>
