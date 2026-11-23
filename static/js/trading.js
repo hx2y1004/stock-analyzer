@@ -53,9 +53,16 @@ document.addEventListener('keydown', (e) => {
   else if (open('tradeSellModal')) closeSellModal();
 });
 
-// ── 보유종목 표시 토글 (평가금/현재가 · 원/$) ──
-let _posView = 'value';
+// ── 보유종목: 정렬(공통 hsort.js) · 표시 통화 토글(원/$). 카드 오른쪽 큰 숫자는 항상 평가금액 ──
 let _posCur  = 'KRW';
+const _POS_SORT_KEY = 'sa_sort_trading_pos';
+const _posSort = window.SAHoldSort ? SAHoldSort.load(_POS_SORT_KEY) : { key: 'value', dir: 'desc' };
+function _setupPosSort() {
+  const slot = document.getElementById('posSortSlot');
+  if (!slot || !window.SAHoldSort) return;
+  slot.innerHTML = SAHoldSort.controlHTML('posSort', _posSort, '보유 종목');
+  SAHoldSort.bind(document.getElementById('posSort'), _posSort, _POS_SORT_KEY, () => { if (dashboardData) renderPositions(dashboardData.positions || []); });
+}
 function _convCur(val, fromCur, toCur, rate) {
   if (val == null) return null;
   if (fromCur === toCur) return val;
@@ -72,11 +79,11 @@ function _pressGroup(btn) {
   btn.parentElement.querySelectorAll('.ah-period-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
   btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true');
 }
-function setPosView(v, btn) { _posView = v; _pressGroup(btn); if (dashboardData) renderPositions(dashboardData.positions || []); }
 function setPosCur(c, btn) { _posCur = c; _pressGroup(btn); if (dashboardData) renderPositions(dashboardData.positions || []); }
 
 // ── 시작 ────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  _setupPosSort();
   setupQuickBuyAC();
   setupTradeInputs();
   setupTxTools();
@@ -275,9 +282,20 @@ function renderPositions(positions) {
     el.innerHTML = '<div class="empty-state">보유 종목이 없습니다. 위에서 매수해보세요!</div>';
     return;
   }
-  positions.sort((a, b) => (b.pnl_pct || 0) - (a.pnl_pct || 0));
   const rate = fx();
-  el.innerHTML = positions.map((p, idx) => {
+  // 금·은·동 강조는 표시 순서와 상관없이 '수익률 상위 3개(수익 중)' 에만
+  const tier = new Map([...positions].filter((p) => (p.pnl_pct || 0) > 0)
+    .sort((a, b) => b.pnl_pct - a.pnl_pct).slice(0, 3).map((p, i) => [p, i + 1]));
+  const toKrw = (v, cur) => (v == null ? null : cur === 'USD' ? v * rate : v);
+  const hasPx = (p) => p.current_price != null;
+  const sorted = window.SAHoldSort ? SAHoldSort.sort(positions, _posSort, {
+    value: (p) => (hasPx(p) ? toKrw(p.current_price * p.quantity, p.currency) : null),
+    ret: (p) => (p.pnl_pct == null ? null : p.pnl_pct),
+    pl: (p) => (hasPx(p) ? toKrw((p.current_price - p.purchase_price) * p.quantity, p.currency) : null),
+    cost: (p) => toKrw(p.purchase_price * p.quantity, p.currency),
+    name: (p) => p.name || p.ticker,
+  }) : positions;
+  el.innerHTML = sorted.map((p) => {
     // 순위 메달·번호 대신 회사 로고 (홈 '내 포트폴리오'와 같은 원형 로고 · 실패 시 이니셜)
     const rank = `<div class="trend-rank trend-rank-logo">${window.renderStockLogo ? renderStockLogo(p.ticker, p.name, 'md') : ''}</div>`;
     const cls = p.pnl_pct > 0 ? 'up' : p.pnl_pct < 0 ? 'down' : 'flat';
@@ -290,9 +308,9 @@ function renderPositions(positions) {
     else if (p.pnl_pct > -15) badgeCls = 'score-loss';
     else badgeCls = 'score-loss-strong';
     const dirClass = p.pnl_pct == null || p.pnl_pct === 0 ? 'pf-dir-flat' : p.pnl_pct > 0 ? 'pf-dir-gain' : 'pf-dir-loss';
-    const tierClass = (idx < 3 && p.pnl_pct > 0) ? `trend-tier-${idx + 1}` : '';
+    const tierClass = tier.has(p) ? `trend-tier-${tier.get(p)}` : '';
     const valueNative = (p.current_price || 0) * p.quantity;
-    const mainConv = _convCur(_posView === 'price' ? p.current_price : valueNative, p.currency, _posCur, rate);
+    const mainConv = _convCur(valueNative, p.currency, _posCur, rate);
     const pnlConv = _convCur(((p.current_price || 0) - p.purchase_price) * p.quantity, p.currency, _posCur, rate);
     const buyConv = _convCur(p.purchase_price, p.currency, _posCur, rate);
     const tk = escapeHtml(p.ticker), nm = escapeHtml(p.name);
@@ -301,7 +319,7 @@ function renderPositions(positions) {
     const bar = _exitBar(p);                 // 익절·손절 둘 다 있으면 바 양 끝에 숫자가 있어 배지는 생략
     const exitBadge = bar ? '' : _exitBadge(p);
     return `
-      <div class="pf-card trend-card-v2 tr-pos-card ${tierClass} ${dirClass}" data-href="${href}" title="${nm} 종목 분석 보기">
+      <div class="pf-card trend-card-v2 tr-pos-card ${tierClass} ${dirClass}" data-t="${tk}" data-href="${href}" title="${nm} 종목 분석 보기">
         <div class="trend-card-row">
           ${rank}
           <div class="trend-name-block">
@@ -310,7 +328,7 @@ function renderPositions(positions) {
           </div>
           <div class="trend-spark-wrap"></div>
           <div class="trend-price-block">
-            <div class="trend-price-val" title="${_posView === 'price' ? '현재가' : '평가금'}">${_fmtCur(mainConv, _posCur)}</div>
+            <div class="trend-price-val" title="평가금액">${_fmtCur(mainConv, _posCur)}</div>
             <div class="trend-chg pf-${cls} pf-amount">${(pnlConv >= 0 ? '+' : '') + _fmtCur(pnlConv, _posCur)}</div>
           </div>
           <div class="trend-score-v2 ${badgeCls}">${icon} ${Math.abs(p.pnl_pct || 0).toFixed(1)}<span class="score-suffix">%</span></div>

@@ -468,6 +468,42 @@ function pfQty(q) {
 const _PF_EDIT_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const _PF_DEL_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>';
 
+// 정렬 (공통 hsort.js): 드롭다운 · 방향 버튼 · PC 표 머리글 클릭이 같은 상태를 쓴다
+const _PF_SORT_KEY = 'sa_sort_home_pf';
+const _pfSort = window.SAHoldSort ? SAHoldSort.load(_PF_SORT_KEY) : { key: 'value', dir: 'desc' };
+// 표 머리글 → 정렬 기준 (현재가는 정렬 없음). 손익·수익률 칸은 평가손익·수익률 둘 다 이 칸으로 표시
+const _PF_HEAD = [
+  { label: '종목', key: 'name', on: ['name'] },
+  { label: '수량 · 매입가', key: 'cost', on: ['cost'] },
+  { label: '현재가', key: null },
+  { label: '평가금액', key: 'value', on: ['value'] },
+  { label: '손익 · 수익률', key: 'pl', on: ['pl', 'ret'] },
+];
+function _pfSortAcc() {
+  const fx = (window._pfFx || 1400);
+  const toKrw = (v, cur) => (v == null ? null : (cur || 'USD') === 'USD' ? v * fx : v);
+  const q = (h) => Number(h.quantity) || 0;
+  const has = (h) => h.current_price != null;
+  return {
+    value: (h) => (has(h) ? toKrw(h.current_price * q(h), h.currency) : null),
+    ret: (h) => (h.return_pct == null ? null : h.return_pct),
+    pl: (h) => (has(h) ? toKrw((h.current_price - h.purchase_price) * q(h), h.currency) : null),
+    cost: (h) => toKrw(h.purchase_price * q(h), h.currency),
+    name: (h) => h.name || h.ticker,
+  };
+}
+function _pfHeadHTML() {
+  return _PF_HEAD.map((c) => {
+    if (!c.key) return `<span role="columnheader">${c.label}</span>`;
+    const active = c.on.includes(_pfSort.key);
+    const sortName = active && _pfSort.key === 'ret' ? ' (수익률)' : '';
+    const aria = active ? (_pfSort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+    return `<span role="columnheader" aria-sort="${aria}"><button type="button" class="pft-sort${active ? ' on' : ''}" data-k="${c.key}"`
+      + ` title="${c.label}${sortName} 기준 정렬">${c.label}<i aria-hidden="true">${active ? SAHoldSort.arrow(_pfSort.dir) : ''}</i></button></span>`;
+  }).join('') + '<span class="pft-h-acts" role="columnheader">관리</span>';
+}
+function _pfResort() { if (pfAllHoldings) renderPortfolioCards(pfAllHoldings); }
+
 function _pfRowHTML(h) {
   const cur = h.currency || 'USD';
   const q = Number(h.quantity) || 0;
@@ -502,21 +538,40 @@ function renderPortfolioCards(holdings) {
   if (btn)    btn.classList.add('hidden');
   cards.classList.remove('collapsed');
 
+  const bar = document.getElementById('pfSortBar');
   if (!holdings.length) {
+    if (bar) bar.classList.add('hidden');
     cards.innerHTML = `<div class="pf-empty">보유 종목이 없습니다. 종목을 추가해보세요!</div>`;
     return;
   }
-  // 평가금액(원화 환산) 큰 순 — 증권사 보유 목록처럼
-  const fx = (window._pfFx || 1400);
-  const krw = (h) => (h.current_price != null ? h.current_price : h.purchase_price) * (Number(h.quantity) || 0) * (h.currency === 'USD' ? fx : 1);
-  const rows = [...holdings].sort((a, b) => krw(b) - krw(a));
+  // 정렬 컨트롤 (처음 한 번 그리고, 이후엔 상태만 다시 칠한다)
+  if (bar && window.SAHoldSort) {
+    const slot = document.getElementById('pfSortSlot');
+    if (!slot.firstChild) {
+      slot.innerHTML = SAHoldSort.controlHTML('pfSort', _pfSort, '내 포트폴리오');
+      SAHoldSort.bind(document.getElementById('pfSort'), _pfSort, _PF_SORT_KEY, _pfResort);
+    } else SAHoldSort.paint(document.getElementById('pfSort'), _pfSort);
+    document.getElementById('pfSortCount').textContent = `보유 ${holdings.length}종목`;
+    bar.classList.remove('hidden');
+  }
+  // 금액 기준은 원화 환산(달러 × 현재 환율)으로 비교
+  const rows = window.SAHoldSort ? SAHoldSort.sort(holdings, _pfSort, _pfSortAcc()) : holdings;
   cards.innerHTML = `
     <div class="pft" role="table" aria-label="내 포트폴리오 보유 종목">
-      <div class="pft-head" role="row">
-        <span>종목</span><span>수량 · 매입가</span><span>현재가</span><span>평가금액</span><span>손익 · 수익률</span><span class="pft-h-acts">관리</span>
-      </div>
+      <div class="pft-head" role="row">${window.SAHoldSort ? _pfHeadHTML() : ''}</div>
       ${rows.map(_pfRowHTML).join('')}
     </div>`;
+  // PC 표 머리글 클릭: 다른 칸 → 그 기준의 기본 방향, 같은 칸 → 방향 뒤집기. 드롭다운과 같은 상태
+  cards.querySelectorAll('.pft-sort').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    const same = _PF_HEAD.find((c) => c.key === k).on.includes(_pfSort.key);
+    if (same) _pfSort.dir = _pfSort.dir === 'asc' ? 'desc' : 'asc';
+    else SAHoldSort.setKey(_pfSort, k, false);
+    SAHoldSort.save(_PF_SORT_KEY, _pfSort);
+    _pfResort();
+    const again = cards.querySelector(`.pft-sort[data-k="${k}"]`);
+    if (again) again.focus();
+  }));
   cards.querySelectorAll('.pft-row').forEach((r) => {
     const go = () => gotoStock(r.dataset.t);
     r.addEventListener('click', (e) => { if (!e.target.closest('button, a')) go(); });
