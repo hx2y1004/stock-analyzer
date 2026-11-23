@@ -425,3 +425,20 @@ class AppliedStockSplit(db.Model):
     detail       = db.Column(db.Text)                           # 보정 전후 값 (JSON)
     applied_at   = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.UniqueConstraint("account_type", "holding_id", "ticker", "split_date", name="uq_applied_split"),)
+
+
+class DropHoldState(db.Model):
+    """장중 -40% 이하 급락 손절 보류 상태 (splits.drop_decision). 재시작·재배포에도 보류 타이머와 released 를 이어 간다.
+    kind: paper(사용자 모의 보유 id) | signal(봇 신호 id) | batch(장 마감 배치의 신호 id)
+    ev_level: none | weak(하룻밤 갭만 분할 비율과 일치) | strong(매수일 수정 종가가 1.8배 이상 낮음)"""
+    __tablename__ = "drop_hold_states"
+    id            = db.Column(db.Integer, primary_key=True)
+    kind          = db.Column(db.String(10), nullable=False)
+    target_id     = db.Column(db.Integer, nullable=False)
+    ticker        = db.Column(db.String(30))
+    first_seen_at = db.Column(db.DateTime, nullable=False)
+    ev_first_at   = db.Column(db.DateTime)
+    ev_level      = db.Column(db.String(8), default="none")
+    released      = db.Column(db.Boolean, default=False)
+    updated_at    = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    __table_args__ = (db.UniqueConstraint("kind", "target_id", name="uq_drop_hold"),)

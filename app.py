@@ -64,7 +64,7 @@ from flask_login import LoginManager, login_required, current_user
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
-from models import AppliedStockSplit
+from models import AppliedStockSplit, DropHoldState
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
                     BotPosition, PushSubscription, ScreenerSnapshot, TrendSetup)
@@ -6716,6 +6716,7 @@ import splits
 splits.init({
     "app": app, "db": db, "AppliedStockSplit": AppliedStockSplit, "PaperHolding": PaperHolding, "Holding": Holding,
     "Transaction": Transaction, "User": User, "BotPosition": BotPosition, "AiSignal": AiSignal,
+    "DropHoldState": DropHoldState,           # 급락 손절 보류 상태 (재시작에도 유지)
     "bot_users": bot_trader.bot_users, "price": lambda t: _fetch_current_price(t), "fx": lambda: _get_usd_krw_rate(),
     "notify_user": notifier.notify_user,
 })

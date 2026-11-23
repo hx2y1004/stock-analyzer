@@ -57,6 +57,19 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 보류 상한 차등화 · 보류 상태 DB 영속화 (PR #56)
+- `history_evidence` 반환값이 `(강도, 이유, 비율)`로 바뀌었다. 강도는 `"strong" | "weak" | "none"`이다.
+  - strong = 매수일 수정 종가 × 1.8 ≤ 매입가 → 최대 6시간 보류(`STRONG_MAX_SEC`).
+  - weak = 하룻밤 갭만 분할 비율 ±4% → 최대 1시간(`WEAK_MAX_SEC`). 정확히 -50% 같은 실제 폭락이 여기에 걸리므로 짧게 잡았다.
+  - none = 4분 1회 보류(`HOLD_MIN_SEC`) 후 `released`.
+- 강도는 한 번 확인된 가장 강한 값을 유지한다(weak → strong 승급, 내려가지 않음). 상한은 **처음 근거를 본 시각(`ev_first_at`)부터** 센다. 상한이 지나면 `released=True`이고 그 뒤로는 바로 정상 판정한다.
+- 상태 테이블 `drop_hold_states`(`DropHoldState`):
+  - 컬럼: kind · target_id · ticker · first_seen_at · ev_first_at · ev_level · released · updated_at, 유니크 `uq_drop_hold(kind, target_id)`.
+  - 새 테이블이라 `db.create_all()`이 만든다.
+  - DB 조회·저장 실패 시 롤백하고 메모리 `_HOLD`로 폴백한다(메모리에도 항상 같이 적는다).
+- 정리: `prune_hold_states`가 `updated_at` 7일 경과 행을 지운다. 장 마감 배치(`check_market`)와 `drop_decision`(한 시간에 한 번)에서 돈다.
+- 호출부 변경: `bot_engine.run_market`이 `ev[0] != "none"`으로 판정한다. 문자열 "none"이 참이라 비교식으로 바꿨다.
+
 ### 오손절 이중 방어 (PR #55) — yfinance splits 반영이 늦을 때
 - `splits.history_evidence(ticker, 매입가, 매수일, df=None)`: 가격 기록으로 분할을 의심한다. 일봉은 토스 수정주가 우선, 없으면 yfinance 1년(10분 캐시)이다.
   - (a) 매수일(또는 직전 거래일) 수정 종가 × 1.8 ≤ 매입가 → 이미 분할이 반영된 기록이다.
@@ -70,7 +83,7 @@
   - `bot_engine.intraday_check`: ACTIVE 신호를 판정한다.
   - 장 마감 배치 `run_market`: 분할 의심 종목을 그날 `track_signals` 데이터에서 뺀다. yfinance 일봉에 분할이 섞이면 가짜 손절이 나기 때문이다.
   - 매 회차 `guard_drop`(splits 강제 재조회)이 먼저 돌아서, 늦게라도 splits가 들어오면 보정 후 손절을 취소한다.
-- 한계: 갭이 정확히 2배(-50%)인 실제 폭락은 분할로 보여 최대 24시간 보류된 뒤 손절된다.
+- 한계: 갭이 정확히 2배(-50%)인 실제 폭락은 분할로 보여 보류된다 → PR #56 에서 weak 로 분리해 최대 1시간.
 
 ### 액면분할 자동 반영 (PR #54) — `splits.py`, `applied_stock_splits`
 - 문제: 분할(예: SNDK 2026-11-20 8:1) 뒤 현재가는 1/8인데 보유 수량·매입가·목표/손절이 그대로라 수익률이 -87%로 보였다. 장중 체크·봇 배치(yfinance 일봉은 분할 반영값)에서 가짜 손절이 날 수 있었다.

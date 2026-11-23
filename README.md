@@ -167,6 +167,7 @@ stock-analyzer/
 | `ai_cache` | AI 결과·섹터맵 스냅샷·봇 배치 요약·잠금 |
 | `bot_strategies`, `ai_stock_assessments`, `ai_signals`, `bot_positions` | 봇 전략 파라미터, 종목별 AI 평가, 신호와 사후 추적, 신호 ↔ 봇 계좌 거래 |
 | `applied_stock_splits` | 반영한 액면분할 기록 (보유 건 × 분할 유니크 → 같은 분할 중복 반영 방지) |
+| `drop_hold_states` | 장중 -40% 이하 급락 손절 보류 상태 (분할 의심 강도·첫 감지 시각·released, 재시작에도 유지, 7일 지나면 정리) |
 | `user_signal_subscriptions`, `watchlist_items`, `notifications`, `push_subscriptions` | 알림 구독 조건, 관심종목, 사이트 안 알림, 기기별 웹 푸시 구독 |
 | `screener_snapshots` | 스크리너용 종목별 경량 스냅샷 (가격·밸류에이션·기술 지표·펀더멘탈) |
 | `trend_setups` | 추세 셋업 종목별 스냅샷 (장 마감 확정 점수·태그·돌파 기준가 + 장중 현재가·돌파 시각) |
