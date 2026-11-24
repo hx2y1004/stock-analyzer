@@ -227,7 +227,8 @@ def notify_user(user_id, kind, title, body, link, tag=None):
 
 # ── 공시·수주 레이더 알림 (disclosures.py → 새로 저장된 공시만) ─────────────────────────────
 DISC_LABEL = {("DART", "contract"): "DART 수주", ("DART", "buyback"): "DART 자사주", ("DART", "offering"): "DART 유상증자",
-              ("SEC", "insider_buy"): "SEC 내부자 매수", ("SEC", "material_8k"): "SEC 8-K"}
+              ("SEC", "insider_buy"): "SEC 내부자 매수", ("SEC", "material_8k"): "SEC 8-K",
+              ("SEC", "offering"): "SEC 유상증자", ("SEC", "buyback"): "SEC 자사주"}
 
 
 def disclosure_receivers(tickers):

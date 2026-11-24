@@ -57,6 +57,18 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 미국 유상증자 · 자사주 매입 감지 (PR #68) — 4개 분류를 한국·미국 대칭으로
+- 8-K Item 3.02(미등록 증권 발행 = 사모 유상증자) → `offering`/`negative`, 항목 번호만으로 (추가 요청 없음). 3.02 가 있으면 최우선.
+- 8-K Item 8.01·7.01 → 본문 앞 16KB 에 `share/stock repurchase · repurchase program · buyback program …` 이 있으면 `buyback`/`positive`
+  (금액은 키워드 주변 `$… million/billion`). 없으면 기존대로 1.01·2.01·2.02 만 `material_8k`, 그 외는 저장 안 함.
+- Form 424B5 (공모·ATM 신주 발행): 실시간 피드(`SEC_FORMS`)와 백필(제출 목록) 둘 다. 설명서 앞 16KB 로 `classify_424b5`:
+  보통주·ADS·ATM 문구가 있고, 앞부분에 주식 발행 문장이 있으며, 채권 문구(Senior/Subordinated/Medium-Term Notes · Debentures ·
+  Notes due · market-linked …)보다 많을 때만. 주가 연계(`notes … linked to` · auto-callable) 는 무조건 제외 → 은행 구조화 채권 노이즈 차단.
+- 본문은 `sec_get(..., max_bytes=16384)` 스트림으로 앞부분만 읽고 끊는다. 본문 주소는 제출 목록의 `primaryDocument`, 실시간은 `index.json`
+  (8-K/424B5 이름 우선, 첨부 `ex99…`·`R1.htm` 제외). 백필의 본문 확인은 회사당 6건 · 전체 400건 상한.
+- 알림 라벨 `[SEC 유상증자]` · `[SEC 자사주]` (notifier.DISC_LABEL). 발굴 탭 '무엇을 모으나요' 문구 갱신.
+- **실제 SEC 문서로는 검증 못 함** — 공식 문구를 본뜬 샘플로만 분류를 확인. 운영에서 오분류가 보이면 키워드 목록(`_DEBT_RE` 등)을 조정.
+
 ### 공시 수집 병목 수정 · 상태 배너 · 소유자 '지금 수집' (PR #67)
 - 증상(PR #66 배포 후): `/api/disclosures` 의 `status` 가 전부 null → 공시 수집 `tick` 이 이 프로세스에서 한 번도 안 돎.
   원인 후보: 스케줄러 루프에서 공시 수집이 **장 마감 배치(한국 15:45 · 미국 16:30 ET) 뒤**에 있어 배치가 수십 분 돌면 그동안 못 돎.
