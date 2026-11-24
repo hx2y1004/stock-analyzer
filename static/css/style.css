@@ -6585,3 +6585,45 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .sb-tag { margin-left: auto; font-size: 10.5px; padding: 1px 6px; }
 }
 @media (max-width: 768px) { .md-mac-why { white-space: normal; overflow: visible; } }
+
+/* ── 종합 분석 판단 카드 정돈 (PR #77) ─────────────────────────── */
+.vc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.vc-head .card-title { margin: 0; }
+.vc-head .verdict-badge { margin: 0; padding: 4px 14px; font-size: 15px; border-radius: 999px; white-space: nowrap; }
+.verdict-card .score-bar-wrap { margin: 12px 0 0; }
+/* 기술 · 펀더멘탈 · 매크로: 한 컨테이너 3등분, 안쪽은 세로선만 */
+.verdict-card .score-breakdown { gap: 0; margin: 14px 0 12px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.verdict-card .sb-item { background: none; border: 0; border-left: 1px solid var(--border); border-radius: 0; padding: 8px 10px; }
+.verdict-card .sb-item:first-child { border-left: 0; }
+/* 진입 배너: 좌측 굵은 막대 없이 은은한 틴트 */
+.verdict-card .trade-rec-banner { border-left: 0; gap: 10px; padding: 9px 12px; margin: 0 0 12px; align-items: flex-start; }
+.verdict-card .trade-rec-banner .rec-icon { font-size: 0; line-height: 0; margin-top: 1px; flex: none; }
+.verdict-card .trade-rec-banner.strong  { background: rgba(52,211,153,.08); color: #34d399; }
+.verdict-card .trade-rec-banner.neutral { background: rgba(255,185,30,.07); color: rgb(255,185,30); }
+.verdict-card .trade-rec-banner.avoid   { background: rgba(248,113,113,.08); color: #f87171; }
+.verdict-card .trade-rec-banner .rec-label { font-size: 13.5px; margin-bottom: 1px; }
+.verdict-card .trade-rec-banner.strong .rec-label { color: #34d399; }
+.verdict-card .trade-rec-banner.avoid .rec-label { color: #f87171; }
+.verdict-card .trade-rec-banner .rec-desc { font-size: 12px; }
+/* 진입 / 목표 / 손절: 값 + % 1줄 */
+.verdict-card .price-targets { gap: 8px; }
+.verdict-card .target-item { padding: 9px 10px; border-radius: 10px; min-width: 0; }
+.verdict-card .target-label { margin-bottom: 3px; }
+.verdict-card .target-value { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.verdict-card .target-dist { margin-top: 2px; font-size: 12px; font-weight: 600; }
+.verdict-card .target-dist:empty { display: none; }
+.verdict-card .trade-meta-row { margin-top: 8px; border-radius: 10px; }
+/* 모의 매수: 진입 비추천이면 무채색 보조 버튼 */
+.verdict-buy-btn.muted { background: transparent; border-color: var(--border); color: var(--text2); font-weight: 700; }
+.verdict-buy-btn.muted:hover { background: var(--bg3); color: var(--text); }
+@media (max-width: 480px) {
+  .vc-head .verdict-badge { font-size: 14px; padding: 3px 12px; }
+  .verdict-card .sb-item { padding: 7px 8px; }
+  .verdict-card .target-item { padding: 8px 8px; }
+  .verdict-card .target-value { font-size: 14px; }
+}
+/* 거리 % 는 라벨 줄 오른쪽으로 → 세 칸 모두 2줄 (관망 칸 아래 빈 줄 없음) */
+.verdict-card .target-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 4px; }
+.verdict-card .target-label { grid-column: 1; grid-row: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.verdict-card .target-dist { grid-column: 2; grid-row: 1; margin: 0; font-size: 11.5px; }
+.verdict-card .target-value { grid-column: 1 / -1; grid-row: 2; }
