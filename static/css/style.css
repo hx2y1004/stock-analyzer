@@ -6682,3 +6682,33 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .positions-list .tr-cards { display: flex; }
 }
 .fj-tr em:empty { display: none; }
+
+/* ── 모의투자 보유 종목: 모바일도 같은 표를 접어서 (PR #79) ───────────────── */
+.tpt-x-lab em { font-style: normal; display: none; }
+@media (max-width: 768px) {
+  .positions-list .tpt { display: flex; }
+  .tpt .tpt-head { display: none; }
+  .tpt .tpt-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "stock val" "qty pl" "exit exit" "acts acts" "note note";
+    column-gap: 10px; row-gap: 6px; padding: 12px 4px; border-radius: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tpt .tpt-row:last-child { border-bottom: 0; }
+  .tpt .tpt-row:hover { background: transparent; }
+  .tpt .pft-stock { grid-area: stock; }
+  .tpt .pft-val { grid-area: val; font-size: 16px; align-self: center; }
+  .tpt .pft-qty { grid-area: qty; display: flex; align-items: baseline; gap: 6px; text-align: left; font-size: 12.5px; min-width: 0; overflow: hidden; }
+  .tpt .pft-qty .tpt-q { color: var(--text2); flex: none; }
+  .tpt .pft-qty .pft-sub { margin: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tpt .pft-pl { grid-area: pl; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; font-size: 13px; font-weight: 700; }
+  .tpt .pft-pl .pft-sub { margin: 0; font-size: 12.5px; }
+  .tpt .tpt-exit { grid-area: exit; justify-content: stretch; }
+  .tpt .tpt-exit.none { display: none; }
+  .tpt .tpt-x { max-width: none; flex-direction: column-reverse; gap: 5px; }
+  .tpt .tpt-x-lab em { display: inline; color: var(--text2); font-weight: 500; }
+  .tpt .tpt-x-one { font-size: 12.5px; }
+  .tpt .tpt-acts { grid-area: acts; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .tpt .tpt-acts .trade-action-btn { height: 38px; padding: 0 6px; font-size: 13.5px; width: 100%; }
+  .tpt .tpt-note-line { grid-area: note; grid-column: auto; padding-left: 0; }
+}
