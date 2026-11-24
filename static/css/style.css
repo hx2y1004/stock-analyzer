@@ -6712,3 +6712,11 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .tpt .tpt-acts .trade-action-btn { height: 38px; padding: 0 6px; font-size: 13.5px; width: 100%; }
   .tpt .tpt-note-line { grid-area: note; grid-column: auto; padding-left: 0; }
 }
+
+/* ── 상세 하단 뉴스 카드 (PR #81): 급등락 이유·공시가 위에 붙어도 뉴스 목록이 최소 320px 은 보이게 (PC) ──
+   예전: 뉴스 카드 높이 = 애널리스트 카드 높이(height:0 + min-height:100%) → 위 블록이 길면 뉴스가 몇 줄만 남았다.
+   지금: 뉴스 목록은 '기본 320px' 로만 행 높이에 기여하고, 행이 더 높으면 남는 만큼 늘어나며 넘치면 안에서 스크롤. */
+@media (min-width: 1025px) {
+  .bottom-grid .card:last-child { height: auto; min-height: 0; }
+  #newsList { flex: 1 1 auto; height: 320px; min-height: 0; }
+}
