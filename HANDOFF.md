@@ -57,6 +57,18 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 거시 지표 3종 · 매크로 국면 보정 · WACC 실시간 Rf (PR #76)
+- `analysis/macro.py` (네트워크 없음): `parse_quote` · `macro_regime` · `risk_free_from_tnx` · `macro_line`.
+- app.py `_market_overview_payload()`: 홈 시황과 같은 `yf.download` 한 번에 `^TNX` · `GC=F` · `DX-Y.NYB` 추가 (같은 1분 캐시). 티커별 실패는 그 지표만 None.
+  응답 `macro` = {tnx{value, change_pp}, gold, dxy, regime(미국), regime_kr(한국: 달러 강세 부담 포함)}.
+  `get_macro_snapshot(is_korean)`: 15분 안의 홈 시황 캐시 재사용, 없으면 한 번 받음, 실패 후 1분은 다시 안 받음.
+- 매크로 국면: 감점 10년물 ≥4.5% (-2) · 당일 +0.08%p (-1) · VIX ≥25 (-2, ≥30 -3) · 금 +1.5% (-1) · [한국] DXY ≥106 & 상승 (-1)
+  / 가점 10년물 <4.0% (+2) · VIX <18 (+2) · 달러·금 안정 (+1) · 셋 다 (+1). ±6 으로 자름. +2↑ 우호, -2↓ 경계.
+- 종합 판단: `combine_scores(..., macro)` = 가중합(기술 55 · 펀더 45) + 매크로 보정(±6). 근거 1줄이 `기술 · 펀더멘탈 · 매크로 ±N` 3칸. `_ANALYZE_VER` v9.
+- DCF: 미국 Rf = ^TNX/100 (2%~7%), 없으면 기존 12시간 조회 → 4.5%. 가정 표 '무위험이자율 X% (미 10년 국채)'.
+- 화면: 홈 시장 현황 아래 4열(폰 2×2) 매크로 스트립, 시장 컨텍스트 분위기 박스에 '국채 금리 · 금 · 달러 — 국면' 1줄.
+- 캐시: main.js v95, style.css v107, sa-v73.
+
 ### 종합 판단 가중 합산 · 하단 4탭 가독성 통일 · 포지션 부호 (PR #75)
 - `ai_analysis.combine_scores(tech_gauge, scorecard)`: 종합 점수 = 0.55 × 기술 + 0.45 × 펀더멘털 (각각 (0~100 − 50) × 2).
   기술 = 하단 기술적 분석 게이지 값(6축 평균) → 상단·하단이 같은 기술 평가. 펀더멘털 = 4팩터 종합(`scorecard.factors.overall`), 없으면 기술 100%.
