@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=100" />
+  <link rel="stylesheet" href="/static/css/style.css?v=101" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -132,10 +132,14 @@
     <!-- 탭 3: 공시·수주 레이더 -->
     <section role="tabpanel" id="scPanel-disclosures" class="sc-panel" aria-labelledby="scTab-disclosures"{% if init_tab != 'disclosures' %} hidden{% endif %}>
       <div class="card tr-head ds-head">
-        <div class="tr-head-text">
-          <h2 class="tr-title">공시·수주 레이더</h2>
-          <p class="tr-asof" id="dsAsof">한국 OpenDART 15분 · 미국 SEC EDGAR 30분마다 확인 · 최근 14일</p>
+        <div class="tr-head-top">
+          <div class="tr-head-text">
+            <h2 class="tr-title">공시·수주 레이더</h2>
+            <p class="tr-asof" id="dsAsof">한국 OpenDART 15분 · 미국 SEC EDGAR 30분마다 확인 · 최근 14일</p>
+          </div>
+          <button type="button" class="tr-refresh ds-refresh hidden" id="dsRefresh" title="주기와 상관없이 지금 DART·SEC 를 확인합니다 (소유자 전용). 목록이 비어 있으면 최근 14일치를 채웁니다">🔄 지금 수집</button>
         </div>
+        <div class="ds-status" id="dsStatus" role="status" aria-live="polite"></div>
         <div class="sc-row">
           <div class="sc-seg" role="group" aria-label="시장" id="dsMarket">
             <button type="button" data-m="ALL" class="active" aria-pressed="true">전체</button>
@@ -192,6 +196,6 @@
   <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=8"></script>
-  <script src="/static/js/screener.js?v=8"></script>
+  <script src="/static/js/screener.js?v=9"></script>
 </body>
 </html>

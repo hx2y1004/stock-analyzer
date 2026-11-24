@@ -6084,3 +6084,17 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .disc-item { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .disc-badge { grid-column: 1 / -1; justify-self: start; }
 }
+
+/* 공시·수주 탭: 수집 상태 1줄 (한국 DART · 미국 SEC) */
+.ds-status { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--text2); line-height: 1.5; min-width: 0; }
+.ds-status:empty { display: none; }
+.ds-st { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.ds-st i { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--text2); }
+.ds-st.ok i { background: var(--green); }
+.ds-st.run i { background: var(--accent); animation: ds-pulse 1.2s ease-in-out infinite; }
+.ds-st.run { color: var(--text); }
+.ds-st.err { color: var(--red); }
+.ds-st.err i { background: var(--red); }
+@keyframes ds-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .ds-st.run i { animation: none; } }
+.ds-refresh:disabled { opacity: .6; cursor: default; }
