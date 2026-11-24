@@ -57,6 +57,16 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 투자 판단 구버전 카드 정리 · 시맨틱 컬러 (PR #74)
+- 투자 판단 탭 하단의 구버전 4카드(`_buildCards(fundamental_details)`: 밸류에이션·수급 & 거래량·시장 위치 & 모멘텀·재무 건전성 + 쉬운 설명) 를 더 이상 그리지 않는다.
+  `fundamental_details` 는 응답·점수에는 그대로 남아 있다(종합 점수에 반영).
+- 고유 지표는 응답 `market_position`(52주 위치 · 20/60일 수익률 · 베타)로 내보내 'Momentum & Signals' 카드에 표시. `_ANALYZE_VER` v7.
+- '팩터별 세부 지표'(Quality·Value·Growth·Momentum) 는 기본 펼침. 각 헤더 오른쪽에 점수·등급 배지(70↑ 초록 · 45~69 파랑 · 45↓ 코랄 틴트).
+  Quality 에 ROE, Value 에 PER·PBR, Growth 에 매출·이익 성장률(YoY) 행 추가 (advanced metrics `per`·`revenue_growth_pct`·`earnings_growth_pct`).
+- 색: `--sem-up #34d399` / `--sem-down #f87171` / `--sem-mid #60a5fa`. 예전엔 `.sc-metric-row > span:last-child` 가 `.good/.bad` 보다 우선순위가 높아 전부 흰색이었다.
+  상단 4축 바·점수, 재무 건전성 표, 기술적 분석 6카드 대표 수치(상승 초록 · 하락 코랄 · 중립 흰색)에 같은 색.
+- 캐시: main.js v93, style.css v105, sa-v71.
+
 ### 투자 판단 · 밸류에이션 로직 버그 수정 · 무채색 UI (PR #73)
 - `analysis/advanced.py`
   - 배당: `_dividend_pct` — 네이버 DPS/가격 → dividendYield(% 단위) 를 배당금/가격으로 교차 검증. 예전 '≤1 이면 ×100' 은 0.5% 를 50% 로 만들었다.

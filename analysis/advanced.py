@@ -443,6 +443,11 @@ def compute_advanced_metrics(stock, info, df):
     metrics["current_ratio"] = round(cr, 2) if cr is not None else None
     roe = _f(info.get("returnOnEquity"))            # yfinance: 소수 (0.15 = 15%, 1.5 = 150%)
     metrics["roe_pct"] = round(roe * 100, 1) if roe is not None else None
+    per = _f(info.get("trailingPE"))
+    metrics["per"] = round(per, 1) if per is not None else None
+    rg, eg = _f(info.get("revenueGrowth")), _f(info.get("earningsGrowth"))
+    metrics["revenue_growth_pct"] = round(rg * 100, 1) if rg is not None else None
+    metrics["earnings_growth_pct"] = round(eg * 100, 1) if eg is not None else None
     pb = _f(info.get("priceToBook"))
     metrics["pbr"] = round(pb, 2) if pb is not None else None
     metrics["is_financial"] = is_financial(info)

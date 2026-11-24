@@ -340,7 +340,14 @@ def _analyze_fundamental(df, info):
         "desc": fin_desc, "items": fin_items,
     })
 
-    return {"details": details, "score": score}
+    market_position = {
+        "pos_52w": round(pos_52w, 1),
+        "return_20d": round(mom20, 1) if mom20 is not None else None,
+        "return_60d": round(mom60, 1) if mom60 is not None else None,
+        "beta": round(beta, 2) if beta is not None else None,
+        "year_high": round(year_high, 4), "year_low": round(year_low, 4),
+    }
+    return {"details": details, "score": score, "market_position": market_position}
 
 
 def _tech_gauge(cards, overheat_reasons, adx_v, adx_regime, pdi_v, mdi_v):
@@ -1165,6 +1172,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         "signals": signals,
         "details": details,
         "fundamental_details": fund_details,
+        "market_position": fund.get("market_position"),   # 52주 위치 · 20/60일 수익률 · 베타 (투자 판단 Momentum 카드)
         "scorecard": scorecard,  # 월가 스타일 4팩터 + 10개 지표
         "entry_price": entry_price,
         "entry_low":   entry_low,
