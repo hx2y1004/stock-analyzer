@@ -401,8 +401,13 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         ma_state, ma_color, ma_desc = "데이터 부족", "neutral", "이동평균선 데이터가 충분하지 않습니다."
 
     details.append({
-        "indicator": "이동평균선 (MA)",
+        "indicator": "이동평균선 (MA)", "short": "이동평균(MA)",
         "state": ma_state, "color": ma_color, "desc": ma_desc,
+        "metrics": [m for m in [
+            {"label": "MA20 대비", "value": f"{_pct(close, ma20):+.1f}%"} if ma20 else None,
+            {"label": "MA60 대비", "value": f"{_pct(close, ma60):+.1f}%"} if ma60 else None,
+        ] if m],
+        "gauge": None,
         "items": [
             {"label": f"MA5  {_fp(ma5)}"   if ma5   else "MA5 —",   "up": ma_analysis.get("MA5",  {}).get("above")},
             {"label": f"MA20 {_fp(ma20)}"  if ma20  else "MA20 —",  "up": ma_analysis.get("MA20", {}).get("above")},
@@ -411,26 +416,48 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         ]
     })
 
+    # ── 추세 강도(ADX) · 강한 상승 판정: 과열 지표(RSI 70↑ · BB 상단)를 '추세 방향 점수'와 분리하는 데 쓴다 ──
+    adx_v   = _f(latest.get("ADX"))
+    pdi_v   = _f(latest.get("PLUS_DI"))
+    mdi_v   = _f(latest.get("MINUS_DI"))
+    ma_bull = bool(aligned and ma5 > ma20 > ma60)
+    adx_up  = bool(adx_v is not None and adx_v >= 25 and pdi_v is not None and mdi_v is not None and pdi_v > mdi_v)
+    strong_up = ma_bull or (adx_up and ma20 is not None and close > ma20)
+    overheat_reasons = []                     # 단기 과열 경고 (점수와 별개로 배지만)
+
     # ── 볼린저밴드 ────────────────────────────────────
+    # 중심선(20일 SMA)은 MA20 과 같은 선 → 중심선 위·아래로는 점수를 주지 않는다 (MA20 에서 이미 ±5)
     bb_upper = float(latest.get("BB_upper", float("nan")))
     bb_lower = float(latest.get("BB_lower", float("nan")))
     bb_mid   = float(latest.get("BB_mid",   float("nan")))
 
     if not any(np.isnan(v) for v in [bb_upper, bb_lower, bb_mid]):
-        bb_position  = (close - bb_lower) / (bb_upper - bb_lower) * 100
-        bb_width_pct = round((bb_upper - bb_lower) / bb_mid * 100, 1)
+        band = bb_upper - bb_lower
+        bb_position  = (close - bb_lower) / band * 100 if band > 0 else 50.0      # 밴드 폭 0 → 가운데
+        bb_width_pct = round(band / bb_mid * 100, 1) if bb_mid else 0
 
-        if close >= bb_upper:
-            signals.append({"type": "bearish", "text": "볼린저밴드 상단 돌파 — 과매수 주의"})
-            score -= 10
-            bb_state, bb_color = "상단 돌파 (과매수)", "bearish"
+        if band > 0 and close >= bb_upper:
+            overheat_reasons.append("BB 상단 돌파")
             bb_tip = "upper_break"
-            bb_desc = (
-                f"현재가({_fp(close)})가 볼린저밴드 상단({_fp(bb_upper)})을 돌파했습니다. "
-                f"통계적으로 상단 이탈은 전체의 약 5%로 단기 과매수 가능성이 높습니다. "
-                f"단기 조정 또는 상단 저항에 주의가 필요합니다. 밴드 폭(변동성) {bb_width_pct}%"
-            )
-        elif close <= bb_lower:
+            if strong_up:
+                signals.append({"type": "info", "text": "⚠️ 볼린저밴드 상단 돌파 — 강한 상승 중 단기 과열"})
+                bb_state, bb_color = "상단 돌파 (강한 상승)", "bullish"
+                bb_desc = (
+                    f"현재가({_fp(close)})가 볼린저밴드 상단({_fp(bb_upper)})을 돌파했습니다. "
+                    f"이동평균 정배열·추세 강도(ADX)가 받쳐 주는 강한 상승 구간이라 추세 점수는 깎지 않고, "
+                    f"단기 과열 경고만 표시합니다. 밴드를 따라 오르는 '밴드 워크'일 수 있지만 눌림이 올 수 있습니다. "
+                    f"밴드 폭(변동성) {bb_width_pct}%"
+                )
+            else:
+                signals.append({"type": "bearish", "text": "볼린저밴드 상단 돌파 — 과매수 주의"})
+                score -= 5
+                bb_state, bb_color = "상단 돌파 (과매수)", "bearish"
+                bb_desc = (
+                    f"현재가({_fp(close)})가 볼린저밴드 상단({_fp(bb_upper)})을 돌파했습니다. "
+                    f"추세가 뚜렷하지 않은 상태의 상단 이탈은 단기 과매수일 가능성이 높아 조정이나 상단 저항에 주의가 필요합니다. "
+                    f"밴드 폭(변동성) {bb_width_pct}%"
+                )
+        elif band > 0 and close <= bb_lower:
             signals.append({"type": "bullish", "text": "볼린저밴드 하단 이탈 — 반등 가능성"})
             score += 10
             bb_state, bb_color = "하단 이탈 (과매도)", "bullish"
@@ -443,7 +470,6 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             )
         elif close > bb_mid:
             signals.append({"type": "bullish", "text": "볼린저밴드 중심선 위 — 상승 모멘텀"})
-            score += 5
             bb_state, bb_color = "중심선 위 (상승 우위)", "bullish"
             bb_tip = "above_mid"
             bb_desc = (
@@ -469,9 +495,14 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         bb_desc = "볼린저밴드 데이터가 충분하지 않습니다."
 
     details.append({
-        "indicator": "볼린저밴드 (BB)",
+        "indicator": "볼린저밴드 (BB)", "short": "볼린저밴드(BB)",
         "state": bb_state, "color": bb_color, "desc": bb_desc,
         "tip_key": bb_tip,   # 쉬운 설명은 색(판단)이 아니라 실제 위치로 고른다
+        "overheat": bb_tip == "upper_break",
+        "metrics": ([{"label": "밴드 내 위치", "value": f"{bb_position:.0f}%"}, {"label": "밴드 폭", "value": f"{bb_width_pct}%"}]
+                    if bb_position is not None else []),
+        "gauge": ({"kind": "bb", "value": round(max(0.0, min(100.0, bb_position)), 1), "min_label": "하단", "max_label": "상단"}
+                  if bb_position is not None else None),
         "items": [
             {"label": f"상단  {_fp(bb_upper)}" if not np.isnan(bb_upper) else "상단 —", "up": None},
             {"label": f"중심  {_fp(bb_mid)}"   if not np.isnan(bb_mid)   else "중심 —", "up": None},
@@ -493,12 +524,14 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         if tenkan > kijun:
             ichi_parts.append(f"전환선({_fp(tenkan)}) > 기준선({_fp(kijun)}) → 단기 매수 우위")
             ichi_score_delta += 10
-        else:
+        elif tenkan < kijun:
             ichi_parts.append(f"전환선({_fp(tenkan)}) < 기준선({_fp(kijun)}) → 단기 매도 우위")
             ichi_score_delta -= 10
+        else:
+            ichi_parts.append(f"전환선 = 기준선({_fp(kijun)}) → 단기 방향 중립")      # 동률은 0점
         ichi_items += [
-            {"label": f"전환선 {_fp(tenkan)}", "up": tenkan > kijun},
-            {"label": f"기준선 {_fp(kijun)}",  "up": tenkan > kijun},
+            {"label": f"전환선 {_fp(tenkan)}", "up": (tenkan > kijun) if tenkan != kijun else None},
+            {"label": f"기준선 {_fp(kijun)}",  "up": (tenkan > kijun) if tenkan != kijun else None},
         ]
 
     cloud_top = cloud_bot = None
@@ -526,28 +559,47 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
     if ichi_parts:
         signals.append({"type": ichi_color if ichi_color != "neutral" else "info",
                         "text": f"일목균형표: {' / '.join([p.split('→')[1].strip() for p in ichi_parts])}"})
+    ichi_metrics = []
+    if cloud_top is not None:
+        ref = cloud_top if close > cloud_top else cloud_bot if close < cloud_bot else None
+        ichi_metrics.append({"label": "구름대 대비", "value": f"{_pct(close, ref):+.1f}%" if ref else "구름 안"})
+    if not any(np.isnan(v) for v in [tenkan, kijun]):
+        ichi_metrics.append({"label": "전환/기준", "value": "전환 > 기준" if tenkan > kijun else "전환 < 기준" if tenkan < kijun else "같음"})
     details.append({
-        "indicator": "일목균형표",
+        "indicator": "일목균형표", "short": "일목균형표",
         "state": ichi_state, "color": ichi_color,
-        "desc": ichi_desc, "items": ichi_items,
+        "desc": ichi_desc, "items": ichi_items, "metrics": ichi_metrics, "gauge": None,
     })
 
     # ── RSI ──────────────────────────────────────────
+    # 70 이상은 '단기 과열' 경고. 강한 상승 추세(정배열·ADX)면 추세 점수는 깎지 않는다 (자기 상쇄 방지)
     rsi = float(latest.get("RSI", float("nan")))
+    rsi_tip = None
     if not np.isnan(rsi):
         if rsi >= 70:
-            signals.append({"type": "bearish", "text": f"RSI {rsi:.1f} — 과매수 구간"})
-            score -= 10
-            rsi_state, rsi_color = f"{rsi:.1f} — 과매수", "bearish"
-            rsi_desc = (
-                f"RSI가 {rsi:.1f}로 과매수 기준선(70)을 상회합니다. "
-                f"단기적으로 가격이 빠르게 상승했음을 의미하며, 차익 실현 매물이 나올 수 있습니다. "
-                f"RSI가 70 아래로 되돌아올 때 추가 하락이 나타나는 경우가 많습니다."
-            )
+            overheat_reasons.append(f"RSI {rsi:.0f}")
+            rsi_tip = "bearish"
+            if strong_up:
+                signals.append({"type": "info", "text": f"⚠️ RSI {rsi:.1f} — 강한 상승 중 단기 과열"})
+                rsi_state, rsi_color = f"{rsi:.1f} — 과매수 (단기 과열)", "neutral"
+                rsi_desc = (
+                    f"RSI가 {rsi:.1f}로 과매수 기준선(70)을 넘었지만 상승 추세가 강해 추세 점수는 깎지 않았습니다. "
+                    f"강한 종목은 RSI 70 위에서 한동안 머물기도 합니다. 다만 단기 과열이라 추격 매수보다 눌림을 기다리는 편이 안전합니다."
+                )
+            else:
+                signals.append({"type": "bearish", "text": f"RSI {rsi:.1f} — 과매수 구간"})
+                score -= 5
+                rsi_state, rsi_color = f"{rsi:.1f} — 과매수", "bearish"
+                rsi_desc = (
+                    f"RSI가 {rsi:.1f}로 과매수 기준선(70)을 상회합니다. "
+                    f"단기적으로 가격이 빠르게 상승했음을 의미하며, 차익 실현 매물이 나올 수 있습니다. "
+                    f"RSI가 70 아래로 되돌아올 때 추가 하락이 나타나는 경우가 많습니다."
+                )
         elif rsi <= 30:
             signals.append({"type": "bullish", "text": f"RSI {rsi:.1f} — 과매도 구간 (반등 기대)"})
             score += 10
             rsi_state, rsi_color = f"{rsi:.1f} — 과매도", "bullish"
+            rsi_tip = "bullish"
             rsi_desc = (
                 f"RSI가 {rsi:.1f}로 과매도 기준선(30) 아래입니다. "
                 f"단기적으로 가격이 과도하게 하락했을 가능성이 있으며, 기술적 반등 기대감이 높습니다. "
@@ -556,6 +608,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         else:
             signals.append({"type": "info", "text": f"RSI {rsi:.1f} — 중립 구간"})
             rsi_state, rsi_color = f"{rsi:.1f} — 중립", "neutral"
+            rsi_tip = "neutral"
             dist_to_ob = round(70 - rsi, 1)
             dist_to_os = round(rsi - 30, 1)
             rsi_desc = (
@@ -567,8 +620,12 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         rsi_state, rsi_color, rsi_desc = "데이터 부족", "neutral", "RSI 데이터가 충분하지 않습니다."
 
     details.append({
-        "indicator": "RSI (14)",
-        "state": rsi_state, "color": rsi_color, "desc": rsi_desc,
+        "indicator": "RSI (14)", "short": "RSI(14)",
+        "state": rsi_state, "color": rsi_color, "desc": rsi_desc, "tip_key": rsi_tip,
+        "overheat": (not np.isnan(rsi)) and rsi >= 70,
+        "metrics": [{"label": "RSI", "value": f"{rsi:.1f}"},
+                    {"label": "모멘텀", "value": "50 위 (상승)" if rsi >= 50 else "50 아래 (하락)"}] if not np.isnan(rsi) else [],
+        "gauge": {"kind": "rsi", "value": round(rsi, 1), "min_label": "0", "max_label": "100", "marks": [30, 70]} if not np.isnan(rsi) else None,
         "items": [
             {"label": f"현재 RSI: {rsi:.1f}", "up": rsi >= 50 if not np.isnan(rsi) else None},
             {"label": "과매수 기준: 70", "up": None},
@@ -582,6 +639,12 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
     macd_hist = float(latest.get("MACD_hist",   float("nan")))
     prev_macd = float(prev.get("MACD",          float("nan")))
     prev_sig  = float(prev.get("MACD_signal",   float("nan")))
+    prev_hist = float(prev.get("MACD_hist",     float("nan")))
+    # 히스토그램 확대/축소: 직전 봉 대비 크기(절댓값) 비교. 방향은 부호로
+    hist_expanding = None
+    if not np.isnan(macd_hist) and not np.isnan(prev_hist):
+        hist_expanding = abs(macd_hist) > abs(prev_hist)
+    hist_trend = "확대" if hist_expanding else "축소" if hist_expanding is False else "—"
 
     if not any(np.isnan(v) for v in [macd, macd_sig, prev_macd, prev_sig]):
         golden = prev_macd < prev_sig and macd > macd_sig
@@ -608,11 +671,10 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             signals.append({"type": "bullish", "text": "MACD > 시그널선 — 상승 모멘텀 유지"})
             score += 5
             macd_state, macd_color = "MACD > 시그널 (상승)", "bullish"
-            hist_trend = "확대" if not np.isnan(macd_hist) and macd_hist > 0 else "축소"
             macd_desc = (
                 f"MACD({macd:.4f})가 시그널선({macd_sig:.4f}) 위에 있어 상승 모멘텀이 유지되고 있습니다. "
-                f"히스토그램({macd_hist:.4f})이 {hist_trend} 중으로 "
-                f"{'모멘텀이 강화되고 있습니다.' if hist_trend == '확대' else '모멘텀이 약화되고 있어 주의가 필요합니다.'}"
+                f"히스토그램({macd_hist:.4f})이 직전 봉보다 {hist_trend}되어 "
+                f"{'상승 모멘텀이 강해지고 있습니다.' if hist_expanding else '상승 모멘텀이 약해지고 있어 주의가 필요합니다.'}"
             )
         else:
             signals.append({"type": "bearish", "text": "MACD < 시그널선 — 하락 모멘텀"})
@@ -620,8 +682,8 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             macd_state, macd_color = "MACD < 시그널 (하락)", "bearish"
             macd_desc = (
                 f"MACD({macd:.4f})가 시그널선({macd_sig:.4f}) 아래에 있어 하락 모멘텀이 우세합니다. "
-                f"히스토그램({macd_hist:.4f})이 음수 구간에 있으며 "
-                f"반등 시그널이 나타날 때까지 관망을 권장합니다."
+                f"히스토그램({macd_hist:.4f})이 직전 봉보다 {hist_trend}되어 "
+                f"{'하락 압력이 커지고 있습니다.' if hist_expanding else '하락 압력이 줄고 있어 반등 신호를 지켜볼 만합니다.'}"
             )
     else:
         macd_state, macd_color = "데이터 부족", "neutral"
@@ -629,13 +691,78 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         macd, macd_sig, macd_hist = float("nan"), float("nan"), float("nan")
 
     details.append({
-        "indicator": "MACD",
+        "indicator": "MACD", "short": "MACD",
         "state": macd_state, "color": macd_color, "desc": macd_desc,
+        "metrics": ([{"label": "히스토그램", "value": f"{_fp(macd_hist)} ({hist_trend})"},
+                     {"label": "MACD / 시그널", "value": f"{_fp(macd)} / {_fp(macd_sig)}"}] if not np.isnan(macd) else []),
+        "gauge": None,
+        "hist_expanding": hist_expanding,
         "items": [
             {"label": f"MACD: {_fp(macd)}"       if not np.isnan(macd)      else "MACD: —",     "up": macd > macd_sig if not np.isnan(macd) else None},
             {"label": f"시그널: {_fp(macd_sig)}"  if not np.isnan(macd_sig)  else "시그널: —",   "up": macd > macd_sig if not np.isnan(macd) else None},
             {"label": f"히스토: {_fp(macd_hist)}" if not np.isnan(macd_hist) else "히스토그램: —","up": macd_hist > 0   if not np.isnan(macd_hist) else None},
         ]
+    })
+
+    # ── 수급 · ADX (추세 강도 + OBV 자금 흐름) ─────────────────
+    obv_v     = _f(latest.get("OBV"))
+    obv_ma    = _f(latest.get("OBV_MA20"))
+    obv_flow  = None                          # "in" 유입 / "out" 이탈 / None
+    if obv_v is not None and obv_ma is not None and len(df) >= 25:
+        obv_5ago = _f(df["OBV"].iloc[-6]) if "OBV" in df.columns else None
+        rising = obv_5ago is not None and obv_v > obv_5ago
+        if obv_v > obv_ma and rising:
+            obv_flow = "in"
+        elif obv_v < obv_ma and not rising:
+            obv_flow = "out"
+    adx_regime = None
+    if adx_v is not None:
+        adx_regime = "trend" if adx_v >= 25 else "range" if adx_v < 20 else "weak"
+    flow_delta = 0
+    if adx_regime == "trend" and pdi_v is not None and mdi_v is not None:
+        flow_delta += 5 if pdi_v > mdi_v else -5
+    if obv_flow == "in":
+        flow_delta += 5
+    elif obv_flow == "out":
+        flow_delta -= 5
+    score += flow_delta
+    if adx_v is None and obv_flow is None:
+        flow_state, flow_color = "데이터 부족", "neutral"
+        flow_desc = "ADX·OBV 를 계산할 데이터가 충분하지 않습니다."
+    else:
+        dir_txt = ("상승" if (pdi_v or 0) > (mdi_v or 0) else "하락")
+        regime_txt = {"trend": f"추세장 ({dir_txt} 우위)", "range": "횡보장", "weak": "추세 약함"}.get(adx_regime, "—")
+        flow_txt = {"in": "자금 유입", "out": "자금 이탈"}.get(obv_flow, "자금 흐름 중립")
+        flow_color = "bullish" if flow_delta > 0 else "bearish" if flow_delta < 0 else "neutral"
+        flow_state = f"{regime_txt} · {flow_txt}"
+        flow_desc = (
+            (f"ADX(14) {adx_v:.1f}: " + ("25 이상이라 방향성이 뚜렷한 추세장입니다. " if adx_regime == "trend"
+                                         else "20 미만이라 방향 없는 횡보장입니다. 추세 지표보다 박스권 매매가 잘 맞습니다. " if adx_regime == "range"
+                                         else "20~25 로 추세가 막 생기거나 약해지는 구간입니다. ")
+             + (f"+DI {pdi_v:.1f} / -DI {mdi_v:.1f} 로 {dir_txt} 쪽 힘이 더 큽니다. " if pdi_v is not None and mdi_v is not None else "")
+             if adx_v is not None else "")
+            + ({"in": "OBV 가 20일 평균 위에서 올라가고 있어 거래량이 오르는 날에 더 실리는 '자금 유입' 상태입니다.",
+                "out": "OBV 가 20일 평균 아래에서 내려가고 있어 거래량이 내리는 날에 더 실리는 '자금 이탈' 상태입니다."}.get(obv_flow,
+               "OBV 는 20일 평균 근처로 뚜렷한 자금 흐름이 없습니다."))
+        )
+        if adx_regime == "trend" or obv_flow:
+            signals.append({"type": flow_color if flow_color != "neutral" else "info", "text": f"수급·ADX: {flow_state}"})
+    details.append({
+        "indicator": "수급 · ADX", "short": "수급·ADX",
+        "state": flow_state, "color": flow_color, "desc": flow_desc,
+        "tip_key": {"trend": "trend", "range": "range"}.get(adx_regime, "neutral"),
+        "metrics": [m for m in [
+            {"label": "ADX(14)", "value": f"{adx_v:.1f}"} if adx_v is not None else None,
+            {"label": "OBV(20일)", "value": {"in": "유입 ↑", "out": "이탈 ↓"}.get(obv_flow, "중립")} if obv_v is not None else None,
+        ] if m],
+        "gauge": {"kind": "adx", "value": round(min(adx_v, 60) / 60 * 100, 1), "raw": round(adx_v, 1), "min_label": "횡보",
+                  "max_label": "강한 추세", "marks": [round(20 / 60 * 100, 1), round(25 / 60 * 100, 1)]} if adx_v is not None else None,
+        "items": [
+            {"label": f"ADX {adx_v:.1f}" if adx_v is not None else "ADX —", "up": None},
+            {"label": f"+DI {pdi_v:.1f}" if pdi_v is not None else "+DI —", "up": (pdi_v > mdi_v) if pdi_v is not None and mdi_v is not None else None},
+            {"label": f"-DI {mdi_v:.1f}" if mdi_v is not None else "-DI —", "up": None},
+            {"label": {"in": "OBV 유입", "out": "OBV 이탈"}.get(obv_flow, "OBV 중립"), "up": {"in": True, "out": False}.get(obv_flow)},
+        ],
     })
 
     # ── 펀더멘털 분석 추가 ────────────────────────────
@@ -656,8 +783,12 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
     combined_score = max(-100, min(100, score + fund_score))
 
     # ── 1개월 기반 박스권 정보 (참고용 구간) ────────────
-    atr_series  = (df["High"] - df["Low"]).rolling(14).mean()
-    atr_val     = _f(atr_series.iloc[-1])
+    # 정식 True Range(전일 종가 갭 포함)의 Wilder 평균. 지표 컬럼이 있으면 그대로, 없으면 여기서 계산
+    if "ATR" in df.columns:
+        atr_val = _f(df["ATR"].iloc[-1])
+    else:
+        from analysis.indicators import atr_series as _atr_series
+        atr_val = _f(_atr_series(df).iloc[-1])
     atr_use     = atr_val if (atr_val and atr_val > 0) else close * 0.02
 
     month       = df.tail(21)                          # 최근 21거래일 ≈ 1개월
@@ -692,8 +823,16 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             trend_score += 10                             # 약한 강세
     if _year_high > 0 and close >= _year_high * 0.95:
         trend_score += 10                                 # 52주 신고가 5% 이내
+    _open_last = _f(df["Open"].iloc[-1]) if "Open" in df.columns and len(df) > 0 else None
+    _prev_close = _f(df["Close"].iloc[-2]) if len(df) >= 2 else None
+    _up_candle = (_open_last is not None and close > _open_last) or (_open_last is None and _prev_close is not None and close > _prev_close)
+    vol_spike_up = vol_spike_down = False
     if _vol_avg20 > 0 and _vol_last > _vol_avg20 * 1.5:
-        trend_score += 20                                 # 거래량 급증
+        if _up_candle:
+            trend_score += 20                             # 양봉 + 거래량 급증 = 매수세
+            vol_spike_up = True
+        else:
+            vol_spike_down = True                         # 음봉 거래량 급증은 가점 없음 (매도세 신호로만 표시)
 
     # ── 추세 강도별 진입·손절·목표 (월가 정통 로직) ────
     is_breakout    = _year_high > 0 and close >= _year_high * 0.995
@@ -808,8 +947,8 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
        "MA5" in dfw.columns and "MA20" in dfw.columns and len(dfw) >= 7:
         ma5_arr  = dfw["MA5"].values
         ma20_arr = dfw["MA20"].values
-        # 최근 5주(≈1개월) 내 크로스 탐지
-        for i in range(-5, -1):
+        # 최근 5주(≈1개월) 내 크로스 탐지 — 최신 주봉(-1)까지 포함
+        for i in range(-5, 0):
             p5,  c5  = _f(ma5_arr[i-1]),  _f(ma5_arr[i])
             p20, c20 = _f(ma20_arr[i-1]), _f(ma20_arr[i])
             if None not in (p5, c5, p20, c20):
@@ -934,4 +1073,17 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         "macd":        round(macd, 4)          if not np.isnan(macd) else None,
         "bb_position": round(bb_position, 1)   if bb_position is not None else None,
         "ma_analysis": ma_analysis,
+        # 추가 (PR #71): 추세 강도 · 수급 · 과열 경고 · 정식 ATR
+        "adx":           round(adx_v, 1) if adx_v is not None else None,
+        "plus_di":       round(pdi_v, 1) if pdi_v is not None else None,
+        "minus_di":      round(mdi_v, 1) if mdi_v is not None else None,
+        "adx_regime":    adx_regime,          # trend(≥25) / weak / range(<20)
+        "obv_flow":      obv_flow,            # in / out / None
+        "overheat":      bool(overheat_reasons),
+        "overheat_reasons": overheat_reasons,
+        "strong_up":     bool(strong_up),
+        "atr":           round(atr_use, 4),
+        "vol_spike_up":  vol_spike_up,
+        "vol_spike_down": vol_spike_down,
+        "macd_hist_expanding": hist_expanding,
     }

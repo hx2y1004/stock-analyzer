@@ -1949,10 +1949,15 @@ const INDICATOR_TIPS = {
     bearish: '☁️ 주가가 구름대 아래에 있어요. 하락 추세가 강하며 구름대가 저항선 역할을 해요.',
     neutral: '☁️ 주가가 구름대 안에 있어요. 상승·하락 방향이 결정되지 않은 과도기 상태예요.'
   },
-  'RSI (상대강도지수)': {
+  'RSI (14)': {
     bullish: '💚 RSI 30 이하 "과매도" 구간이에요. 너무 많이 떨어진 상태로 반등 가능성이 높아요.',
-    bearish: '🔴 RSI 70 이상 "과매수" 구간이에요. 너무 많이 오른 상태로 조정이 올 수 있어요.',
+    bearish: '🔴 RSI 70 이상 "과매수" 구간이에요. 너무 많이 오른 상태라 쉬어 갈 수 있어요. 다만 강하게 오르는 종목은 70 위에서 한동안 버티기도 해요.',
     neutral: '✅ RSI가 적정 범위(30~70)에 있어요. 과열도 과냉도 아닌 안정적인 상태예요.'
+  },
+  '수급 · ADX': {
+    trend:   '🧭 ADX가 25 이상이면 한쪽 방향으로 힘 있게 움직이는 "추세장"이에요. +DI가 크면 오르는 힘, -DI가 크면 내리는 힘이 더 세요. OBV가 오르면 오르는 날 거래가 더 많다는 뜻(돈이 들어옴)이에요.',
+    range:   '↔️ ADX가 20 아래면 방향 없이 오르내리는 "횡보장"이에요. 이때는 이동평균·MACD 같은 추세 신호가 자주 틀려요. OBV로 돈이 들어오는지 나가는지를 같이 보세요.',
+    neutral: '🧭 ADX는 추세의 "세기"(방향 아님), OBV는 오르는 날·내리는 날 거래량을 누적한 "돈의 흐름"이에요. 둘 다 뚜렷하지 않으면 지켜보는 구간이에요.'
   },
   'MACD': {
     bullish: '📈 MACD가 시그널선 위로 올라왔어요. 상승 모멘텀이 생기는 신호로 매수 타이밍일 수 있어요.',
@@ -2026,9 +2031,90 @@ function _buildCards(details) {
   }).join('');
 }
 
-// ── 기술적 분석 카드 ──────────────────────────────────────
+// ── 기술적 분석: 신호등 바 + 6카드 (지표 · 게이지 · 접힌 쉬운 설명) ─────────────
+const _TA_TONE = { bullish: 'bull', bearish: 'bear', neutral: 'neu' };
+const _TA_WORD = { bull: '강세', bear: '약세', neu: '중립' };
+
+function _taGauge(g) {
+  if (!g || g.value == null || isNaN(g.value)) return '';
+  const v = Math.max(0, Math.min(100, +g.value));
+  const marks = (g.marks || []).map(m => `<i class="ta-mark" style="left:${m}%"></i>`).join('');
+  const shown = g.kind === 'adx' ? (g.raw != null ? g.raw : v) : g.kind === 'bb' ? `${Math.round(v)}%` : v;
+  return `
+    <div class="ta-gauge ta-g-${g.kind}" role="img" aria-label="${g.kind.toUpperCase()} ${shown}">
+      <div class="ta-track">${marks}<i class="ta-pin" style="left:${v}%"></i></div>
+      <div class="ta-glabels"><span>${g.min_label || ''}</span><b>${shown}</b><span>${g.max_label || ''}</span></div>
+    </div>`;
+}
+
+function _taCard(d, i) {
+  const tone = _TA_TONE[d.color] || 'neu';
+  const tipObj = INDICATOR_TIPS[d.indicator];
+  const tip = tipObj ? (tipObj[d.tip_key] || tipObj[d.color] || tipObj['neutral'] || '') : '';
+  const metrics = (d.metrics || []).slice(0, 2).map(m =>
+    `<div class="ta-m"><span>${m.label}</span><b>${m.value}</b></div>`).join('');
+  const chips = (d.items || []).map(item =>
+    `<span class="detail-chip ${item.up === true ? 'up' : item.up === false ? 'down' : ''}">${item.label}</span>`).join('');
+  return `
+    <article class="ta-card ta-${tone}" id="taCard${i}">
+      <header class="ta-head">
+        <h4 class="ta-name">${d.short || d.indicator}</h4>
+        <span class="ta-state ta-${tone}">${d.state}</span>
+      </header>
+      ${d.overheat ? '<span class="ta-hot">⚠️ 단기 과열</span>' : ''}
+      ${metrics ? `<div class="ta-metrics">${metrics}</div>` : ''}
+      ${_taGauge(d.gauge)}
+      <button type="button" class="ta-help-btn" aria-expanded="false" aria-controls="taHelp${i}" onclick="_taToggleHelp(this)">
+        <span class="ta-q">?</span> 쉬운 설명 <span class="ta-caret">▾</span>
+      </button>
+      <div class="ta-help" id="taHelp${i}" hidden>
+        ${tip ? `<p class="ta-tip">${tip}</p>` : ''}
+        <p class="ta-desc">${d.desc}</p>
+        ${chips ? `<div class="detail-chips">${chips}</div>` : ''}
+      </div>
+    </article>`;
+}
+
+function _taToggleHelp(btn) {
+  const box = document.getElementById(btn.getAttribute('aria-controls'));
+  const open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (box) box.hidden = !open;
+}
+
+function _taJump(i) {
+  const el = document.getElementById('taCard' + i);
+  if (!el) return;
+  const top = el.getBoundingClientRect().top + window.scrollY - 80;
+  window.scrollTo({ top, behavior: 'smooth' });
+  el.classList.remove('ta-flash'); void el.offsetWidth; el.classList.add('ta-flash');
+}
+
 function renderDetail(details) {
-  document.getElementById('detailList').innerHTML = _buildCards(details);
+  const el = document.getElementById('detailList');
+  if (!el) return;
+  if (!details || !details.length) { el.innerHTML = '<p class="no-data">분석 데이터가 없습니다.</p>'; return; }
+  const cnt = { bull: 0, neu: 0, bear: 0 };
+  details.forEach(d => { cnt[_TA_TONE[d.color] || 'neu']++; });
+  const hot = details.some(d => d.overheat);
+  const badges = details.map((d, i) => {
+    const tone = _TA_TONE[d.color] || 'neu';
+    return `<button type="button" class="ta-badge ta-${tone}" onclick="_taJump(${i})" title="${d.indicator}: ${d.state}">
+      <i class="ta-dot"></i>${d.short || d.indicator}<span class="sr-only"> ${_TA_WORD[tone]}</span></button>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="ta-bar">
+      <div class="ta-tally" aria-label="지표 신호 요약">
+        <span class="ta-cnt ta-bull"><i class="ta-dot"></i>강세 <b>${cnt.bull}</b></span>
+        <span class="ta-sep">·</span>
+        <span class="ta-cnt ta-neu"><i class="ta-dot"></i>중립 <b>${cnt.neu}</b></span>
+        <span class="ta-sep">·</span>
+        <span class="ta-cnt ta-bear"><i class="ta-dot"></i>약세 <b>${cnt.bear}</b></span>
+        ${hot ? '<span class="ta-hot">⚠️ 단기 과열</span>' : ''}
+      </div>
+      <div class="ta-badges">${badges}</div>
+    </div>
+    <div class="ta-grid">${details.map(_taCard).join('')}</div>`;
 }
 
 // ── 지표 설명 (툴팁) ──────────────────────────────────────
