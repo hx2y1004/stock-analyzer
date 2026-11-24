@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 미국 8-K Item 1.01 → 수주·계약 · 필터 경쟁 상태 (PR #70)
+- 새로 저장: 8-K 에 Item 1.01(중요 계약 체결)이 있으면 `contract`(positive). 우선순위 3.02 유상증자 > 자사주 > 1.01 계약 > 2.01·2.02(`material_8k`).
+- 예전 행: 서버 기동 시 `disclosures.migrate_8k_contract()` 가 SEC `material_8k` 중 요약에 `Item 1.01` 이 든 행을 `contract` 로 변환(멱등).
+  변환이 실패해도 `query(category="contract")` 가 그런 행을 포함하고(`material_8k` 조회에서는 제외), `to_dict` 도 contract 로 보여 준다.
+- 화면: 필터를 바꾸면 이전 `/api/disclosures` 요청을 `AbortController` 로 취소하고, 응답 시점의 시장·유형이 현재 선택과 다르면 버린다.
+- 알림 라벨 `[SEC 계약]`.
+
 ### 새 분류 소급 백필 조건 (PR #69)
 - `_check_backfill()`: 시장 전체 0건 **또는** `BACKFILL_IF_MISSING`(미국 `offering`·`buyback`)이 **둘 다** 0건이면 14일 백필 1회.
   이미 있는 공시는 `external_id` 로 건너뛰어 새 분류만 채워지고, 알림 없음. 프로세스마다 1번(`_backfilled`).

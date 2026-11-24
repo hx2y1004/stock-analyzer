@@ -640,12 +640,21 @@
     const list = $('#dsList');
     const my = ++S.dSeq;
     list.classList.add('is-loading');
+    // 필터를 빨리 여러 번 바꾸면 이전 요청은 취소하고, 늦게 온 응답도 버린다 (마지막 선택만 그린다)
+    if (S.dCtrl) S.dCtrl.abort();
+    const ctrl = window.AbortController ? new AbortController() : null;
+    S.dCtrl = ctrl;
+    const want = { market: S.dMarket, category: S.dCat };
     let d;
     try {
-      const q = new URLSearchParams({ market: S.dMarket, category: S.dCat, days: '14', limit: '100' });
-      d = await (await fetch('/api/disclosures?' + q)).json();
-    } catch (e) { d = null; }
-    if (my !== S.dSeq) return;                                  // 필터를 빨리 바꾸면 마지막 요청만 그린다
+      const q = new URLSearchParams({ market: want.market, category: want.category, days: '14', limit: '100' });
+      d = await (await fetch('/api/disclosures?' + q, ctrl ? { signal: ctrl.signal } : {})).json();
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;                 // 더 새 요청이 있음
+      d = null;
+    }
+    if (my !== S.dSeq || want.market !== S.dMarket || want.category !== S.dCat) return;
+    S.dCtrl = null;
     list.classList.remove('is-loading');
     if (!d) { list.innerHTML = '<div class="card ab-empty">불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</div>'; return; }
     const items = d.items || [];
