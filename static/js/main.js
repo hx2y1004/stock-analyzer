@@ -1245,7 +1245,7 @@ async function analyze() {
     window._lastStock    = data.stock;        // 모의투자 매수/매도에서 참조용
     renderStockInfo(data.stock);
     renderVerdict(data.analysis, data.stock);
-    renderDetail(data.analysis.details || []);
+    renderDetail(data.analysis.details || [], data.analysis);
     renderFundamental(data.analysis.fundamental_details || [], data.stock);
     renderScorecard(data.analysis.scorecard, data.stock);
     renderMetrics(data.stock, data.analysis);
@@ -1253,7 +1253,7 @@ async function analyze() {
     renderStockBots(data.stock);
     renderMarketContext(data.stock.market_context, data.stock.currency === 'KRW', data.stock.market_mood);
     renderUpcomingEvents(data.stock.upcoming_events);
-    renderZones(data.analysis, data.stock);
+    renderStrategy(data.analysis, data.stock);
     if (data.extras_pending) {
       // 뉴스·애널리스트·AI 해설은 /api/analyze/extra 로 나중에 채운다 (첫 화면을 붙잡지 않게)
       _showExtrasLoading();
@@ -1700,12 +1700,14 @@ function renderDcf(stock) {
   const d = stock.dcf;
   // 종목마다 DCF 가능 여부가 다르므로 탭 자체를 조건부 노출, 탭은 항상 기술적 분석으로 초기화
   switchDetailTab('technical');
+  const empty = document.getElementById('dcfEmpty');
+  tabBtn?.classList.remove('hidden');
   if (!d || !d.fair_value) {
     card.classList.add('hidden');
-    tabBtn?.classList.add('hidden');
+    empty?.classList.remove('hidden');
     return;
   }
-  tabBtn?.classList.remove('hidden');
+  empty?.classList.add('hidden');
   const cur = stock.currency;
 
   // 1) 주인공 — 역산 (성장률 우선, 불가 시 영업이익률로 전환)
@@ -1999,6 +2001,8 @@ function switchDetailTab(tab) {
   if (fundCont) fundCont.classList.toggle('hidden', tab !== 'fundamental');
   const valPanel = document.getElementById('valuationPanel');
   if (valPanel) valPanel.classList.toggle('hidden', tab !== 'valuation');
+  const stPanel = document.getElementById('strategyPanel');
+  if (stPanel) stPanel.classList.toggle('hidden', tab !== 'strategy');
 }
 
 function _buildCards(details) {
@@ -2031,46 +2035,87 @@ function _buildCards(details) {
   }).join('');
 }
 
-// ── 기술적 분석: 신호등 바 + 6카드 (지표 · 게이지 · 접힌 쉬운 설명) ─────────────
+// ── 기술적 분석: 종합 게이지 + 6축 레이더 + 무채색 6카드 (ⓘ 설명 토글) ─────────────
 const _TA_TONE = { bullish: 'bull', bearish: 'bear', neutral: 'neu' };
-const _TA_WORD = { bull: '강세', bear: '약세', neu: '중립' };
+const _TA_WORD = { bull: '상승', bear: '하락', neu: '중립' };
+const _TA_AXES = ['MA', 'BB', '일목', 'RSI', 'MACD', '수급'];
+const _INFO_SVG = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="4.9" r="0.95" fill="currentColor"/><path d="M8 7.1v4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
 
-function _taGauge(g) {
-  if (!g || g.value == null || isNaN(g.value)) return '';
-  const v = Math.max(0, Math.min(100, +g.value));
-  const marks = (g.marks || []).map(m => `<i class="ta-mark" style="left:${m}%"></i>`).join('');
-  const shown = g.kind === 'adx' ? (g.raw != null ? g.raw : v) : g.kind === 'bb' ? `${Math.round(v)}%` : v;
+// 쉬운 설명에서 앞머리 이모지를 뗀다 (투자 판단 탭과 문구를 같이 쓰기 때문에 원문은 그대로 둔다)
+function _plainTip(t) {
+  return String(t || '').replace(/^[\p{Extended_Pictographic}←-⇿☀-➿️‍\s]+/u, '').trim();
+}
+
+function _taPolar(cx, cy, r, deg) {
+  const a = deg * Math.PI / 180;
+  return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+}
+
+// 반원 속도계: 왼쪽(0) 매도 · 가운데 중립 · 오른쪽(100) 매수
+function _taSpeedo(v) {
+  const cx = 110, cy = 104, r = 84, sw = 14;
+  const arc = (from, to) => {           // from/to: 0~100
+    const [x1, y1] = _taPolar(cx, cy, r, 180 - from * 1.8), [x2, y2] = _taPolar(cx, cy, r, 180 - to * 1.8);
+    return `M${x1.toFixed(2)} ${y1.toFixed(2)} A${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+  };
+  const val = Math.max(0, Math.min(100, +v || 50));
+  const [nx, ny] = _taPolar(cx, cy, r - 22, 180 - val * 1.8);
   return `
-    <div class="ta-gauge ta-g-${g.kind}" role="img" aria-label="${g.kind.toUpperCase()} ${shown}">
-      <div class="ta-track">${marks}<i class="ta-pin" style="left:${v}%"></i></div>
-      <div class="ta-glabels"><span>${g.min_label || ''}</span><b>${shown}</b><span>${g.max_label || ''}</span></div>
-    </div>`;
+  <svg class="tg-speedo" viewBox="0 0 220 124" role="img" aria-label="기술 지표 종합 ${val.toFixed(0)}점 (0 매도 · 100 매수)">
+    <path d="${arc(0, 33.3)}"  class="tg-arc tg-arc-bear" stroke-width="${sw}"/>
+    <path d="${arc(34.3, 65.7)}" class="tg-arc tg-arc-neu" stroke-width="${sw}"/>
+    <path d="${arc(66.7, 100)}" class="tg-arc tg-arc-bull" stroke-width="${sw}"/>
+    <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(2)}" y2="${ny.toFixed(2)}" class="tg-needle"/>
+    <circle cx="${cx}" cy="${cy}" r="6" class="tg-hub"/>
+    <text x="${cx - r}" y="${cy + 18}" text-anchor="middle" class="tg-tick">매도</text>
+    <text x="${cx}" y="${cy - r - 8 + 2}" text-anchor="middle" class="tg-tick" dy="-2">중립</text>
+    <text x="${cx + r}" y="${cy + 18}" text-anchor="middle" class="tg-tick">매수</text>
+  </svg>`;
+}
+
+// 6축 레이더: 위(MA)부터 시계 방향
+function _taRadar(details) {
+  const cx = 130, cy = 112, R = 78;
+  const ang = (i) => 90 - i * 60;
+  const pt = (i, pct) => _taPolar(cx, cy, R * pct / 100, ang(i));
+  const ring = (p) => _TA_AXES.map((_, i) => pt(i, p).map((n) => n.toFixed(1)).join(',')).join(' ');
+  const vals = details.slice(0, 6).map((d) => (d.axis == null ? 50 : Math.max(0, Math.min(100, +d.axis))));
+  const poly = vals.map((v, i) => pt(i, Math.max(v, 3)).map((n) => n.toFixed(1)).join(',')).join(' ');
+  const labels = _TA_AXES.map((name, i) => {
+    const [x, y] = _taPolar(cx, cy, R + 20, ang(i));
+    const anchor = Math.abs(x - cx) < 4 ? 'middle' : x > cx ? 'start' : 'end';
+    return `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}" class="tr-lab">${name} <tspan class="tr-val">${Math.round(vals[i])}</tspan></text>`;
+  }).join('');
+  return `
+  <svg class="tg-radar" viewBox="0 0 260 226" role="img" aria-label="6개 지표 점수: ${_TA_AXES.map((n, i) => `${n} ${Math.round(vals[i])}`).join(', ')}">
+    ${[25, 50, 75, 100].map((p) => `<polygon points="${ring(p)}" class="tr-ring${p === 50 ? ' tr-mid' : ''}"/>`).join('')}
+    ${_TA_AXES.map((_, i) => { const [x, y] = pt(i, 100); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="tr-spoke"/>`; }).join('')}
+    <polygon points="${poly}" class="tr-shape"/>
+    ${vals.map((v, i) => { const [x, y] = pt(i, Math.max(v, 3)); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" class="tr-dot"/>`; }).join('')}
+    ${labels}
+  </svg>`;
 }
 
 function _taCard(d, i) {
   const tone = _TA_TONE[d.color] || 'neu';
   const tipObj = INDICATOR_TIPS[d.indicator];
-  const tip = tipObj ? (tipObj[d.tip_key] || tipObj[d.color] || tipObj['neutral'] || '') : '';
-  const metrics = (d.metrics || []).slice(0, 2).map(m =>
-    `<div class="ta-m"><span>${m.label}</span><b>${m.value}</b></div>`).join('');
-  const chips = (d.items || []).map(item =>
-    `<span class="detail-chip ${item.up === true ? 'up' : item.up === false ? 'down' : ''}">${item.label}</span>`).join('');
+  const tip = _plainTip(tipObj ? (tipObj[d.tip_key] || tipObj[d.color] || tipObj['neutral'] || '') : '');
+  const m = d.metrics || [];
+  const main = m[0], sub = m[1];
+  const subTxt = [sub ? `${sub.label} ${sub.value}` : '', d.overheat ? '단기 과열' : ''].filter(Boolean).join(' · ');
+  const name = d.short || d.indicator;
   return `
-    <article class="ta-card ta-${tone}" id="taCard${i}">
-      <header class="ta-head">
-        <h4 class="ta-name">${d.short || d.indicator}</h4>
-        <span class="ta-state ta-${tone}">${d.state}</span>
-      </header>
-      ${d.overheat ? '<span class="ta-hot">⚠️ 단기 과열</span>' : ''}
-      ${metrics ? `<div class="ta-metrics">${metrics}</div>` : ''}
-      ${_taGauge(d.gauge)}
-      <button type="button" class="ta-help-btn" aria-expanded="false" aria-controls="taHelp${i}" onclick="_taToggleHelp(this)">
-        <span class="ta-q">?</span> 쉬운 설명 <span class="ta-caret">▾</span>
-      </button>
-      <div class="ta-help" id="taHelp${i}" hidden>
-        ${tip ? `<p class="ta-tip">${tip}</p>` : ''}
-        <p class="ta-desc">${d.desc}</p>
-        ${chips ? `<div class="detail-chips">${chips}</div>` : ''}
+    <article class="tc-card" id="taCard${i}" data-tone="${tone}">
+      <div class="tc-row1">
+        <h4 class="tc-name">${name}</h4>
+        <span class="tc-stat tc-${tone}"><i></i>${_TA_WORD[tone]}</span>
+        <button type="button" class="tc-info" aria-expanded="false" aria-controls="taHelp${i}" aria-label="${name} 설명 보기" onclick="_taToggleHelp(this)">${_INFO_SVG}</button>
+      </div>
+      <div class="tc-main">${main ? `<b>${main.value}</b><span>${main.label}</span>` : '<b>—</b>'}</div>
+      <div class="tc-sub">${subTxt || d.state || ''}</div>
+      <div class="tc-help" id="taHelp${i}" hidden>
+        <p class="tc-state">${d.state}</p>
+        ${tip ? `<p class="tc-tip">${tip}</p>` : ''}
       </div>
     </article>`;
 }
@@ -2082,39 +2127,34 @@ function _taToggleHelp(btn) {
   if (box) box.hidden = !open;
 }
 
-function _taJump(i) {
-  const el = document.getElementById('taCard' + i);
-  if (!el) return;
-  const top = el.getBoundingClientRect().top + window.scrollY - 80;
-  window.scrollTo({ top, behavior: 'smooth' });
-  el.classList.remove('ta-flash'); void el.offsetWidth; el.classList.add('ta-flash');
-}
-
-function renderDetail(details) {
+function renderDetail(details, analysis) {
   const el = document.getElementById('detailList');
   if (!el) return;
   if (!details || !details.length) { el.innerHTML = '<p class="no-data">분석 데이터가 없습니다.</p>'; return; }
-  const cnt = { bull: 0, neu: 0, bear: 0 };
-  details.forEach(d => { cnt[_TA_TONE[d.color] || 'neu']++; });
-  const hot = details.some(d => d.overheat);
-  const badges = details.map((d, i) => {
-    const tone = _TA_TONE[d.color] || 'neu';
-    return `<button type="button" class="ta-badge ta-${tone}" onclick="_taJump(${i})" title="${d.indicator}: ${d.state}">
-      <i class="ta-dot"></i>${d.short || d.indicator}<span class="sr-only"> ${_TA_WORD[tone]}</span></button>`;
-  }).join('');
+  const cards = details.slice(0, 6);
+  const g = (analysis && analysis.tech_gauge) || {};
+  const cnt = g.counts || cards.reduce((c, d) => { c[_TA_TONE[d.color] || 'neu']++; return c; }, { bull: 0, neu: 0, bear: 0 });
+  const val = g.value != null ? g.value : 50;
   el.innerHTML = `
-    <div class="ta-bar">
-      <div class="ta-tally" aria-label="지표 신호 요약">
-        <span class="ta-cnt ta-bull"><i class="ta-dot"></i>강세 <b>${cnt.bull}</b></span>
-        <span class="ta-sep">·</span>
-        <span class="ta-cnt ta-neu"><i class="ta-dot"></i>중립 <b>${cnt.neu}</b></span>
-        <span class="ta-sep">·</span>
-        <span class="ta-cnt ta-bear"><i class="ta-dot"></i>약세 <b>${cnt.bear}</b></span>
-        ${hot ? '<span class="ta-hot">⚠️ 단기 과열</span>' : ''}
-      </div>
-      <div class="ta-badges">${badges}</div>
+    <div class="tg-panel">
+      <section class="tg-left" aria-label="기술 지표 종합">
+        ${_taSpeedo(val)}
+        <div class="tg-summary">
+          <div class="tg-label tg-${g.tone || 'neu'}">${g.label || '중립'}</div>
+          <div class="tg-counts">
+            <span class="tg-c tc-bull"><i></i>강세 <b>${cnt.bull}</b></span><span class="tg-sep">·</span>
+            <span class="tg-c tc-neu"><i></i>중립 <b>${cnt.neu}</b></span><span class="tg-sep">·</span>
+            <span class="tg-c tc-bear"><i></i>약세 <b>${cnt.bear}</b></span>
+          </div>
+          ${g.overheat ? `<div class="tg-warn" title="${(g.overheat_reasons || []).join(', ')}">단기 과열 · ${(g.overheat_reasons || []).join(', ')}</div>` : ''}
+          ${g.adx_line ? `<div class="tg-adx">${g.adx_line}</div>` : ''}
+        </div>
+      </section>
+      <section class="tg-right" aria-label="지표별 점수">
+        ${_taRadar(cards)}
+      </section>
     </div>
-    <div class="ta-grid">${details.map(_taCard).join('')}</div>`;
+    <div class="tc-grid">${cards.map(_taCard).join('')}</div>`;
 }
 
 // ── 지표 설명 (툴팁) ──────────────────────────────────────
@@ -2583,270 +2623,158 @@ function toggleCoDesc() {
   }
 }
 
-// ── 매수/매도 구간 탭 ─────────────────────────────────────
-function _getZoneAdvice(zone, analysis) {
-  // 주요 신호 컨텍스트 문자열 생성
-  const a = analysis || {};
-  const sigParts = [];
-  if (a.new_52w_high)       sigParts.push('52주 신고가 달성');
-  else if (a.near_52w_high) sigParts.push('52주 신고가 근방');
-  if (a.near_52w_low)       sigParts.push('52주 신저가 근방');
-  if (a.recent_golden)      sigParts.push('골든크로스 발생');
-  if (a.recent_dead)        sigParts.push('데드크로스 발생');
-  if (a.vol_up_confirm)     sigParts.push('거래량 동반 상승 확인');
-  else if (a.vol_down_confirm) sigParts.push('거래량 동반 하락 확인');
-  if (a.bb_expanding)       sigParts.push('밴드 확장 중');
-  else if (a.bb_contracting)sigParts.push('밴드 수축 중');
-  const sigCtx = sigParts.length ? ` (${sigParts.join(' · ')})` : '';
+// ── 매매 전략 탭: 가격 구간 맵 · 신규 진입자 / 기존 보유자 대응 ─────────────────
+function _stFmt(v, krw) {
+  if (v == null || !isFinite(v)) return '—';
+  return krw ? Math.round(v).toLocaleString('ko-KR') + '원'
+             : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+const _stPct = (p) => (p == null || !isFinite(p) ? '' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`);
+const _TREND_TXT = { 'strong-uptrend': '강한 상승 추세', 'uptrend': '상승 추세', 'sideways': '횡보',
+                     'downtrend': '하락 추세', 'strong-downtrend': '강한 하락 추세' };
 
-  const isStrong = a.trend === 'strong-uptrend' || a.trend === 'strong-downtrend';
-
-  const map = {
-    '손절 구간':
-      `손절선 아래로 내려왔어요${sigCtx}. 최근 저점 지지가 깨진 신호로 추가 하락 리스크가 있으니 포지션 정리를 고려하세요.`,
-    '눌림목 매수 구간':
-      `${isStrong ? '강한 ' : ''}상승 추세 속 일시적 조정 구간이에요${sigCtx}. 추세가 유효하다면 분할 매수 기회가 될 수 있어요.`,
-    '상승 추세 (보유)':
-      `${isStrong ? '강한 ' : ''}상승 추세가 살아있어요${sigCtx}. 매수·매도보다 현 포지션 보유를 유지하는 게 유리해요.`,
-    '고점 부근 (일부 익절)':
-      `${isStrong ? '강한 ' : ''}상승 추세 고점 부근이에요${sigCtx}. 전량 매도보다 보유량 일부(20~30%)를 익절하며 리스크를 줄여보세요.`,
-    '매수 추천 구간':
-      `횡보 구간 지지선 부근이에요${sigCtx}. 지지선 역할을 하는 구간으로 분할 매수를 고려해보세요.`,
-    '매도 추천 구간':
-      `횡보 구간 저항선 부근이에요${sigCtx}. 저항선 역할을 하는 구간으로 분할 매도를 고려해보세요.`,
-    '하락 추세 저점 (관망)':
-      `${isStrong ? '강한 ' : ''}하락 추세 저점 부근이에요${sigCtx}. 반등 가능성은 있지만 추세가 꺾이지 않았으니 관망을 추천해요.`,
-    '하락 추세 반등 (매도)':
-      `${isStrong ? '강한 ' : ''}하락 추세 속 반등 구간이에요${sigCtx}. 반등 시 일부 매도로 리스크를 줄이는 전략이 유효해요.`,
-    '관망 구간':
-      `가격이 매수·매도 구간 사이에 있어요${sigCtx}. 뚜렷한 방향성이 나올 때까지 현 포지션을 유지하며 관망하세요.`,
-  };
-  return map[zone] || `현재 가격 위치를 분석 중이에요${sigCtx}.`;
+function _stPaperHref(analysis, stock, plan) {
+  const q = new URLSearchParams({ buy: stock.ticker });
+  const krw = stock.currency === 'KRW';
+  const r = (v) => krw ? String(Math.round(v)) : Number(v).toFixed(2);
+  const ok = plan && plan.mode === 'target' && analysis.trade_recommendation !== 'avoid' && !plan.stop.broken;
+  if (ok) {
+    const cp = plan.current, t = Number(analysis.target_price) > cp ? Number(analysis.target_price) : plan.upper.high;
+    q.set('target', r(t)); q.set('stop', r(plan.stop.price));
+    q.set('memo', '[매매 전략] 목표가·손절가 자동 예약');
+  }
+  return { href: '/trading?' + q.toString(), withPlan: ok };
 }
 
-function renderZones(analysis, stock) {
-  const el = document.getElementById('zonesList');
-  if (!el || !analysis) return;
+function _stMap(plan, krw) {
+  const s = plan.stop.price, sl = plan.support.low, sh = plan.support.high, c = plan.current, ul = plan.upper.low, uh = plan.upper.high;
+  const lo = Math.min(s, sl), hi = Math.max(uh, c);
+  const pad = (hi - lo) * 0.08 || c * 0.02;
+  const a = lo - pad, b = hi + pad;
+  const x = (v) => ((v - a) / (b - a) * 100);
+  const up = plan.mode === 'target' ? '목표가' : '반등 저항';
+  const marks = [
+    { k: 'stop', v: s, name: '손절가', pct: plan.stop.pct },
+    { k: 'sup', v: sh, name: '주요 지지', pct: plan.support.pct },
+    { k: 'up', v: ul, name: up, pct: plan.upper.pct_low },
+  ];
+  // 아래 라벨이 겹치면 두 번째 줄로 내린다
+  let lastX = -99, row = 0;
+  const lab = marks.map((m) => {
+    const px = x(m.v);
+    row = (px - lastX < 22 && row === 0) ? 1 : 0;
+    lastX = px;
+    const align = px < 12 ? 'l' : px > 88 ? 'r' : 'c';
+    return `<div class="st-lab st-lab-${m.k} st-row${row} st-al-${align}" style="left:${px.toFixed(2)}%">
+      <span class="st-lab-n">${m.name}</span><b>${_stFmt(m.v, krw)}</b><span class="st-lab-p">${_stPct(m.pct)}</span></div>`;
+  }).join('');
+  const two = /st-row1/.test(lab);
+  return `
+    <div class="st-map st-m-${plan.mode}${two ? ' st-two' : ''}" role="img" aria-label="손절 ${_stFmt(s, krw)}, 지지 ${_stFmt(sh, krw)}, 현재가 ${_stFmt(c, krw)}, ${up} ${_stFmt(ul, krw)}~${_stFmt(uh, krw)}">
+      <div class="st-cur-lab" style="left:${x(c).toFixed(2)}%"><span>현재가</span><b>${_stFmt(c, krw)}</b></div>
+      <div class="st-track">
+        <i class="st-risk" style="left:${x(s).toFixed(2)}%;width:${(x(c) - x(s)).toFixed(2)}%"></i>
+        <i class="st-zone st-zone-sup" style="left:${x(sl).toFixed(2)}%;width:${Math.max(0.8, x(sh) - x(sl)).toFixed(2)}%"></i>
+        <i class="st-zone st-zone-up st-${plan.mode}" style="left:${x(ul).toFixed(2)}%;width:${Math.max(0.8, x(uh) - x(ul)).toFixed(2)}%"></i>
+        <i class="st-tick st-tick-stop" style="left:${x(s).toFixed(2)}%"></i>
+        <i class="st-tick st-tick-sup" style="left:${x(sh).toFixed(2)}%"></i>
+        <i class="st-now" style="left:${x(c).toFixed(2)}%"></i>
+      </div>
+      <div class="st-labs">${lab}</div>
+    </div>`;
+}
 
-  const cur    = stock.currency || 'USD';
-  const isKRW  = cur === 'KRW';
-  const price  = stock.current_price;
-  const entry  = analysis.entry_price;
-  const target = analysis.target_price;
-  const stop   = analysis.stop_loss;
-  const rsi    = analysis.rsi ? analysis.rsi.toFixed(1) : '—';
+function renderStrategy(analysis, stock) {
+  const el = document.getElementById('strategyPanel');
+  if (!el) return;
+  const plan = analysis && analysis.price_plan;
+  if (!plan) { el.innerHTML = '<p class="no-data">가격 구간을 계산할 데이터가 부족합니다.</p>'; return; }
+  const krw = stock.currency === 'KRW';
+  const f = (v) => _stFmt(v, krw);
+  const isRes = plan.mode === 'resistance';
+  const trend = analysis.trend || 'sideways';
+  const ma20 = analysis.ma_analysis && analysis.ma_analysis.MA20;
+  const rec = analysis.trade_recommendation;
+  const rr = (v) => (v == null ? '—' : `1 : ${v.toFixed(1)}`);
+  const tags = [
+    _TREND_TXT[trend] || '횡보',
+    rec === 'avoid' ? '진입 비추천' : rec === 'strong' ? '추세 매수' : '분할 접근',
+    plan.rr_now != null ? `현재가 손익비 ${rr(plan.rr_now)}` : null,
+    analysis.overheat ? '단기 과열' : null,
+    plan.stop.broken ? '손절선 이탈' : null,
+  ].filter(Boolean);
+  const pb = _stPaperHref(analysis, stock, plan);
+  const upName = isRes ? '반등 저항 구간 (매물대)' : '목표가 구간';
 
-  const fmt = (v) => {
-    if (v == null) return '—';
-    return isKRW
-      ? (Math.round(v / 10) * 10).toLocaleString('ko-KR') + '원'
-      : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
-  };
-
-  // 1개월 범위 + 추세 기반 현재 위치 판단
-  const entryLow   = analysis.entry_low   || entry;
-  const entryHigh  = analysis.entry_high  || entry * 1.02;
-  const targetLow  = analysis.target_low  || target * 0.97;
-  const targetHigh = analysis.target_high || target;
-  const monthHigh  = analysis.month_high  || target;
-  const monthLow   = analysis.month_low   || stop;
-  const trend      = analysis.trend       || 'sideways';
-  // 종합 판단이 '진입 비추천'이면 매수 구간을 추천처럼 보여주지 않는다 (상단 판단과 모순 방지)
-  const isAvoid    = analysis.trade_recommendation === 'avoid';
-  const monthRange = monthHigh - monthLow || 1;
-  const rangePct   = (price - monthLow) / monthRange; // 0~1 (1개월 범위 내 위치)
-
-  let priceZone = '관망 구간', priceColor = 'neutral';
-
-  if (price <= stop) {
-    priceZone = '손절 구간'; priceColor = 'bearish';
-
-  } else if (trend === 'strong-uptrend' || trend === 'uptrend') {
-    // 상승 추세
-    if (rangePct <= 0.35)      { priceZone = '눌림목 매수 구간';      priceColor = 'bullish'; }
-    else if (rangePct >= 0.80) { priceZone = '고점 부근 (일부 익절)'; priceColor = 'neutral'; }
-    else                       { priceZone = '상승 추세 (보유)';       priceColor = 'bullish'; }
-
-  } else if (trend === 'strong-downtrend' || trend === 'downtrend') {
-    // 하락 추세
-    if (rangePct <= 0.30)      { priceZone = '하락 추세 저점 (관망)'; priceColor = 'neutral'; }
-    else if (rangePct >= 0.65) { priceZone = '하락 추세 반등 (매도)'; priceColor = 'bearish'; }
-    else                       { priceZone = '관망 구간';              priceColor = 'neutral'; }
-
+  // 신규 진입자
+  let nTitle, nTone, nLines = [];
+  if (plan.stop.broken) {
+    nTitle = '신규 진입 보류'; nTone = 'bear';
+    nLines.push(`기존 손절선(${f(plan.stop.original)}) 아래로 내려왔어요. 지지선을 다시 회복하는지 먼저 확인하세요.`);
+  } else if (isRes) {
+    nTitle = '관망 · 추세 전환 확인'; nTone = 'bear';
+    nLines.push(`지금은 ${_TREND_TXT[trend] || '약세'}라 위쪽 ${f(plan.upper.low)} 부근이 반등 때 매물이 나오는 저항이에요.`);
+    if (ma20 && ma20.value) nLines.push(`확인 조건 1 · 종가가 20일선(${f(ma20.value)}) 위로 회복`);
+    nLines.push(`확인 조건 2 · 거래량을 동반한 반등 (평소의 1.5배 이상)`);
+    nLines.push(`지금 사면 손익비 ${rr(plan.rr_now)} — ${plan.rr_now != null && plan.rr_now >= 1.5 ? '숫자는 괜찮지만 추세가 받쳐 주지 않아요' : '위험 대비 기대 수익이 작아요'}`);
   } else {
-    // 횡보
-    if (rangePct <= 0.30)      { priceZone = '매수 추천 구간'; priceColor = 'bullish'; }
-    else if (rangePct >= 0.70) { priceZone = '매도 추천 구간'; priceColor = 'bearish'; }
-    else                       { priceZone = '관망 구간';      priceColor = 'neutral'; }
+    const ready = analysis.entry_confidence === 'immediate';
+    nTitle = ready ? '분할 진입 가능' : '진입 추천가까지 대기'; nTone = ready ? 'bull' : 'neu';
+    if (plan.entry) nLines.push(`진입 추천가 ${f(plan.entry)} (현재가 대비 ${_stPct((plan.entry - plan.current) / plan.current * 100)}) · 손익비 ${rr(plan.rr_entry)}`);
+    nLines.push(`손절 ${f(plan.stop.price)} (${_stPct(plan.stop.pct)}) · 목표 ${f(plan.upper.low)}~${f(plan.upper.high)} (${_stPct(plan.upper.pct_low)})`);
+    nLines.push(ready ? '한 번에 사지 말고 2~3번에 나눠 들어가세요.' : `주요 지지 ${f(plan.support.high)}(${plan.support.basis}) 부근까지 눌릴 때 나눠 사는 편이 유리해요.`);
+    if (analysis.overheat) nLines.push('단기 과열 상태라 추격 매수는 피하고 눌림을 기다리세요.');
   }
 
-  let rsiMsg = '';
-  const rsiNum = parseFloat(rsi);
-  if (rsiNum < 30)      rsiMsg = '⚠️ RSI 과매도 — 반등 가능성';
-  else if (rsiNum > 70) rsiMsg = '⚠️ RSI 과매수 — 조정 가능성';
-  else                  rsiMsg = '✅ RSI 정상 범위';
+  // 기존 보유자
+  let hTitle, hTone, hLines = [];
+  if (plan.stop.broken) {
+    hTitle = '손절 기준 이탈 · 비중 축소'; hTone = 'bear';
+    hLines.push(`종가가 손절선(${f(plan.stop.original)}) 아래예요. 원칙대로라면 정리, 최소한 반등 때 비중을 줄이세요.`);
+    hLines.push(`다음 방어선 ${f(plan.stop.price)} (${_stPct(plan.stop.pct)}) 이탈 시 남은 물량도 정리를 고려하세요.`);
+  } else if (isRes) {
+    hTitle = '반등 시 비중 축소'; hTone = 'neu';
+    hLines.push(`${upName} ${f(plan.upper.low)}~${f(plan.upper.high)} (${_stPct(plan.upper.pct_low)}) 에서 일부 매도해 비중을 줄이세요.`);
+    hLines.push(`주요 지지 ${f(plan.support.high)} (${plan.support.basis}, ${_stPct(plan.support.pct)}) 이탈 시 추가 축소.`);
+    hLines.push(`손절 기준 ${f(plan.stop.price)} (${_stPct(plan.stop.pct)}) 종가 이탈 시 정리.`);
+  } else {
+    hTitle = '보유 · 분할 익절'; hTone = 'bull';
+    hLines.push(`${upName} ${f(plan.upper.low)}~${f(plan.upper.high)} (${_stPct(plan.upper.pct_low)}) 도달 시 절반 익절.`);
+    hLines.push(`익절 후 남은 물량은 손절선을 주요 지지 ${f(plan.support.high)} 로 올려 수익을 지키세요.`);
+    hLines.push(`손절 기준 ${f(plan.stop.price)} (${_stPct(plan.stop.pct)}) 종가 이탈 시 정리.`);
+    if (analysis.overheat) hLines.push('단기 과열 구간이라 일부 차익 실현도 괜찮아요.');
+  }
 
-  const trendLabel = {
-    'strong-uptrend':   { text: '강한 상승 추세 ↑↑', cls: 'trend-up' },
-    'uptrend':          { text: '상승 추세 ↑',        cls: 'trend-up' },
-    'sideways':         { text: '횡보',               cls: 'trend-side' },
-    'downtrend':        { text: '하락 추세 ↓',        cls: 'trend-down' },
-    'strong-downtrend': { text: '강한 하락 추세 ↓↓', cls: 'trend-down' },
-  }[trend] || { text: '횡보', cls: 'trend-side' };
-
-  const new52wHigh    = analysis.new_52w_high;
-  const near52wHigh   = analysis.near_52w_high;
-  const near52wLow    = analysis.near_52w_low;
-  const recentGolden  = analysis.recent_golden;
-  const recentDead    = analysis.recent_dead;
-  const bbExpanding   = analysis.bb_expanding;
-  const bbContracting = analysis.bb_contracting;
-  const volUp         = analysis.vol_up_confirm;
-  const volDown       = analysis.vol_down_confirm;
-
-  const highBadge   = new52wHigh  ? `<span class="badge-52w high">🏆 52주 신고가</span>`
-                    : near52wHigh ? `<span class="badge-52w near-high">📈 신고가 근방</span>`
-                    : near52wLow  ? `<span class="badge-52w low">📉 52주 신저가 근방</span>`
-                    : '';
-  const crossBadge  = recentGolden ? `<span class="badge-trend golden">✨ 골든크로스</span>`
-                    : recentDead   ? `<span class="badge-trend dead">💀 데드크로스</span>`
-                    : '';
-  const bbBadge     = bbExpanding   ? `<span class="badge-trend bb-exp">↔ 밴드 확장</span>`
-                    : bbContracting ? `<span class="badge-trend bb-con">→← 밴드 수축</span>`
-                    : '';
-  const volBadge    = volUp   ? `<span class="badge-trend vol-up">📊 거래량 동반 상승</span>`
-                    : volDown ? `<span class="badge-trend vol-down">📊 거래량 동반 하락</span>`
-                    : '';
+  const rows = [
+    ['손절 기준', f(plan.stop.price), _stPct(plan.stop.pct), plan.stop.broken ? `기존 ${f(plan.stop.original)} 이탈` : '종가 기준 이탈 시 정리'],
+    ['주요 지지', plan.support.low < plan.support.high ? `${f(plan.support.low)}~${f(plan.support.high)}` : f(plan.support.high), _stPct(plan.support.pct), plan.support.basis],
+    ['현재가', f(plan.current), '', _TREND_TXT[trend] || ''],
+    [upName, `${f(plan.upper.low)}~${f(plan.upper.high)}`, `${_stPct(plan.upper.pct_low)} ~ ${_stPct(plan.upper.pct_high)}`, isRes ? '반등 때 매물이 나오는 자리' : '분할 익절 구간'],
+  ];
+  const scen = (title, sub, tone, lines) => `
+    <section class="st-card">
+      <div class="st-card-h"><span class="st-card-k">${sub}</span><span class="tc-stat tc-${tone}"><i></i>${title}</span></div>
+      <ul class="st-list">${lines.map((l) => `<li>${l}</li>`).join('')}</ul>
+    </section>`;
 
   el.innerHTML = `
-  <div class="zones-wrap">
-    <div class="zones-header">
-      <span class="zones-current-price">현재가 <strong>${fmt(price)}</strong></span>
-      <span class="trend-badge ${trendLabel.cls}">${trendLabel.text}</span>
-      ${highBadge}${crossBadge}${bbBadge}${volBadge}
-      <span class="zones-rsi-badge">${rsiMsg}</span>
+    <div class="st-head">
+      <div class="st-head-l">
+        <h3 class="st-title">가격 구간 맵</h3>
+        <div class="st-tags">${tags.map((t) => `<span class="st-tag">${t}</span>`).join('')}</div>
+      </div>
+      <a class="st-buy" href="${pb.href}" title="${pb.withPlan ? '목표가·손절가를 채운 모의 매수 창을 엽니다' : '모의 매수 창을 엽니다'}">
+        이 구간으로 모의 매수<span>${pb.withPlan ? '목표·손절 자동 채움' : '진입 비추천 · 목표·손절 없이 열림'}</span></a>
     </div>
-
-    <div class="zones-list">
-      <div class="zone-row zone-stop">
-        <div class="zone-icon-col">🛑</div>
-        <div class="zone-content">
-          <div class="zone-title-row">
-            <span class="zone-name">손절 구간</span>
-            <span class="zone-price-range">${fmt(stop)} 이하</span>
-          </div>
-          <div class="zone-explanation">이 가격 아래로 떨어지면 더 큰 손실을 막기 위해 매도를 고려하세요. 원칙을 지키는 게 중요해요.</div>
-        </div>
-      </div>
-
-      <div class="zone-row zone-buy">
-        <div class="zone-icon-col">${isAvoid ? '⚪' : '🟢'}</div>
-        <div class="zone-content">
-          <div class="zone-title-row">
-            <span class="zone-name">${isAvoid ? '1개월 저점 구간 (참고)' : '매수 추천 구간'}</span>
-            <span class="zone-price-range">${fmt(entryLow)} ~ ${fmt(entryHigh)}</span>
-          </div>
-          <div class="zone-explanation">${isAvoid
-            ? `최근 한 달 저점 부근이에요. 다만 지금은 종합 판단이 <strong>진입 비추천</strong>이라, 이 구간에 있어도 바로 사기보다 추세 전환 신호(MA 골든크로스, RSI 회복 등)를 먼저 확인하세요.`
-            : `최근 한 달 저점 부근이에요. 이 구간으로 주가가 내려오면 분할 매수를 고려해보세요. 한 번에 전액 투자하기보다 2~3번에 나눠 사면 리스크를 줄일 수 있어요.`}</div>
-        </div>
-      </div>
-
-      <div class="zone-row zone-current ${priceColor}">
-        <div class="zone-icon-col">📍</div>
-        <div class="zone-content">
-          <div class="zone-title-row">
-            <span class="zone-name">현재 위치 <span class="zone-badge ${priceColor}">${priceZone}</span></span>
-            <span class="zone-price-range">${fmt(price)}</span>
-          </div>
-          <div class="zone-explanation">${_getZoneAdvice(priceZone, analysis)}${isAvoid && priceColor === 'bullish'
-            ? ' 다만 종합 판단은 <strong>진입 비추천</strong>이라 신규 매수는 신중하게 접근하세요.' : ''}</div>
-        </div>
-      </div>
-
-      <div class="zone-row zone-sell">
-        <div class="zone-icon-col">💰</div>
-        <div class="zone-content">
-          <div class="zone-title-row">
-            <span class="zone-name">매도 추천 구간 (목표가)</span>
-            <span class="zone-price-range">${fmt(targetLow)} ~ ${fmt(targetHigh)}</span>
-          </div>
-          <div class="zone-explanation">목표가 근처에서 보유 물량의 절반씩 나눠 파는 것을 추천해요. 한 번에 전량 매도하면 추가 상승을 놓칠 수 있어요.</div>
-        </div>
-      </div>
+    ${_stMap(plan, krw)}
+    <div class="st-rows">${rows.map(([k, v, p, n], i) => `
+      <div class="st-row${i === 2 ? ' st-row-now' : ''}"><span class="st-k">${k}</span><b class="st-v">${v}</b><span class="st-p">${p}</span><span class="st-n">${n}</span></div>`).join('')}
     </div>
-
-    ${(() => {
-      // 신규 매수자 관점 계산
-      let nba = null;
-      if (price <= stop) {
-        nba = { action: '신규 매수 비추천', color: 'bearish',
-          reason: `손절선(${fmt(stop)}) 아래로 내려왔어요. 반등 후 지지선 회복을 확인하고 진입을 고려하세요.` };
-      } else if (trend === 'strong-uptrend' || trend === 'uptrend') {
-        if (rangePct <= 0.35)
-          nba = { action: '신규 매수 적기 ✓', color: 'bullish',
-            reason: `상승 추세 속 눌림목 구간이에요. 분할 매수하기 좋은 타이밍이에요. 목표가 ${fmt(targetLow)} 부근에서 절반 익절, 손절은 ${fmt(stop)} 이탈 시 적용하세요.` };
-        else if (rangePct >= 0.80)
-          nba = { action: '눌림목 대기 추천', color: 'neutral',
-            reason: `상승 추세이지만 1개월 고점 부근이에요. ${fmt(entryLow)}~${fmt(entryHigh)} 구간으로 내려오면 분할 매수를 고려하세요.` };
-        else
-          nba = { action: '소량 선진입 가능', color: 'bullish',
-            reason: `상승 추세가 유효해요. 추격 매수보다 투자금의 1/3씩 분할 진입을 추천해요. ${fmt(entryHigh)} 이하 눌림목에서 추가 매수 기회를 노리세요.` };
-      } else if (trend === 'strong-downtrend' || trend === 'downtrend') {
-        if (rangePct <= 0.30)
-          nba = { action: '관망 후 전환 신호 확인', color: 'neutral',
-            reason: `하락 추세 저점 부근이에요. 추세 전환 신호(MA 골든크로스, RSI 30 이상 회복 등)가 나올 때 진입하는 게 안전해요.` };
-        else
-          nba = { action: '신규 진입 비추천', color: 'bearish',
-            reason: `하락 추세가 이어지고 있어요. 저점 확인 전 진입은 손실 위험이 높아요. 추세가 전환될 때까지 관망을 강력히 추천해요.` };
-      } else {
-        if (rangePct <= 0.30)
-          nba = { action: '분할 매수 추천', color: 'bullish',
-            reason: `횡보 구간 지지선 부근이에요. ${fmt(entryLow)}~${fmt(entryHigh)}에서 분할 매수하고 ${fmt(targetLow)} 부근에서 익절하는 전략을 추천해요.` };
-        else if (rangePct >= 0.70)
-          nba = { action: '눌림목 대기 추천', color: 'neutral',
-            reason: `횡보 구간 저항선 부근이에요. ${fmt(entryLow)}~${fmt(entryHigh)} 지지선 근처로 내려올 때 진입하는 전략이 유리해요.` };
-        else
-          nba = { action: '매수 구간 대기', color: 'neutral',
-            reason: `횡보 구간 중반이에요. 매수 추천 구간(${fmt(entryLow)}~${fmt(entryHigh)})까지 내려오면 분할 매수를 고려하세요.` };
-      }
-      if (isAvoid && nba.color === 'bullish') {
-        nba = { action: '관망 권장', color: 'neutral',
-          reason: `가격 위치만 보면 매수를 고려할 만한 자리지만, 종합 판단은 진입 비추천이에요(추세가 약하거나 손익비 부족). 추세가 강해지거나 손익비가 개선될 때까지 기다리는 게 안전해요.` };
-      }
-      const cls = nba.color === 'bullish' ? 'nba-bullish' : nba.color === 'bearish' ? 'nba-bearish' : 'nba-neutral';
-      return `
-    <div class="new-buyer-advice ${cls}">
-      <div class="nba-header">📊 신규 매수자 관점 — 지금 진입한다면?</div>
-      <div class="nba-action">${nba.action}</div>
-      <div class="nba-reason">${nba.reason}</div>
-    </div>`;
-    })()}
-
-    <div class="zones-guide">
-      <h4 class="zones-guide-title">📚 초보자를 위한 매매 가이드</h4>
-      <div class="zones-guide-grid">
-        <div class="guide-card buy-guide">
-          <div class="guide-card-title">✅ 언제 살까요?</div>
-          <div class="guide-card-body">${isAvoid
-            ? `지금은 종합 판단이 <strong>진입 비추천</strong>이에요. 추세 전환 신호(MA 골든크로스, RSI 30 이상 회복 등)가 확인된 뒤 <strong>${fmt(entryLow)} ~ ${fmt(entryHigh)}</strong> 구간(최근 1개월 저점 부근)에서 분할 매수를 고려하세요.`
-            : `현재가가 <strong>${fmt(entryLow)} ~ ${fmt(entryHigh)}</strong> 구간(최근 1개월 저점 부근)에 오거나 RSI가 40 이하로 내려오면 분할 매수를 고려하세요. 급등하는 종목을 쫓아가며 사는 건 위험해요.`}</div>
-        </div>
-        <div class="guide-card sell-guide">
-          <div class="guide-card-title">💰 언제 팔까요?</div>
-          <div class="guide-card-body">현재가가 <strong>${fmt(targetLow)} ~ ${fmt(targetHigh)}</strong> 구간(최근 1개월 고점 부근)에 오면 절반씩 분할 매도를 추천해요. RSI가 70을 넘으면 추가 상승보다 조정 가능성을 고려하세요.</div>
-        </div>
-        <div class="guide-card stop-guide">
-          <div class="guide-card-title">🛑 손절 기준은?</div>
-          <div class="guide-card-body"><strong>${fmt(stop)}</strong>(최근 저점과 변동폭(ATR)으로 계산한 손절선) 아래로 떨어지면 지지선이 무너진 신호예요. 추가 하락 가능성이 높으니 손실이 커지기 전에 매도하는 게 현명해요.</div>
-        </div>
-        <div class="guide-card split-guide">
-          <div class="guide-card-title">⚖️ 분할 매매란?</div>
-          <div class="guide-card-body">한 번에 전액 투자하지 말고 2~3번에 나눠 매수·매도하는 방법이에요. 평균 단가를 낮추고 리스크를 줄이는 가장 기본적인 투자 전략이에요.</div>
-        </div>
-      </div>
+    <div class="st-scen">
+      ${scen(nTitle, '신규 진입자 대응', nTone, nLines)}
+      ${scen(hTitle, '기존 보유자 대응', hTone, hLines)}
     </div>
-  </div>`;
+    <p class="st-note">최근 1개월 가격·이동평균·변동폭(ATR)으로 계산한 참고용 구간이에요. 투자 판단의 책임은 본인에게 있어요.</p>`;
 }
 
 // ── 수익률 트래커 ─────────────────────────────────────────

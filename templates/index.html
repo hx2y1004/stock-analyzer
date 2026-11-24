@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=102" />
+  <link rel="stylesheet" href="/static/css/style.css?v=103" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -377,15 +377,17 @@
       <div class="analysis-tabs">
         <button class="analysis-tab active" data-tab="technical" onclick="switchDetailTab('technical')">기술적 분석</button>
         <button class="analysis-tab" data-tab="fundamental" onclick="switchDetailTab('fundamental')">투자 판단</button>
-        <button class="analysis-tab hidden" id="valuationTabBtn" data-tab="valuation" onclick="switchDetailTab('valuation')">밸류에이션</button>
+        <button class="analysis-tab" id="valuationTabBtn" data-tab="valuation" onclick="switchDetailTab('valuation')">밸류에이션</button>
+        <button class="analysis-tab" data-tab="strategy" onclick="switchDetailTab('strategy')">매매 전략</button>
       </div>
 
       <!-- 기술적 분석 = 지표 + 매수/매도 구간 -->
       <div id="technicalContainer">
         <div id="detailList" class="ta-wrap"></div>
-        <div class="detail-subhead">📍 매수 / 매도 구간</div>
-        <div id="zonesList" class="detail-list"></div>
       </div>
+
+      <!-- 매매 전략: 가격 구간 맵 · 신규 진입자 / 기존 보유자 대응 -->
+      <div id="strategyPanel" class="hidden"></div>
 
       <div id="fundamentalContainer" class="hidden">
         <div id="scorecardPanel" class="scorecard-panel hidden"></div>
@@ -394,6 +396,7 @@
 
       <!-- 밸류에이션 (DCF) -->
       <div id="valuationPanel" class="hidden">
+      <p id="dcfEmpty" class="no-data dcf-empty hidden">이 종목은 현금흐름 자료가 부족해 DCF 밸류에이션을 계산할 수 없습니다.</p>
       <div class="dcf-card hidden" id="dcfCard">
       <div class="dcf-head">
         <span id="dcfReliability" class="dcf-rel"></span>
@@ -568,6 +571,6 @@
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=8"></script>
   <script src="/static/js/hsort.js?v=1"></script>
-  <script src="/static/js/main.js?v=90"></script>
+  <script src="/static/js/main.js?v=91"></script>
 </body>
 </html>
