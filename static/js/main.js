@@ -1085,8 +1085,9 @@ function renderPositionCard(position, stock) {
   const profitAmt = (position.current_price && position.purchase_price)
     ? (position.current_price - position.purchase_price) * position.quantity
     : null;
+  // 부호는 통화 기호 앞에: -$381.00 (예전 '$-381.00')
   const profitStr = profitAmt != null
-    ? `${profitAmt >= 0 ? '+' : ''}${fmtP(Math.round(profitAmt))}`
+    ? `${profitAmt >= 0 ? '+' : '-'}${fmtP(Math.abs(cur === 'KRW' ? Math.round(profitAmt) : profitAmt))}`
     : '';
 
   // 매입→현재→목표 진행률 (analysis 있으면)
@@ -1572,6 +1573,23 @@ function _setVerdictPaperBuy(analysis, stock) {
   a.classList.remove('hidden');
 }
 
+// 종합 판단 근거 1줄: 기술 N점 (강세/중립/약세) · 펀더멘털 N점 (등급)
+function _renderScoreBreakdown(analysis) {
+  const el = document.getElementById('scoreBreakdown');
+  if (!el) return;
+  const b = analysis && analysis.score_breakdown;
+  if (!b || !b.tech) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const t = b.tech, f = b.fund;
+  const fBand = f ? (f.score >= 70 ? 'bull' : f.score >= 45 ? 'mid' : 'bear') : 'na';
+  const w = b.weights || {};
+  el.innerHTML = `
+    <div class="sb-item sb-${t.tone}" title="하단 기술적 분석 게이지와 같은 값 · 비중 ${Math.round((w.tech || 0) * 100)}%">
+      <span class="sb-k">기술</span><b>${t.score}점</b><span class="sb-tag">${t.label}</span></div>
+    <div class="sb-item sb-${fBand}" title="투자 판단 4팩터 종합 · 비중 ${Math.round((w.fund || 0) * 100)}%">
+      <span class="sb-k">펀더멘탈</span>${f ? `<b>${f.score}점</b><span class="sb-tag">${f.grade || '—'}</span>` : '<b class="sb-na">자료 없음</b>'}</div>`;
+  el.classList.remove('hidden');
+}
+
 function renderVerdict(analysis, stock) {
   const badge = document.getElementById('verdictBadge');
   badge.textContent = analysis.verdict;
@@ -1588,6 +1606,13 @@ function renderVerdict(analysis, stock) {
   document.getElementById('targetPrice').textContent =
     (_noEntry && analysis.target_price == null) ? '관망' : fmt(analysis.target_price, cur);
   document.getElementById('stopLoss').textContent    = fmt(analysis.stop_loss,    cur);
+  // 현재가 대비 거리
+  const _cp = Number(stock.current_price ?? stock.price);
+  const _dist = (v) => (v != null && _cp > 0 ? `${v >= _cp ? '+' : ''}${((v / _cp - 1) * 100).toFixed(1)}%` : '');
+  const _sd = document.getElementById('stopDist'), _td = document.getElementById('targetDist');
+  if (_sd) _sd.textContent = _dist(analysis.stop_loss) ? `현재가 대비 ${_dist(analysis.stop_loss)}` : '';
+  if (_td) _td.textContent = (analysis.target_price != null && _dist(analysis.target_price)) ? `현재가 대비 ${_dist(analysis.target_price)}` : '';
+  _renderScoreBreakdown(analysis);
   _setVerdictPaperBuy(analysis, stock);
 
   // ── Plan D: 추천 등급 + R:R 정보 표시 ──
@@ -2257,7 +2282,8 @@ function _scBand(v) { return v == null ? 'na' : v >= 70 ? 'hi' : v >= 45 ? 'mid'
 function _scBadge(f) {
   if (!f) return '';
   const v = f.score;
-  return `<span class="sc-badge sc-b-${_scBand(v)}">${v == null ? '—' : Math.round(v) + '점'} · ${f.grade || '—'}</span>`;
+  const word = v == null ? '' : v >= 70 ? '우수' : v >= 45 ? '보통' : '주의';
+  return `<span class="sc-badge sc-b-${_scBand(v)}" title="${f.grade || ''}">${v == null ? '—' : `${word} ${Math.round(v)}`}</span>`;
 }
 function _sgn(v) { return v == null ? '<span class="m-na">—</span>' : `${v >= 0 ? '+' : ''}${(+v).toFixed(1)}%`; }
 
@@ -2733,9 +2759,9 @@ function renderStrategy(analysis, stock) {
 
   const rows = [
     ['손절 기준', f(plan.stop.price), _stPct(plan.stop.pct), plan.stop.broken ? `기존 ${f(plan.stop.original)} 이탈` : '종가 기준 이탈 시 정리'],
-    ['주요 지지', plan.support.low < plan.support.high ? `${f(plan.support.low)}~${f(plan.support.high)}` : f(plan.support.high), _stPct(plan.support.pct), plan.support.basis],
+    ['주요 지지', plan.support.low < plan.support.high ? `${f(plan.support.low)} ~ ${f(plan.support.high)}` : f(plan.support.high), _stPct(plan.support.pct), plan.support.basis],
     ['현재가', f(plan.current), '', _TREND_TXT[trend] || ''],
-    [upName, `${f(plan.upper.low)}~${f(plan.upper.high)}`, `${_stPct(plan.upper.pct_low)} ~ ${_stPct(plan.upper.pct_high)}`, isRes ? '반등 때 매물이 나오는 자리' : '분할 익절 구간'],
+    [upName, `${f(plan.upper.low)} ~ ${f(plan.upper.high)}`, `${_stPct(plan.upper.pct_low)} ~ ${_stPct(plan.upper.pct_high)}`, isRes ? '반등 때 매물이 나오는 자리' : '분할 익절 구간'],
   ];
   const scen = (title, sub, tone, lines) => `
     <section class="st-card">
@@ -2754,7 +2780,7 @@ function renderStrategy(analysis, stock) {
     </div>
     ${_stMap(plan, krw)}
     <div class="st-rows">${rows.map(([k, v, p, n], i) => `
-      <div class="st-row${i === 2 ? ' st-row-now' : ''}"><span class="st-k">${k}</span><b class="st-v">${v}</b><span class="st-p">${p}</span><span class="st-n">${n}</span></div>`).join('')}
+      <div class="st-row${i === 2 ? ' st-row-now' : ''}"><span class="st-k">${k}</span><b class="st-v">${v}</b><span class="st-p ${i === 0 ? 'down' : (i === 3 && !isRes) ? 'up' : ''}">${p}</span><span class="st-n">${n}</span></div>`).join('')}
     </div>
     <div class="st-scen">
       ${scen(nTitle, '신규 진입자 대응', nTone, nLines)}
