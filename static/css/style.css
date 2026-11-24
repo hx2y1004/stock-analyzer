@@ -6627,3 +6627,58 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .verdict-card .target-label { grid-column: 1; grid-row: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .verdict-card .target-dist { grid-column: 2; grid-row: 1; margin: 0; font-size: 11.5px; }
 .verdict-card .target-value { grid-column: 1 / -1; grid-row: 2; }
+
+/* ── F-Score 배지 · 도트 · 체크 칩 (PR #78) ─────────────────────── */
+.fs-badge { font-size: 12.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fs-badge.fs-hi  { color: #34d399; background: rgba(52,211,153,.14); }
+.fs-badge.fs-mid { color: #60a5fa; background: rgba(96,165,250,.14); }
+.fs-badge.fs-lo  { color: #f87171; background: rgba(248,113,113,.14); }
+.fj-dot { width: 13px; height: 13px; border: 1.5px solid #4b5563; background: transparent; }
+.fj-dot.on { background: #34d399; border-color: #34d399; box-shadow: 0 0 0 2px rgba(52,211,153,.15); }
+.fj-dot.off { background: #161b22; border-color: #4b5563; }
+.fj-dot.na { border-style: dashed; opacity: .5; }
+.fs-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.fs-chip { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-chip i { font-style: normal; font-weight: 800; flex: none; width: 1em; text-align: center; }
+.fs-chip.fs-ok { color: #a7f3d0; background: rgba(52,211,153,.10); }
+.fs-chip.fs-ok i { color: #34d399; }
+.fs-chip.fs-no { color: #fca5a5; background: rgba(248,113,113,.08); }
+.fs-chip.fs-no i { color: #f87171; }
+.fs-chip.fs-na { color: var(--text2); background: rgba(139,148,158,.08); }
+@media (max-width: 480px) { .fs-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ── 모의투자 보유 종목: PC 1줄 표 / 모바일 카드 (PR #78) ─────────────── */
+.positions-list .tpt { display: flex; }
+.positions-list .tr-cards { display: none; flex-direction: column; gap: 8px; }
+.tpt-head, .tpt-row { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1.05fr) minmax(0, 1.25fr) 196px; }
+.tpt-head > span:nth-child(5) { text-align: center; }
+.tpt-row { row-gap: 4px; }
+.tpt-row .pft-qty .pft-sub b { font-weight: 700; }
+.tpt-row .pft-qty .pft-sub b.pf-up { color: var(--green); }
+.tpt-row .pft-qty .pft-sub b.pf-down { color: var(--red); }
+.pft-pl.flat, .pft-pl.flat .pft-sub { color: var(--text2); }
+.tpt-note { display: inline-flex; vertical-align: -2px; margin-left: 5px; color: var(--text2); }
+.tpt-note-line { grid-column: 1 / -1; font-size: 12px; color: var(--text2); padding-left: 42px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tpt-exit { min-width: 0; display: flex; justify-content: center; }
+.tpt-x { width: 100%; max-width: 170px; display: flex; flex-direction: column; gap: 4px; }
+.tpt-x-track { position: relative; height: 6px; border-radius: 999px; background: linear-gradient(90deg, rgba(248,81,73,.35), rgba(139,148,158,.25) 50%, rgba(63,185,80,.35)); }
+.tpt-x-fill { display: none; }
+.tpt-x-dot { position: absolute; top: 50%; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--text); border: 2px solid var(--bg2); }
+.tpt-x.near-t .tpt-x-dot { background: var(--green); }
+.tpt-x.near-s .tpt-x-dot { background: var(--red); }
+.tpt-x-lab { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tpt-x-lab .s, .tpt-x-one.s { color: var(--red); }
+.tpt-x-lab .t, .tpt-x-one.t { color: var(--green); }
+.tpt-x-one { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.tpt-none { color: var(--text2); }
+.tpt-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.tpt-acts .trade-action-btn { flex: 0 0 auto; height: 30px; padding: 0 10px; font-size: 12.5px; white-space: nowrap; }
+@media (max-width: 1100px) and (min-width: 769px) {
+  .tpt-head, .tpt-row { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr) 172px; column-gap: 10px; }
+  .tpt-acts .trade-action-btn { padding: 0 8px; font-size: 12px; }
+}
+@media (max-width: 768px) {
+  .positions-list .tpt { display: none; }
+  .positions-list .tr-cards { display: flex; }
+}
+.fj-tr em:empty { display: none; }
