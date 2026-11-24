@@ -1595,6 +1595,7 @@ function _setVerdictPaperBuy(analysis, stock) {
     withPlan = true;
   }
   a.href = '/trading?' + q.toString();
+  a.classList.toggle('muted', avoid);
   document.getElementById('verdictPaperBuySub').textContent = withPlan ? '목표·손절 자동 채움' : '';
   a.title = withPlan ? '분석의 목표가·손절가를 채운 모의 매수 창을 엽니다' : '모의 매수 창을 엽니다';
   a.classList.remove('hidden');
@@ -1639,8 +1640,8 @@ function renderVerdict(analysis, stock) {
   const _cp = Number(stock.current_price ?? stock.price);
   const _dist = (v) => (v != null && _cp > 0 ? `${v >= _cp ? '+' : ''}${((v / _cp - 1) * 100).toFixed(1)}%` : '');
   const _sd = document.getElementById('stopDist'), _td = document.getElementById('targetDist');
-  if (_sd) _sd.textContent = _dist(analysis.stop_loss) ? `현재가 대비 ${_dist(analysis.stop_loss)}` : '';
-  if (_td) _td.textContent = (analysis.target_price != null && _dist(analysis.target_price)) ? `현재가 대비 ${_dist(analysis.target_price)}` : '';
+  if (_sd) { _sd.textContent = _dist(analysis.stop_loss); _sd.title = '현재가 대비'; }
+  if (_td) { _td.textContent = analysis.target_price != null ? _dist(analysis.target_price) : ''; _td.title = '현재가 대비'; }
   _renderScoreBreakdown(analysis);
   _setVerdictPaperBuy(analysis, stock);
 
@@ -1661,24 +1662,30 @@ function renderVerdict(analysis, stock) {
       diff = (curPrice - analysis.entry_price) / curPrice * 100;
     }
     const confMap = {
-      immediate: { dot: '🟢', txt: '즉시 진입 가능' },
-      wait:      { dot: '🟡', txt: `약 ${diff.toFixed(1)}% 풀백까지 limit 주문` },
-      patient:   { dot: '🟠', txt: `약 ${diff.toFixed(1)}% 풀백 대기 (시간 필요)` },
+      immediate: { txt: '즉시 진입 가능' },
+      wait:      { txt: `약 ${diff.toFixed(1)}% 풀백까지 limit 주문` },
+      patient:   { txt: `약 ${diff.toFixed(1)}% 풀백 대기 (시간 필요)` },
     };
     const cInfo = confMap[conf] || null;
 
     let strongDesc = '추세 강세';
-    if (cInfo) strongDesc = `${cInfo.dot} ${cInfo.txt}`;
+    if (cInfo) strongDesc = cInfo.txt;
 
     let neutralDesc = 'MA50 또는 풀백까지 대기';
-    if (conf === 'patient') neutralDesc = `${confMap.patient.dot} 풀백 대기 필요 (${diff.toFixed(1)}%)`;
-    else if (conf === 'wait') neutralDesc = `${confMap.wait.dot} ${diff.toFixed(1)}% 풀백까지 limit`;
-    else if (conf === 'immediate') neutralDesc = `${confMap.immediate.dot} 현재 가격대 매수 가능`;
+    if (conf === 'patient') neutralDesc = `풀백 대기 필요 (${diff.toFixed(1)}%)`;
+    else if (conf === 'wait') neutralDesc = `${diff.toFixed(1)}% 풀백까지 limit`;
+    else if (conf === 'immediate') neutralDesc = '현재 가격대 매수 가능';
 
+    // 아이콘: 컬러 이모지 대신 currentColor SVG
+    const _ic = {
+      up:   '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 14l5-5 3 3 6-6M12 6h5v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      wait: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4l2.5 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+      warn: '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 3l7.5 13h-15z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8v3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="10" cy="13.9" r="0.95" fill="currentColor"/></svg>',
+    };
     const recMap = {
-      strong:  { cls: 'strong',  icon: '🔥', label: '강한 매수 신호', desc: strongDesc },
-      neutral: { cls: 'neutral', icon: '⚖️', label: '풀백 대기 권장', desc: neutralDesc },
-      avoid:   { cls: 'avoid',   icon: '⚠️', label: '진입 비추천',
+      strong:  { cls: 'strong',  icon: _ic.up,   label: '강한 매수 신호', desc: strongDesc },
+      neutral: { cls: 'neutral', icon: _ic.wait, label: '풀백 대기 권장', desc: neutralDesc },
+      avoid:   { cls: 'avoid',   icon: _ic.warn, label: '진입 비추천',
                  desc: '추세가 약하거나 손익비 부족 — 관망 권장' },
     };
     const r = recMap[rec] || recMap.neutral;
@@ -1696,9 +1703,9 @@ function renderVerdict(analysis, stock) {
 
   // R:R 비율 + 손절거리 메타
   const metaItems = [];
-  if (rr != null)  metaItems.push(`📊 R:R <strong>1:${rr.toFixed(2)}</strong>`);
-  if (sdp != null) metaItems.push(`📉 손절 거리 <strong>${sdp}%</strong>`);
-  if (sdp != null && sdp > 15) metaItems.push(`<span class="meta-warn">⚠ 변동성 큼</span>`);
+  if (rr != null)  metaItems.push(`R:R <strong>1:${rr.toFixed(2)}</strong>`);
+  if (sdp != null) metaItems.push(`손절 거리 <strong>${sdp}%</strong>`);
+  if (sdp != null && sdp > 15) metaItems.push(`<span class="meta-warn">변동성 큼</span>`);
   if (metaItems.length) {
     meta.innerHTML = metaItems.join(' · ');
     meta.classList.remove('hidden');

@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 종합 분석 판단 카드 정돈 (PR #77)
+- 제목과 판정 배지를 한 줄(`.vc-head`). 기술·펀더멘탈·매크로는 한 컨테이너 3등분(안쪽 세로선만), 아래 배너와 12px 간격.
+- 진입 배너: 컬러 이모지 → currentColor SVG(상승·시계·경고), 좌측 굵은 막대 제거, 은은한 틴트. R:R 줄 이모지도 제거.
+- 진입/목표/손절: 거리 % 를 라벨 줄 오른쪽에(예: `손절가 -9.7%`), 세 칸 모두 2줄 · 같은 높이.
+- 모의 매수 버튼: 진입 비추천(`avoid`)이면 `.muted`(무채색 보조), 그 외 초록 강조 유지.
+- 캐시: main.js v96, style.css v108, sa-v74.
+
 ### 거시 지표 3종 · 매크로 국면 보정 · WACC 실시간 Rf (PR #76)
 - `analysis/macro.py` (네트워크 없음): `parse_quote` · `macro_regime` · `risk_free_from_tnx` · `macro_line`.
 - app.py `_market_overview_payload()`: 홈 시황과 같은 `yf.download` 한 번에 `^TNX` · `GC=F` · `DX-Y.NYB` 추가 (같은 1분 캐시). 티커별 실패는 그 지표만 None.
