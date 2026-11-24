@@ -7198,7 +7198,15 @@ def disclosures_refresh():
     """소유자 전용: 주기와 상관없이 지금 수집 (운영 점검·로컬 확인용)"""
     if not _is_toss_owner():
         return jsonify({"error": "권한이 없습니다"}), 403
-    names = [n for n in (request.get_json(silent=True) or {}).get("sources") or [] if n in ("dart", "sec")] or None
+    body = request.get_json(silent=True) or {}
+    if body.get("backfill") or request.args.get("backfill") in ("1", "true"):
+        # 최근 14일 백필 (알림 없음). 이 요청에서 최대 90초 하고, 남은 건 스케줄러 tick 이 이어서 한다
+        markets = [m for m in (body.get("markets") or ["KR", "US"]) if m in ("KR", "US")] or ["KR", "US"]
+        disclosures.start_backfill(markets)
+        res = disclosures.run(names=["-"], budget=90)          # 정기 수집기는 돌리지 않음
+        return jsonify({"ok": True, "backfill": {m: disclosures._backfilled[m] for m in markets}, "saved": res,
+                        "status": disclosures.STATUS})
+    names = [n for n in body.get("sources") or [] if n in ("dart", "sec")] or None
     res = disclosures.run(names=names, force=True)
     return jsonify({"ok": True, "saved": res, "status": disclosures.STATUS})
 
