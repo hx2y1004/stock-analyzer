@@ -1326,6 +1326,15 @@ def _scheduler_loop():
                             log(f"scheduler: {market} 배치 실패: {e}")
                         finally:
                             D["db"].session.remove()
+            # 공시·수주 레이더 (disclosures.py): 주기가 된 수집기만 돈다 (DART 15분 · SEC 30분). 한 번에 최대 40초
+            if D.get("disclosures_tick"):
+                try:
+                    D["disclosures_tick"]()
+                except Exception as e:
+                    D["db"].session.rollback()
+                    log(f"scheduler: 공시 수집 실패: {e}")
+                finally:
+                    D["db"].session.remove()
         except Exception as e:
             log(f"scheduler loop 오류: {e}")
         time.sleep(20)          # 정각에 가깝게 잡도록 20초마다 확인

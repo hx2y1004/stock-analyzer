@@ -264,6 +264,8 @@ class UserSignalSubscription(db.Model):
     scope          = db.Column(db.String(20), nullable=False, default="all")   # all | portfolio | watchlist
     min_confidence = db.Column(db.Integer, default=70)
     enabled        = db.Column(db.Boolean, default=True)
+    # 보유·관심종목 핵심 공시(수주·자사주·유상증자·내부자 매수·8-K) 알림. 봇 신호 알림(enabled)과 따로 켠다
+    disclosure_alerts = db.Column(db.Boolean, default=False)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at     = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -442,3 +444,23 @@ class DropHoldState(db.Model):
     released      = db.Column(db.Boolean, default=False)
     updated_at    = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     __table_args__ = (db.UniqueConstraint("kind", "target_id", name="uq_drop_hold"),)
+
+
+class DisclosureEvent(db.Model):
+    """공시·수주 레이더 (disclosures.py). 한국 DART · 미국 SEC EDGAR 핵심 공시 1건 = 1행. 30일 지나면 정리.
+    category: contract(수주·공급계약) | buyback(자사주 취득·소각) | offering(유상증자) | insider_buy(Form 4 장내 매수) | material_8k
+    sentiment: positive | negative | neutral. external_id 로 중복 저장을 막는다 (DART:접수번호 / SEC:accession)."""
+    __tablename__ = "disclosure_events"
+    id          = db.Column(db.Integer, primary_key=True)
+    market      = db.Column(db.String(4), nullable=False, index=True)        # KR | US
+    ticker      = db.Column(db.String(30), nullable=False, index=True)
+    name        = db.Column(db.String(200))
+    source      = db.Column(db.String(10), nullable=False)                   # DART | SEC (2차: G2B · USASPENDING)
+    category    = db.Column(db.String(20), nullable=False, index=True)
+    sentiment   = db.Column(db.String(10), nullable=False, default="neutral")
+    title       = db.Column(db.String(300), nullable=False)
+    summary     = db.Column(db.String(500))
+    source_url  = db.Column(db.String(500))
+    external_id = db.Column(db.String(120), nullable=False, unique=True)
+    disclosed_at = db.Column(db.DateTime, nullable=False, index=True)        # UTC
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow, index=True)

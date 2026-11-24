@@ -23,8 +23,9 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
 
   const S = { tab: 'screen', market: 'ALL', preset: '', meta: null, basket: store.get('scBasket', []), cmp: [], period: '6M', loggedIn: false,
-    tMarket: 'ALL', tPattern: 'all', trends: null, trendsLoading: false };
-  const TABS = ['screen', 'trends', 'compare'];
+    tMarket: 'ALL', tPattern: 'all', trends: null, trendsLoading: false, dMarket: 'ALL', dCat: 'ALL', dSeq: 0 };
+  const TABS = ['screen', 'trends', 'disclosures', 'compare'];
+  const D_CATS = ['ALL', 'contract', 'buyback', 'insider_buy', 'offering'];
 
   // ── URL ────────────────────────────────────────────────────────────────
   function readUrl() {
@@ -32,7 +33,8 @@
     const bt = document.body.dataset.tab;           // 서버가 ?tab= 으로 미리 정한 첫 탭 (새로고침 깜빡임 방지)
     S.tab = TABS.includes(bt) ? bt : TABS.includes(q.get('tab')) ? q.get('tab') : 'screen';
     const qm = (q.get('market') || '').toUpperCase();
-    if (['ALL', 'KR', 'US'].includes(qm)) { if (S.tab === 'trends') S.tMarket = qm; else S.market = qm; }
+    if (['ALL', 'KR', 'US'].includes(qm)) { if (S.tab === 'trends') S.tMarket = qm; else if (S.tab === 'disclosures') S.dMarket = qm; else S.market = qm; }
+    if (S.tab === 'disclosures' && D_CATS.includes(q.get('cat'))) S.dCat = q.get('cat');
     if (S.tab === 'trends' && ['all', 'perfect', 'breakout', 'stage2', 'high52'].includes(q.get('pattern'))) S.tPattern = q.get('pattern');
     if (q.get('preset')) S.preset = q.get('preset');
     const t = (q.get('tickers') || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
@@ -41,6 +43,7 @@
   function writeUrl() {
     const q = new URLSearchParams();
     if (S.tab === 'compare') { q.set('tab', 'compare'); if (S.cmp.length) q.set('tickers', S.cmp.join(',')); }
+    else if (S.tab === 'disclosures') { q.set('tab', 'disclosures'); if (S.dMarket !== 'ALL') q.set('market', S.dMarket); if (S.dCat !== 'ALL') q.set('cat', S.dCat); }
     else if (S.tab === 'trends') { q.set('tab', 'trends'); if (S.tMarket !== 'ALL') q.set('market', S.tMarket); if (S.tPattern !== 'all') q.set('pattern', S.tPattern); }
     else { if (S.market !== 'ALL') q.set('market', S.market); if (S.preset) q.set('preset', S.preset); }
     const u = location.pathname + (q.toString() ? '?' + q.toString().replace(/%2C/g, ',') : '');
@@ -60,6 +63,7 @@
     writeUrl();
     if (t === 'compare') loadCompare();
     if (t === 'trends' && !S.trends) loadTrends();
+    if (t === 'disclosures' && Date.now() - (S.dAt || 0) > 60000) loadDisclosures();   // 탭을 다시 열면 1분 지난 경우만 새로
   }
   $$('.sc-tab').forEach((b, i, all) => {
     b.addEventListener('click', () => selectTab(b.dataset.tab));
@@ -615,10 +619,78 @@
     if (!document.hidden && S.tab === 'trends' && S.trends) loadTrends();
   });
 
+  // ── 공시·수주 레이더 (DART · SEC EDGAR) ──────────────────────────────────
+  // 유형 배지: 호재 초록 / 주의 빨강 / 중립 회색 (sentiment 기준)
+  const D_LABEL = { contract: '수주', buyback: '자사주', offering: '유상증자 · 주의', insider_buy: '내부자 매수', material_8k: '8-K' };
+  function dTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return {};
+    const p = (n) => String(n).padStart(2, '0');
+    const mins = Math.round((Date.now() - d.getTime()) / 60000);
+    const rel = mins < 1 ? '방금' : mins < 60 ? `${mins}분 전` : mins < 1440 ? `${Math.floor(mins / 60)}시간 전` : `${Math.floor(mins / 1440)}일 전`;
+    return { abs: `${d.getMonth() + 1}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`, rel, iso: d.toISOString() };
+  }
+  function paintDsFilters() {
+    $$('#dsMarket button').forEach((x) => { const on = x.dataset.m === S.dMarket; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
+    $$('#dsCats button').forEach((x) => { const on = x.dataset.c === S.dCat; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
+  }
+  async function loadDisclosures() {
+    paintDsFilters();
+    S.dAt = Date.now();
+    const list = $('#dsList');
+    const my = ++S.dSeq;
+    list.classList.add('is-loading');
+    let d;
+    try {
+      const q = new URLSearchParams({ market: S.dMarket, category: S.dCat, days: '14', limit: '100' });
+      d = await (await fetch('/api/disclosures?' + q)).json();
+    } catch (e) { d = null; }
+    if (my !== S.dSeq) return;                                  // 필터를 빨리 바꾸면 마지막 요청만 그린다
+    list.classList.remove('is-loading');
+    if (!d) { list.innerHTML = '<div class="card ab-empty">불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.</div>'; return; }
+    const items = d.items || [];
+    $('#dsCount').textContent = items.length ? `${items.length}건` : '';
+    const st = d.status || {};
+    const runs = ['KR', 'US'].map((m) => (st[m] && st[m].last_run ? `${m === 'KR' ? 'DART' : 'SEC'} ${dTime(st[m].last_run).rel} 확인` : '')).filter(Boolean);
+    $('#dsAsof').textContent = `한국 OpenDART 15분 · 미국 SEC EDGAR 30분마다 확인 · 최근 14일${runs.length ? ' · ' + runs.join(' · ') : ''}`;
+    if (!items.length) {
+      const notes = ['KR', 'US'].map((m) => st[m] && st[m].note).filter(Boolean);
+      list.innerHTML = `<div class="card ab-empty">조건에 맞는 공시가 아직 없습니다.${notes.length ? ` <span class="ab-muted">(${esc(notes.join(' · '))})</span>` : ''}</div>`;
+      return;
+    }
+    list.innerHTML = items.map((e) => {
+      const t = dTime(e.disclosed_at);
+      const tone = e.sentiment === 'positive' ? 'pos' : e.sentiment === 'negative' ? 'neg' : 'neu';
+      const label = e.category === 'contract' && e.sentiment === 'negative' ? '계약 해지' : (D_LABEL[e.category] || e.category);
+      const tk = isKR(e.ticker) ? e.ticker.split('.')[0] : e.ticker;
+      const logo = window.renderStockLogo ? renderStockLogo(e.ticker, e.name, 'md') : '';
+      return `<article class="card ds-item ds-${tone}" data-t="${esc(e.ticker)}" data-c="${esc(e.category)}">
+        <div class="ds-top">${logo}
+          <div class="ds-id"><a href="/stock/${encodeURIComponent(e.ticker)}" class="sc-name">${esc(e.name || e.ticker)}</a>
+            <span class="ab-muted">${esc(tk)} · ${esc(e.source)}</span></div>
+          <span class="ds-badge ${tone}">${esc(label)}</span>
+        </div>
+        <div class="ds-title">${esc(e.title)}</div>
+        ${e.summary ? `<div class="ds-sum">${esc(e.summary)}</div>` : ''}
+        <div class="ds-foot">
+          <time datetime="${esc(t.iso || '')}" title="${esc(t.abs || '')}">${esc(t.abs || '')} · ${esc(t.rel || '')}</time>
+          <span class="ds-acts">
+            ${e.source_url ? `<a class="ds-src" href="${esc(e.source_url)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(e.name)} ${esc(e.source)} 공시 원문 (새 창)">원문 ↗</a>` : ''}
+            <button type="button" class="sc-star" data-t="${esc(e.ticker)}" data-n="${esc(e.name)}" aria-pressed="false" aria-label="${esc(e.name)} 관심종목">${STAR(false)}</button>
+          </span>
+        </div>
+      </article>`;
+    }).join('');
+    $$('.sc-star', list).forEach((b) => b.addEventListener('click', () => toggleStar(b)));
+    paintRowButtons();
+  }
+  $$('#dsMarket button').forEach((b) => b.addEventListener('click', () => { S.dMarket = b.dataset.m; b.blur(); writeUrl(); loadDisclosures(); }));
+  $$('#dsCats button').forEach((b) => b.addEventListener('click', () => { S.dCat = b.dataset.c; b.blur(); writeUrl(); loadDisclosures(); }));
+
   // ── 시작 ───────────────────────────────────────────────────────────────
   (async function init() {
     readUrl();
-    if (S.tab === 'trends') { selectTab('trends'); }        // 추세 셋업은 메타를 기다리지 않고 바로 표시
+    if (S.tab === 'trends' || S.tab === 'disclosures') { selectTab(S.tab); }   // 추세 셋업·공시는 메타를 기다리지 않고 바로 표시
     $$('#scMarket button').forEach((x) => { const on = x.dataset.m === S.market; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
     if (window.SAWatch && document.getElementById('notifyBell')) {
       try { await SAWatch.load(); S.loggedIn = true; } catch (e) { S.loggedIn = false; }

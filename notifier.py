@@ -225,6 +225,69 @@ def notify_user(user_id, kind, title, body, link, tag=None):
     return True
 
 
+# ── 공시·수주 레이더 알림 (disclosures.py → 새로 저장된 공시만) ─────────────────────────────
+DISC_LABEL = {("DART", "contract"): "DART 수주", ("DART", "buyback"): "DART 자사주", ("DART", "offering"): "DART 유상증자",
+              ("SEC", "insider_buy"): "SEC 내부자 매수", ("SEC", "material_8k"): "SEC 8-K"}
+
+
+def disclosure_receivers(tickers):
+    """공시 알림을 켠 사용자 중 그 종목을 보유(실제·모의)하거나 관심종목에 둔 사람 → {user_id: {ticker}}"""
+    Sub = D["UserSignalSubscription"]
+    want = {t.upper() for t in tickers}
+    out = {}
+    for sub in Sub.query.filter_by(disclosure_alerts=True).all():
+        mine = (_user_tickers(sub.user_id, "portfolio") | _user_tickers(sub.user_id, "watchlist")) & want
+        if mine:
+            out[sub.user_id] = mine
+    return out
+
+
+def disclosure_push(ev):
+    """푸시 1건: title 예 '[DART 수주] 삼성E&A · 단일판매·공급계약체결' → 누르면 종목 상세"""
+    label = DISC_LABEL.get((ev.source, ev.category), f"{ev.source} 공시")
+    tk = ev.ticker.split(".")[0] if ev.market == "KR" else ev.ticker
+    who = ev.name or tk
+    title = f"[{label}] {who} · {ev.title}"
+    return {"title": title[:120], "body": (ev.summary or "")[:180], "url": f"/stock/{ev.ticker}", "tag": f"disc-{ev.id}"}
+
+
+def dispatch_disclosures(events):
+    """새 공시 → 알림을 켠 보유·관심종목 사용자에게 인앱 + 웹 푸시. 한 번에 4건 이상이면 푸시는 요약 1건. → 인앱 저장 건수"""
+    try:
+        return _dispatch_disclosures(events or [])
+    except Exception as e:
+        D["db"].session.rollback()
+        log(f"공시 알림 실패: {e}")
+        return 0
+
+
+def _dispatch_disclosures(events):
+    if not events:
+        return 0
+    N, db = D["Notification"], D["db"]
+    recv = disclosure_receivers({e.ticker for e in events})
+    pushes, sent = {}, 0
+    for uid, mine in recv.items():
+        for ev in events:
+            if ev.ticker.upper() not in mine:
+                continue
+            p = disclosure_push(ev)
+            db.session.add(N(user_id=uid, kind="disclosure", title=p["title"][:200], body=(ev.summary or "")[:500],
+                             link=p["url"][:300]))
+            sent += 1
+            pushes.setdefault(uid, []).append({"kind": "disclosure", "payload": p})
+    db.session.commit()
+    for uid, items in list(pushes.items()):
+        if len(items) >= PUSH_BUNDLE_AT:
+            pushes[uid] = [{"kind": "bundle", "payload": {"title": f"보유·관심종목 핵심 공시 {len(items)}건 — 탭해서 확인하기",
+                                                          "body": " · ".join(dict.fromkeys(i["payload"]["title"].split("] ", 1)[-1].split(" · ")[0] for i in items))[:180],
+                                                          "url": "/screener?tab=disclosures", "tag": "disclosures-batch"}}]
+    if sent:
+        log(f"공시 알림 {sent}건 ({len(recv)}명)")
+    _send_pushes(pushes)
+    return sent
+
+
 def _send_pushes(pushes):
     """웹 푸시 (VAPID 미설정이면 아무것도 안 함). 실패해도 인앱 알림·배치에는 영향 없음."""
     wp = D.get("webpush")

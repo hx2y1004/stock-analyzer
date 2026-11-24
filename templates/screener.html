@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=98" />
+  <link rel="stylesheet" href="/static/css/style.css?v=99" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -29,7 +29,7 @@
     }
   </script>
 </head>
-{% set _qt = request.args.get('tab') %}{% set init_tab = _qt if _qt in ('trends', 'compare') else 'screen' %}
+{% set _qt = request.args.get('tab') %}{% set init_tab = _qt if _qt in ('trends', 'disclosures', 'compare') else 'screen' %}
 <body data-tab="{{ init_tab }}">
   <header class="header">
     <div class="header-inner">
@@ -49,6 +49,7 @@
     <div class="sc-tabs" role="tablist" aria-label="발굴">
       <button type="button" role="tab" class="sc-tab{% if init_tab == 'screen' %} active{% endif %}" id="scTab-screen" data-tab="screen" aria-controls="scPanel-screen" aria-selected="{{ 'true' if init_tab == 'screen' else 'false' }}" tabindex="{{ 0 if init_tab == 'screen' else -1 }}">종목 스크리너</button>
       <button type="button" role="tab" class="sc-tab{% if init_tab == 'trends' %} active{% endif %}" id="scTab-trends" data-tab="trends" aria-controls="scPanel-trends" aria-selected="{{ 'true' if init_tab == 'trends' else 'false' }}" tabindex="{{ 0 if init_tab == 'trends' else -1 }}">추세 셋업</button>
+      <button type="button" role="tab" class="sc-tab{% if init_tab == 'disclosures' %} active{% endif %}" id="scTab-disclosures" data-tab="disclosures" aria-controls="scPanel-disclosures" aria-selected="{{ 'true' if init_tab == 'disclosures' else 'false' }}" tabindex="{{ 0 if init_tab == 'disclosures' else -1 }}">공시·수주</button>
       <button type="button" role="tab" class="sc-tab{% if init_tab == 'compare' %} active{% endif %}" id="scTab-compare" data-tab="compare" aria-controls="scPanel-compare" aria-selected="{{ 'true' if init_tab == 'compare' else 'false' }}" tabindex="{{ 0 if init_tab == 'compare' else -1 }}">종목 비교</button>
     </div>
 
@@ -128,7 +129,39 @@
       <div id="trList" class="tr-list" aria-live="polite"><div class="card ab-muted">불러오는 중...</div></div>
     </section>
 
-    <!-- 탭 3: 비교 -->
+    <!-- 탭 3: 공시·수주 레이더 -->
+    <section role="tabpanel" id="scPanel-disclosures" class="sc-panel" aria-labelledby="scTab-disclosures"{% if init_tab != 'disclosures' %} hidden{% endif %}>
+      <div class="card tr-head ds-head">
+        <div class="tr-head-text">
+          <h2 class="tr-title">공시·수주 레이더</h2>
+          <p class="tr-asof" id="dsAsof">한국 OpenDART 15분 · 미국 SEC EDGAR 30분마다 확인 · 최근 14일</p>
+        </div>
+        <div class="sc-row">
+          <div class="sc-seg" role="group" aria-label="시장" id="dsMarket">
+            <button type="button" data-m="ALL" class="active" aria-pressed="true">전체</button>
+            <button type="button" data-m="KR" aria-pressed="false">한국 (DART)</button>
+            <button type="button" data-m="US" aria-pressed="false">미국 (SEC)</button>
+          </div>
+          <span class="sc-asof" id="dsCount"></span>
+        </div>
+        <div class="tr-patterns" id="dsCats" role="group" aria-label="공시 유형">
+          <button type="button" data-c="ALL" class="active" aria-pressed="true">전체</button>
+          <button type="button" data-c="contract" aria-pressed="false">수주·계약</button>
+          <button type="button" data-c="buyback" aria-pressed="false">자사주·소각</button>
+          <button type="button" data-c="insider_buy" aria-pressed="false">내부자 매수</button>
+          <button type="button" data-c="offering" aria-pressed="false">유상증자·주의</button>
+        </div>
+        <details class="sc-filters tr-criteria">
+          <summary>무엇을 모으나요</summary>
+          <p><strong>한국 (DART)</strong> 단일판매·공급계약 체결(계약금액·최근 매출 대비 %) · 자기주식 취득·소각 결정 · 유상증자 결정(희석 주의)</p>
+          <p><strong>미국 (SEC)</strong> Form 4 내부자 <strong>장내 매수</strong>만(스톡옵션 행사·증여·보상 지급 제외) · 8-K Item 1.01 중요 계약, 2.01 인수·자산 취득, 2.02 실적 발표</p>
+          <p>대상: 섹터맵 종목(한국 약 350 · 미국 약 537)과 회원들의 보유·관심종목. 알림 설정에서 보유·관심종목 공시 알림을 켤 수 있어요.</p>
+        </details>
+      </div>
+      <div id="dsList" class="ds-list" aria-live="polite"><div class="card ab-muted">불러오는 중...</div></div>
+    </section>
+
+    <!-- 탭 4: 비교 -->
     <section role="tabpanel" id="scPanel-compare" class="sc-panel" aria-labelledby="scTab-compare"{% if init_tab != 'compare' %} hidden{% endif %}>
       <div class="card sc-pick">
         <div class="sc-picked" id="cmpPicked"></div>
@@ -146,7 +179,7 @@
       <div id="cmpBody"></div>
     </section>
 
-    <p class="ab-disclaimer sc-disclaimer">스크리너·추세 셋업·비교 결과는 참고용 정보이며 투자 권유가 아닙니다. 시세는 제공처 사정에 따라 지연될 수 있습니다.</p>
+    <p class="ab-disclaimer sc-disclaimer">스크리너·추세 셋업·공시·비교 결과는 참고용 정보이며 투자 권유가 아닙니다. 시세는 제공처 사정에 따라 지연될 수 있습니다.</p>
   </main>
 
   <!-- 비교 담기 플로팅 바 -->
@@ -158,7 +191,7 @@
   {% include "_footer.html" %}
   <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
   <script src="/static/js/logo.js?v=1"></script>
-  <script src="/static/js/notify.js?v=7"></script>
-  <script src="/static/js/screener.js?v=7"></script>
+  <script src="/static/js/notify.js?v=8"></script>
+  <script src="/static/js/screener.js?v=8"></script>
 </body>
 </html>
