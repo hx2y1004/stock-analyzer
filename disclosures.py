@@ -331,8 +331,28 @@ _sec = {"last": 0.0, "lock": threading.Lock(), "blocked_until": 0.0, "map": None
         "seen": set(), "scan_at": {}}
 
 
+_EMAIL_RE = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[A-Za-z]{2,}$")
+
+
+def _first_email(raw, strip_mailto=False):
+    """'a@x.com, b@y.com' · 'mailto:a@x.com' → 첫 번째 올바른 이메일 | None (https:// 같은 URL 은 버림)."""
+    for part in re.split(r"[,;\s]+", str(raw or "")):
+        part = part.strip()
+        if strip_mailto and part.lower().startswith("mailto:"):
+            part = part[7:].strip()
+        if _EMAIL_RE.match(part):
+            return part
+    return None
+
+
 def sec_user_agent():
-    return os.environ.get("SEC_USER_AGENT", "").strip() or "StockAnalyzer (contact@example.com)"
+    """SEC 요청 User-Agent. SEC_USER_AGENT 가 없으면 이미 있는 연락처(TOSS_OWNER_EMAIL → VAPID_SUBJECT 의 mailto:)로
+    'StockAnalyzer {email}' 을 만든다. 셋 다 없을 때만 기본값. (이메일은 로그에 남기지 않는다)"""
+    ua = os.environ.get("SEC_USER_AGENT", "").strip()
+    if ua:
+        return ua
+    email = _first_email(os.environ.get("TOSS_OWNER_EMAIL")) or _first_email(os.environ.get("VAPID_SUBJECT"), strip_mailto=True)
+    return f"StockAnalyzer {email}" if email else "StockAnalyzer (contact@example.com)"
 
 
 def sec_get(url, params=None, get=None):

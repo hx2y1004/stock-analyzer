@@ -67,7 +67,7 @@
 - DART: 기존 `DART_API_KEY`. 오늘 `list.json` 을 페이지로 훑어(재시작 직후 최대 20쪽, 이후 5쪽 · 이미 본 접수번호에서 멈춤)
   보고서명으로 분류: 단일판매·공급계약체결(+해지=negative) · 자기주식 취득 결정/신탁 · 주식소각결정 · 유상증자결정(negative).
   무상증자·자기주식처분 제외. 공급계약은 `document.xml` 원문에서 계약금액·매출 대비 % (한 번에 10건). 링크 `dsaf001/main.do?rcpNo=`.
-- SEC: `SEC_USER_AGENT` 헤더, 요청 간 0.2초, 403/429 면 10분 쉼. `company_tickers.json` 하루 1회(BRK.B ↔ BRK-B).
+- SEC: `SEC_USER_AGENT` 헤더(없으면 `TOSS_OWNER_EMAIL` → `VAPID_SUBJECT` 의 이메일로 `StockAnalyzer <이메일>` 자동 구성, 셋 다 없으면 기본값 · PR #64), 요청 간 0.2초, 403/429 면 10분 쉼. `company_tickers.json` 하루 1회(BRK.B ↔ BRK-B).
   최신 공시 Atom 피드(`browse-edgar?action=getcurrent&type=4|8-K&output=atom`)에서 대상 CIK 만.
   Form 4 는 Issuer 항목만 → `index.json` 에서 XML 찾기 → `transactionCode == 'P'` 이고 취득(A)인 비파생 거래만 (M·G·A·F·S 제외).
   8-K 는 피드 요약의 Item 번호, 없으면 `{acc}.hdr.sgml` 의 `<ITEMS>` → 1.01·2.01·2.02 만.
