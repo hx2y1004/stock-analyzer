@@ -57,6 +57,12 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 새 분류 소급 백필 조건 (PR #69)
+- `_check_backfill()`: 시장 전체 0건 **또는** `BACKFILL_IF_MISSING`(미국 `offering`·`buyback`)이 **둘 다** 0건이면 14일 백필 1회.
+  이미 있는 공시는 `external_id` 로 건너뛰어 새 분류만 채워지고, 알림 없음. 프로세스마다 1번(`_backfilled`).
+- 주의: 14일 동안 대상 회사에 유상증자·자사주 공시가 정말 하나도 없으면 재시작(배포)마다 미국 소급 백필이 한 번씩 다시 돈다
+  (SEC 요청 수 분, 알림·중복 없음). 다음에 분류를 또 추가하면 그 분류를 `BACKFILL_IF_MISSING` 에 넣으면 된다.
+
 ### 미국 유상증자 · 자사주 매입 감지 (PR #68) — 4개 분류를 한국·미국 대칭으로
 - 8-K Item 3.02(미등록 증권 발행 = 사모 유상증자) → `offering`/`negative`, 항목 번호만으로 (추가 요청 없음). 3.02 가 있으면 최우선.
 - 8-K Item 8.01·7.01 → 본문 앞 16KB 에 `share/stock repurchase · repurchase program · buyback program …` 이 있으면 `buyback`/`positive`

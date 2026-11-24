@@ -1105,20 +1105,30 @@ BACKFILL_COLLECTOR = {"KR": collect_dart, "US": collect_sec}
 _RUN_GUARD = threading.Lock()                      # 스케줄러 tick 과 수동 수집이 겹치지 않게
 
 
+# 나중에 추가된 분류: 시장 전체에 공시가 있어도 이 분류가 하나도 없으면 14일 소급 백필 (미국 유상증자·자사주는 PR #68 에 추가)
+BACKFILL_IF_MISSING = {"US": ("offering", "buyback")}
+
+
 def _check_backfill():
-    """첫 tick: 시장별 DB 공시가 0건이면 14일 백필을 예약한다 (시간창과 무관). DB 오류면 다음 tick 에 다시 확인."""
+    """첫 tick: 시장별로 DB 공시가 0건이거나, 나중에 추가된 분류(BACKFILL_IF_MISSING)가 모두 0건이면 14일 백필을 예약한다
+    (시간창과 무관, 프로세스마다 1번). 이미 있는 공시는 external_id 로 건너뛰므로 새 분류만 채워진다. DB 오류면 다음 tick 에 다시 확인."""
     E = D["DisclosureEvent"]
     for m in ("KR", "US"):
         if _backfilled[m] is not None:
             continue
         try:
             empty = E.query.filter(E.market == m).first() is None
+            cats = BACKFILL_IF_MISSING.get(m)
+            missing = (not empty and bool(cats)
+                       and E.query.filter(E.market == m, E.category.in_(cats)).first() is None)
         except Exception as e:
             D["db"].session.rollback()
             log(f"백필 확인 실패 {m}: {e}")
             continue
         if empty:
             start_backfill([m], reason="DB 0건")
+        elif missing:
+            start_backfill([m], reason=f"{'·'.join(cats)} 0건 → 새 분류 소급")
         else:
             _backfilled[m] = True
 
