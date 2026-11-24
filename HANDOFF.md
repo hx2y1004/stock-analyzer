@@ -57,6 +57,15 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 공시 → 종목 상세 · AI 급등락 사유 연결 (PR #65)
+- 외부 호출 없이 `disclosure_events` DB 조회만. `app._recent_disclosures(ticker, days, limit)` (= `disclosures.query`).
+- 종목 상세: `loadAnalyzeExtras` 시작 때 `/api/disclosures?ticker=&days=30&limit=5` 를 따로 불러(느린 뉴스·AI 를 기다리지 않음)
+  `최근 관련 뉴스` 카드 제목 아래 `#discBlock` 에 표시. 0건이면 `hidden`·내용 비움 → 뉴스 카드 간격은 그대로.
+- AI 급등락 사유(`get_stock_insight` 의 daily_insight 호출, app.py): `analyze_extra` 가 요청 스레드에서 최근 7일 3건을 읽어 넘김
+  → 프롬프트에 `[최근 7일 주요 공시 — 최우선 근거]` 블록(헤드라인보다 앞) + 공시 우선 작성 지시. 공시가 없으면 기존 문구 그대로.
+  캐시(4시간)에 `disc`(공시 id 목록)를 저장해 공시 구성이 바뀌면 사유를 다시 만든다. AI 가 없을 때 폴백 문구도 공시를 먼저.
+- 참고: 급등락 사유 프롬프트는 `analysis/ai_analysis.py` 가 아니라 `app.py` 의 `get_stock_insight` 에 있다.
+
 ### 공시·수주 레이더 1차: DART · SEC EDGAR (PR #63)
 - `disclosures.py` + `DisclosureEvent`(`disclosure_events`, `external_id` 유니크, `disclosed_at` 인덱스, 30일 보관·하루 1회 정리).
   - 수집기 = "조회 → 이벤트 dict 목록" 함수, 저장·중복 방지·알림은 공통 `save_events` → `notify`. `COLLECTORS` 에

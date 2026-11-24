@@ -1290,6 +1290,8 @@ function _showExtrasLoading() {
   set('analystTargets', '');
   set('newsList', _SKELETON);
   document.getElementById('priceMoveBanner')?.classList.add('hidden');
+  const db = document.getElementById('discBlock');
+  if (db) { db.classList.add('hidden'); db.innerHTML = ''; }
   const title = document.getElementById('analystCardTitle');
   if (title) title.textContent = '애널리스트 의견';
 }
@@ -1327,7 +1329,48 @@ function _renderAiStatus(st) {
   el.classList.remove('hidden');
 }
 
+// ── 최근 주요 공시 (공시·수주 레이더 DB, 30일 · 최대 5건). 1건 이상일 때만 뉴스 위에 보인다 ──
+const _DISC_LABEL = { contract: '수주·계약', buyback: '자사주·소각', insider_buy: '내부자 매수', offering: '유상증자·주의', material_8k: '8-K 주요사항' };
+async function loadDisclosures(ticker) {
+  const el = document.getElementById('discBlock');
+  if (!el) return;
+  let items = [];
+  try {
+    const r = await fetch(`/api/disclosures?ticker=${encodeURIComponent(ticker)}&days=30&limit=5`);
+    if (r.ok) items = (await r.json()).items || [];
+  } catch (e) { items = []; }
+  if (currentAnalysisTicker !== ticker) return;
+  renderDisclosures(items);
+}
+function renderDisclosures(items) {
+  const el = document.getElementById('discBlock');
+  if (!el) return;
+  if (!items || !items.length) { el.classList.add('hidden'); el.innerHTML = ''; return; }   // 0건이면 블록 자체를 숨김
+  const esc = escapeHtmlMain;
+  const safeUrl = (u) => (/^https:\/\//i.test(u || '') ? esc(u) : '');
+  const day = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : `${d.getMonth() + 1}/${String(d.getDate()).padStart(2, '0')}`; };
+  el.innerHTML = `<div class="disc-head"><span>최근 주요 공시</span><span class="disc-sub">30일 · ${items.length}건</span></div>
+    <ul class="disc-list">${items.map((d) => {
+      const tone = d.sentiment === 'positive' ? 'pos' : d.sentiment === 'negative' ? 'neg' : 'neu';
+      const label = d.category === 'contract' && d.sentiment === 'negative' ? '계약 해지' : (_DISC_LABEL[d.category] || '공시');
+      const url = safeUrl(d.source_url);
+      return `<li class="disc-item">
+        <span class="disc-badge ${tone}">${esc(label)}</span>
+        <div class="disc-main">
+          <div class="disc-title">${esc(d.title || '')}</div>
+          ${d.summary ? `<div class="disc-sum">${esc(d.summary)}</div>` : ''}
+        </div>
+        <div class="disc-side">
+          <time datetime="${esc(d.disclosed_at || '')}">${esc(day(d.disclosed_at))}</time>
+          ${url ? `<a class="disc-src" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="${esc(d.source || '')} 공시 원문 (새 창)">원문 ↗</a>` : ''}
+        </div>
+      </li>`;
+    }).join('')}</ul>`;
+  el.classList.remove('hidden');
+}
+
 async function loadAnalyzeExtras(ticker, data, refill = 0) {
+  if (!refill) loadDisclosures(ticker);              // DB 조회 1번 — 느린 뉴스·AI 를 기다리지 않고 바로
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000);
   try {

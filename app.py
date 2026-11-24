@@ -3744,13 +3744,58 @@ def _lead(text, max_chars=160):
     return out[:max_chars]
 
 
-def _move_reason_fallback(chg, news):
+# 공시·수주 레이더(disclosure_events) → 종목 상세 · AI 급등락 사유. DB 조회만 (외부 호출 없음)
+DISC_LABEL_KO = {"contract": "수주·계약", "buyback": "자사주·소각", "insider_buy": "내부자 매수",
+                 "offering": "유상증자·주의", "material_8k": "8-K 주요사항"}
+
+
+def _recent_disclosures(ticker, days, limit):
+    """최근 N일 공시 (최신순, 최대 limit 건). 실패해도 빈 목록."""
+    try:
+        return disclosures.query("ALL", "ALL", ticker, days, limit)
+    except Exception as e:
+        db.session.rollback()
+        app.logger.warning(f"[disclosure] {ticker} 조회 실패: {e}")
+        return []
+
+
+def _disc_label(d):
+    if d.get("category") == "contract" and d.get("sentiment") == "negative":
+        return "계약 해지"
+    return DISC_LABEL_KO.get(d.get("category"), d.get("category") or "공시")
+
+
+def _disc_day(d):
+    """공시일 'MM/DD' (한국 종목은 한국 시각, 미국 종목은 뉴욕 시각 기준)."""
+    from zoneinfo import ZoneInfo
+    try:
+        t = datetime.fromisoformat(str(d.get("disclosed_at")).replace("Z", "+00:00"))
+        tz = ZoneInfo("Asia/Seoul" if d.get("market") == "KR" else "America/New_York")
+        t = t.astimezone(tz)
+        return f"{t.month}/{t.day:02d}"
+    except Exception:
+        return ""
+
+
+def _disc_line(d):
+    """AI 입력 한 줄: '11/24 [수주·계약] 단일판매·공급계약체결 — 계약금액 1조 2,345억원 · 최근 매출 대비 11.62% (DART)'"""
+    summ = f" — {d['summary']}" if d.get("summary") else ""
+    return f"{_disc_day(d)} [{_disc_label(d)}] {d.get('title') or ''}{summ} ({d.get('source') or ''})".strip()
+
+
+def _move_reason_fallback(chg, news, disc=None):
     if chg is None or abs(chg) < 0.5:
         return None
     kind = "급등" if chg >= 5 else ("급락" if chg <= -5 else ("상승" if chg > 0 else "하락"))
-    if not news:
+    parts = []
+    if disc:                                          # 공시가 있으면 공시를 먼저
+        parts.append("최근 공시: " + " / ".join(f"[{_disc_label(d)}] {d.get('title')}"
+                                               + (f" ({d['summary']})" if d.get("summary") else "") for d in disc[:3]))
+    if news:
+        parts.append("관련 뉴스: " + " / ".join(n["title"] for n in news[:3]))
+    if not parts:
         return f"현재 {kind} 관련 정보를 찾을 수 없습니다. 거시경제 지표나 시장 전반의 흐름을 함께 확인해 보세요."
-    return "관련 뉴스: " + " / ".join(n["title"] for n in news[:3])
+    return " · ".join(parts)
 
 
 def _dcf_brief(dcf):
@@ -3766,11 +3811,15 @@ def _dcf_brief(dcf):
             f"애널리스트 목표가 {dcf.get('analyst_target')}, 신뢰도 {dcf.get('reliability')}")
 
 
-def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr):
+def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr, disclosures_recent=None):
     """→ {"move_reason", "valuation_comment", "news_tr": {id: {"title","summary"}}, "ai": bool}
 
     캐시 우선: daily_insight(4시간) · news_translation(영구). 필요한 것만 모아 AI 를 최대 1번 부른다.
+    disclosures_recent: 최근 7일 공시(최대 3건, DB). 있으면 급등락 사유의 최우선 근거로 프롬프트에 넣고,
+    공시 구성이 바뀌면 캐시된 사유를 새로 만든다.
     """
+    disc = list(disclosures_recent or [])[:3]
+    disc_sig = ",".join(str(d.get("id")) for d in disc)
     chg = stock_data.get("price_change_pct")
     dcf = stock_data.get("dcf")
     want_move = chg is not None and abs(chg) >= 0.5
@@ -3780,7 +3829,8 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr):
     key = f"daily_insight:{ticker}"
     hit = ai_cache.get(key)
     ins = hit[0] if hit else None
-    stale = (ins is None) or (want_move and abs((ins.get("chg") or 0) - chg) >= _INSIGHT_REFRESH_PCT)
+    stale = (ins is None) or (want_move and abs((ins.get("chg") or 0) - chg) >= _INSIGHT_REFRESH_PCT) \
+        or (want_move and (ins.get("disc") or "") != disc_sig)          # 새 공시가 들어오면 사유를 다시
 
     tr, pending = {}, []
     if not is_kr:                                   # 한국 종목 뉴스는 이미 한글
@@ -3800,7 +3850,7 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr):
     def _result(src, used_ai):
         mv = (src or {}).get("move_reason") if want_move else None
         return {"move_reason": mv or _move_reason_fallback(chg, [
-                    {"title": (tr.get(_news_id(n)) or {}).get("title") or n["title"]} for n in news]),
+                    {"title": (tr.get(_news_id(n)) or {}).get("title") or n["title"]} for n in news], disc),
                 "valuation_comment": (src or {}).get("valuation_comment") if want_val else None,
                 "news_tr": tr, "ai": used_ai}
 
@@ -3815,7 +3865,11 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr):
         items = pending if news_ok else []
         lines = [f"종목: {name} ({ticker})"]
         req = []
-        if ask_move:
+        if ask_move and disc:
+            req.append(f'- "move_reason": 오늘 {chg:+.2f}% 움직임의 가능한 원인 2~3문장. 아래 [최근 7일 주요 공시]를 뉴스보다 '
+                       "최우선 근거로 삼아, 공시 종류와 핵심 수치(계약금액·매출 대비 %, 자사주 취득·소각, 유상증자 희석, 임원 장내 매수액 등)를 "
+                       "먼저 짚을 것. 뉴스·기술적 요인은 보조 근거로만. 공시가 원인이라고 단정하지 말고 가능성으로 표현할 것.")
+        elif ask_move:
             req.append(f'- "move_reason": 오늘 {chg:+.2f}% 움직임의 가능한 원인 2~3문장. 아래 헤드라인에 근거가 있으면 짧게 인용, '
                        "없으면 기술적·시장 요인. 단정하지 말 것.")
         if ask_val:
@@ -3825,6 +3879,8 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr):
             req.append('- "news": 번역할 기사마다 {"id": 그대로, "title": 자연스러운 한국어 제목, '
                        '"summary": 한국어 한 줄 요약(40자 안팎)}')
         lines.append("[작성할 항목]\n" + "\n".join(req))
+        if ask_move and disc:                        # 공시가 먼저 (최우선 근거)
+            lines.append("[최근 7일 주요 공시 — 최우선 근거]\n" + "\n".join(f"- {_disc_line(d)}" for d in disc))
         if ask_move and ai_result:
             vr = ""
             if stock_data.get("volume") and stock_data.get("avg_volume"):
@@ -3868,6 +3924,8 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr):
             if ask_val and out.get("valuation_comment"):
                 new["valuation_comment"] = _strip_hanja(str(out["valuation_comment"]).strip())
             new["chg"] = chg
+            if ask_move:
+                new["disc"] = disc_sig               # 이 사유가 어떤 공시 구성으로 만들어졌는지
             if new.get("move_reason") or new.get("valuation_comment"):
                 ai_cache.put(key, ticker, "daily_insight", new, model, _INSIGHT_TTL)
                 ins = new
@@ -3992,8 +4050,9 @@ def analyze_extra():
         name = stock_data.get("name") or ticker
         f_ov = _BG_EXEC.submit(_timed, "overview", fetch_company_overview, ticker, name, info,
                                stock_data.get("revenue_quarters", []), stock_data.get("currency", "USD"))
+        disc7 = _recent_disclosures(ticker, 7, 3)      # 요청 스레드에서 DB 조회 (백그라운드 스레드엔 앱 맥락이 없음)
         f_ins = _BG_EXEC.submit(_timed, "insight", get_stock_insight, ticker, name, stock_data, ai_result,
-                                news_list, is_kr)
+                                news_list, is_kr, disc7)
         deadline = min(deadline, time.time() + 3) if (done_news and done_an) else deadline
         done_ov = _take(f_ov, "company_overview", None)
         ins = None
@@ -4019,7 +4078,7 @@ def analyze_extra():
                     if t.get("summary"):
                         n["desc"] = t["summary"]
         else:
-            out["move_reason"] = _move_reason_fallback(stock_data.get("price_change_pct"), news_list)
+            out["move_reason"] = _move_reason_fallback(stock_data.get("price_change_pct"), news_list, disc7)
         ai_done = done_ov and done_ins
     partial = not (done_news and done_an and ai_done)
     out["partial"] = partial
