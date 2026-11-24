@@ -237,7 +237,7 @@ def compute_pb_roe(info, current_price, currency, risk_free_rate=None):
             "pbr_now": round(pbr_now, 2) if pbr_now else None, "bvps": round(bvps, 2),
             "beta": round(beta, 2), "beta_raw": round(beta_raw, 2),
             "risk_free_pct": round(rf * 100, 2), "erp_pct": round(a["erp"] * 100, 2),
-            "rf_source": "^TNX" if (market == "US" and risk_free_rate) else "기본가정",
+            "rf_source": "미 10년 국채" if (market == "US" and risk_free_rate) else "기본가정",
         },
     })
     return base
@@ -543,7 +543,7 @@ def compute_dcf(ticker, info, income_stmt, cashflow, balance_sheet,
             "years": years,
             "net_debt": round(net_debt),
             "terminal_share_pct": round(base_tv_share, 1) if base_tv_share else None,
-            "rf_source": "^TNX" if (market == "US" and risk_free_rate) else "기본가정",
+            "rf_source": "미 10년 국채" if (market == "US" and risk_free_rate) else "기본가정",
         },
         "projection": base_projection,
         "sensitivity": {

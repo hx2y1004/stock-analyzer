@@ -353,8 +353,8 @@ def _analyze_fundamental(df, info):
 TECH_WEIGHT, FUND_WEIGHT = 0.55, 0.45
 
 
-def combine_scores(tech_gauge, scorecard):
-    """종합 점수(-100~+100) = 기술 55% + 펀더멘털 45%. 펀더멘털이 없으면 기술 100%.
+def combine_scores(tech_gauge, scorecard, macro=None):
+    """종합 점수(-100~+100) = 기술 55% + 펀더멘털 45% (+ 매크로 보정 -6~+6). 펀더멘털이 없으면 기술 100%.
 
     - 기술: 하단 '기술적 분석' 반원 게이지 값(6축 평균, 0~100)을 그대로 쓴다 → (값 - 50) × 2
       → 상단 종합 판단과 하단 게이지가 같은 기술 평가를 공유한다.
@@ -373,7 +373,10 @@ def combine_scores(tech_gauge, scorecard):
         fund_norm = None
         combined = tech_norm
         w = {"tech": 1.0, "fund": 0.0}
-    combined = int(round(max(-100.0, min(100.0, combined))))
+    m_adj = 0
+    if macro and macro.get("available"):
+        m_adj = int(max(-6, min(6, macro.get("score") or 0)))      # 개별 종목 점수를 과하게 흔들지 않게 ±6 고정
+    combined = int(round(max(-100.0, min(100.0, combined + m_adj))))
     tone = (tech_gauge or {}).get("tone") or ("bull" if tv >= 55 else "bear" if tv <= 45 else "neu")
     breakdown = {
         "tech": {"score": round(tv), "norm": round(tech_norm, 1), "tone": tone,
@@ -381,6 +384,8 @@ def combine_scores(tech_gauge, scorecard):
         "fund": ({"score": round(float(fv)), "norm": round(fund_norm, 1), "grade": ov.get("grade")}
                  if fv is not None else None),
         "weights": w,
+        "macro": ({"score": m_adj, "regime": macro.get("regime"), "label": macro.get("label"),
+                   "summary": macro.get("summary")} if (macro and macro.get("available")) else None),
     }
     return combined, breakdown
 
@@ -482,7 +487,7 @@ def build_price_plan(close, stop_loss, entry_price, entry_low, entry_high, targe
     }
 
 
-def analyze_signals(df, info, df_weekly=None, stock=None):
+def analyze_signals(df, info, df_weekly=None, stock=None, macro=None):
     _FMT.dec = 0 if (info or {}).get("currency") == "KRW" else 2
     latest = df.iloc[-1]
     prev   = df.iloc[-2]
@@ -939,7 +944,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
 
     # ── 종합 판단 (기술 55% + 펀더멘털 45% 가중 합산) ──────────────
     # 예전: clip(기술 원점수 + 펀더멘털 원점수) → 두 점수 범위가 달라 ±100 에 쉽게 붙었다(포화).
-    combined_score, score_breakdown = combine_scores(tech_gauge, scorecard)
+    combined_score, score_breakdown = combine_scores(tech_gauge, scorecard, macro)
 
     # ── 1개월 기반 박스권 정보 (참고용 구간) ────────────
     # 정식 True Range(전일 종가 갭 포함)의 Wilder 평균. 지표 컬럼이 있으면 그대로, 없으면 여기서 계산

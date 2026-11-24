@@ -64,6 +64,7 @@ from flask_login import LoginManager, login_required, current_user
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
+from analysis import macro as macro_mod
 from models import AppliedStockSplit, DropHoldState, DisclosureEvent
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
@@ -886,15 +887,21 @@ def _naver_index(sym):
 
 @app.route("/api/market/overview")
 def market_overview():
-    """홈 대시보드용 주요 지수 스냅샷 (1분 캐시)."""
+    """홈 대시보드용 주요 지수 + 거시 지표 스냅샷 (1분 캐시)."""
+    return jsonify(_market_overview_payload())
+
+
+def _market_overview_payload():
+    """6개 지수 + 미 10년물·금·달러 인덱스 + 매크로 국면. 홈 시황 캐시(1분)를 공유한다 (한 번의 yf.download)."""
     now = time.time()
     c = _MARKET_OVERVIEW_CACHE
     if c["data"] and (now - c["ts"]) < _MARKET_OVERVIEW_TTL:
-        return jsonify(c["data"])
+        return c["data"]
 
     out = []
+    macro = {}
     try:
-        symbols = [s for s, *_ in _OVERVIEW_INDICES]
+        symbols = [s for s, *_ in _OVERVIEW_INDICES] + [s for s, *_ in macro_mod.MACRO_SYMBOLS]
         data = yf.download(
             " ".join(symbols), period="5d", interval="1d",
             group_by="ticker", progress=False, threads=True, auto_adjust=False,
@@ -918,18 +925,54 @@ def market_overview():
                 })
             except Exception:
                 continue
+        # 거시 지표: 티커별로 실패해도 그 지표만 None
+        for sym, key, label, kind in macro_mod.MACRO_SYMBOLS:
+            try:
+                q = macro_mod.parse_quote(data[sym]["Close"].tolist(), kind)
+            except Exception:
+                q = None
+            macro[key] = {"symbol": sym, "label": label, "kind": kind, **q} if q else None
     except Exception as e:
         app.logger.warning(f"[market_overview] {e}")
 
+    vix = next((it for it in out if it.get("symbol") == "^VIX"), None)
+    macro["regime"] = macro_mod.macro_regime(vix, macro.get("tnx"), macro.get("gold"), macro.get("dxy"), is_korean=False)
+    macro["regime_kr"] = macro_mod.macro_regime(vix, macro.get("tnx"), macro.get("gold"), macro.get("dxy"), is_korean=True)
     payload = {
         "indices": out,
+        "macro": macro,
         "kr_open": _is_market_open("005930.KS"),
         "us_open": _is_market_open("AAPL"),
         "fetched_at": datetime.utcnow().isoformat() + "Z",
     }
     if out:
         _MARKET_OVERVIEW_CACHE.update(ts=now, data=payload)
-    return jsonify(payload)
+    return payload
+
+
+_MACRO_FAIL = {"ts": 0.0}
+_MACRO_MAX_AGE = 15 * 60          # 종목 분석은 15분 안의 홈 시황 캐시를 그대로 쓴다 (없으면 한 번 받아 채움)
+
+
+def get_macro_snapshot(is_korean=False):
+    """→ {tnx, gold, dxy, regime} (각 지표는 없으면 None). 실패해도 예외 없이 빈 국면(0점)을 돌려준다."""
+    try:
+        c = _MARKET_OVERVIEW_CACHE
+        now = time.time()
+        if c.get("data") and (now - c["ts"]) < _MACRO_MAX_AGE:
+            d = c["data"]
+        elif now - _MACRO_FAIL["ts"] < 60:          # 직전 1분 안에 실패했으면 다시 받지 않는다 (분석 지연 방지)
+            d = None
+        else:
+            d = _market_overview_payload()
+            if not (d or {}).get("indices"):
+                _MACRO_FAIL["ts"] = now
+        m = (d or {}).get("macro") or {}
+    except Exception as e:
+        app.logger.debug(f"[macro] {e}")
+        m = {}
+    reg = m.get("regime_kr" if is_korean else "regime") or macro_mod.macro_regime()
+    return {"tnx": m.get("tnx"), "gold": m.get("gold"), "dxy": m.get("dxy"), "regime": reg}
 
 
 # ── 섹터맵: 전체 유니버스 시총가중 + 상승/하락 분포 (sector_map.py 가 백그라운드로 스냅샷 갱신) ─────
@@ -2680,7 +2723,18 @@ def build_market_context(ticker, is_korean, stock_change_pct=None):
     else:
         idx_label = "S&P 500"
     idx = (rows.get(idx_label) or {}).get("change_pct")
-    return rows, market_mood(vix, idx_label, idx, sec, stock_change_pct)
+    mood = market_mood(vix, idx_label, idx, sec, stock_change_pct)
+    # 국채 금리·금·달러 흐름 1줄 (홈 시황 캐시 재사용)
+    try:
+        m = get_macro_snapshot(is_korean)
+        line = macro_mod.macro_line(m.get("tnx"), m.get("gold"), m.get("dxy"), m.get("regime"))
+    except Exception:
+        line = None
+    if line:
+        mood = dict(mood) if mood else {"tone": "neutral", "title": "시장 분위기", "text": ""}
+        mood["macro"] = line
+        mood["macro_regime"] = (m.get("regime") or {}).get("regime")
+    return rows, mood
 
 
 def market_mood(vix, idx_label, idx_chg, sector, stock_chg):
@@ -3066,9 +3120,13 @@ _RF_CACHE = {"ts": 0.0, "value": None}
 _RF_TTL   = 60 * 60 * 12          # 12시간
 
 def _get_risk_free_rate(currency):
-    """무위험수익률. 미국은 10년물(^TNX), 한국은 yfinance 미제공 → None(모듈 기본가정 사용)."""
+    """무위험수익률. 미국은 홈 시황 캐시의 실시간 10년물(^TNX / 100, 2%~7% 클램핑), 없으면 12시간 캐시 조회, 그래도 없으면 4.5%.
+    한국은 yfinance 미제공 → None(모듈 기본가정 사용)."""
     if currency == "KRW":
         return None
+    tnx = (get_macro_snapshot(False) or {}).get("tnx")
+    if tnx and tnx.get("value"):
+        return macro_mod.risk_free_from_tnx(tnx)[0]
     now = time.time()
     if _RF_CACHE["value"] and (now - _RF_CACHE["ts"]) < _RF_TTL:
         return _RF_CACHE["value"]
@@ -3077,11 +3135,12 @@ def _get_risk_free_rate(currency):
         if h is not None and not h.empty:
             v = float(h["Close"].iloc[-1]) / 100
             if 0.001 < v < 0.15:
+                v = macro_mod.risk_free_from_tnx(v * 100)[0]
                 _RF_CACHE.update(ts=now, value=v)
                 return v
     except Exception:
         pass
-    return _RF_CACHE["value"]
+    return _RF_CACHE["value"] or macro_mod.RF_DEFAULT
 
 
 # ── Groq 응답 캐시 (rate limit 회피) ──
@@ -3719,7 +3778,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v8"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v9"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
@@ -4254,7 +4313,12 @@ def analyze():
         except Exception:
             df_weekly = None
 
-        ai_result = analyze_signals(df, info, df_weekly=df_weekly, stock=stock)
+        try:
+            _macro = get_macro_snapshot(is_korean)
+        except Exception:
+            _macro = None
+        ai_result = analyze_signals(df, info, df_weekly=df_weekly, stock=stock,
+                                    macro=(_macro or {}).get("regime"))
 
         # ── 한국 종목 보충: 공매도 + 외국인/기관 수급 ──────────────
         if is_korean:

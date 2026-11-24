@@ -104,6 +104,32 @@ function setDashMarket(mkt, btn) {
   renderMovers();
 }
 
+// 홈 시장 현황 아래 1줄: 미 10년 국채 | 금 | 달러 인덱스 | 매크로 국면
+function _renderMacroStrip(m) {
+  const el = document.getElementById('mdMacro');
+  if (!el) return;
+  if (!m) { el.classList.add('hidden'); return; }
+  const chgCls = (v) => (v == null ? '' : v > 0 ? 'up' : v < 0 ? 'down' : '');
+  const pct = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
+  const cell = (label, val, chgHtml, extra = '') => `
+    <div class="md-mac ${extra}"><div class="md-idx-label">${label}</div><div class="md-mac-val">${val}</div><div class="md-idx-chg">${chgHtml}</div></div>`;
+  const t = m.tnx, g = m.gold, x = m.dxy, r = m.regime || {};
+  const tnx = t ? cell('미 10년 국채', `${t.value.toFixed(2)}%`,
+    t.change_pp == null ? '—' : `<span class="${chgCls(t.change_pp)}">${t.change_pp > 0 ? '+' : ''}${t.change_pp.toFixed(2)}%p</span>`) : cell('미 10년 국채', '—', '—');
+  const gold = g ? cell('금 (GC=F)', '$' + g.value.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    `<span class="${chgCls(g.change_pct)}">${pct(g.change_pct)}</span>`) : cell('금 (GC=F)', '—', '—');
+  const dxy = x ? cell('달러 인덱스', x.value.toFixed(2), `<span class="${chgCls(x.change_pct)}">${pct(x.change_pct)}</span>`) : cell('달러 인덱스', '—', '—');
+  const tone = r.regime === 'risk_on' ? 'on' : r.regime === 'risk_off' ? 'off' : 'neu';
+  const reg = `
+    <div class="md-mac md-mac-regime tone-${tone}" title="${_esc(r.summary || '')}">
+      <div class="md-idx-label">매크로 국면</div>
+      <div class="md-mac-val">${r.available === false ? '—' : _esc(r.label || '중립')}<small>${r.available === false ? '' : (r.regime === 'risk_on' ? ' Risk-On' : r.regime === 'risk_off' ? ' Risk-Off' : '')}</small></div>
+      <div class="md-mac-why">${_esc((r.reasons || []).slice(0, 2).join(' · ') || (r.available === false ? '자료 없음' : '뚜렷한 부담·우호 요인 없음'))}</div>
+    </div>`;
+  el.innerHTML = tnx + gold + dxy + reg;
+  el.classList.remove('hidden');
+}
+
 async function loadMarketOverview() {
   const el = document.getElementById('mdIndices');
   if (!el) return null;
@@ -126,6 +152,7 @@ async function loadMarketOverview() {
           <div class="md-idx-chg ${cls}">${chg == null ? '—' : (chg > 0 ? '+' : '') + chg.toFixed(2) + '%'}</div>
         </div>`;
     }).join('');
+    _renderMacroStrip(d.macro);
     const st = document.getElementById('mdStatus');
     if (st) {
       st.innerHTML =
@@ -1579,14 +1606,16 @@ function _renderScoreBreakdown(analysis) {
   if (!el) return;
   const b = analysis && analysis.score_breakdown;
   if (!b || !b.tech) { el.classList.add('hidden'); el.innerHTML = ''; return; }
-  const t = b.tech, f = b.fund;
+  const t = b.tech, f = b.fund, m = b.macro;
   const fBand = f ? (f.score >= 70 ? 'bull' : f.score >= 45 ? 'mid' : 'bear') : 'na';
   const w = b.weights || {};
   el.innerHTML = `
     <div class="sb-item sb-${t.tone}" title="하단 기술적 분석 게이지와 같은 값 · 비중 ${Math.round((w.tech || 0) * 100)}%">
       <span class="sb-k">기술</span><b>${t.score}점</b><span class="sb-tag">${t.label}</span></div>
     <div class="sb-item sb-${fBand}" title="투자 판단 4팩터 종합 · 비중 ${Math.round((w.fund || 0) * 100)}%">
-      <span class="sb-k">펀더멘탈</span>${f ? `<b>${f.score}점</b><span class="sb-tag">${f.grade || '—'}</span>` : '<b class="sb-na">자료 없음</b>'}</div>`;
+      <span class="sb-k">펀더멘탈</span>${f ? `<b>${f.score}점</b><span class="sb-tag">${f.grade || '—'}</span>` : '<b class="sb-na">자료 없음</b>'}</div>
+    <div class="sb-item sb-macro sb-${m ? (m.score > 0 ? 'bull' : m.score < 0 ? 'bear' : 'neu') : 'neu'}" title="${m ? _esc(m.summary || '') : '매크로 자료 없음'} (종합 점수에 ±6 범위로 더함)">
+      <span class="sb-k">매크로</span><b>${m ? (m.score > 0 ? '+' : m.score < 0 ? '' : '±') + m.score : '±0'}</b><span class="sb-tag">${m ? _esc(m.label || '중립') : '없음'}</span></div>`;
   el.classList.remove('hidden');
 }
 
@@ -1828,12 +1857,12 @@ function renderDcf(stock) {
   const rows = pb ? [
     ['ROE', a.roe_pct + '%'], ['자기자본비용', a.cost_equity_pct + '%'], ['영구성장률', a.terminal_g_pct + '%'],
     ['적정 PBR', a.fair_pb + '배'], ['현재 PBR', a.pbr_now != null ? a.pbr_now + '배' : '—'], ['주당순자산', f(a.bvps)],
-    ['베타 (조정)', `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}`], ['무위험수익률', a.risk_free_pct + '%'],
+    ['베타 (조정)', `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}`], ['무위험이자율', `${a.risk_free_pct}%${a.rf_source === '미 10년 국채' ? ' (미 10년 국채)' : ' (기본 가정)'}`],
   ] : [
     ['WACC (할인율)', a.wacc_pct != null ? a.wacc_pct + '%' : '—'],
     ['자기자본비용', a.cost_equity_pct != null ? a.cost_equity_pct + '%' : '—'],
     ['베타 (조정)', a.beta != null ? `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}` : '—'],
-    ['무위험수익률', a.risk_free_pct != null ? a.risk_free_pct + '%' : '—'],
+    ['무위험이자율', a.risk_free_pct != null ? `${a.risk_free_pct}%${a.rf_source === '미 10년 국채' ? ' (미 10년 국채)' : ' (기본 가정)'}` : '—'],
     ['적용 매출성장률', a.base_growth_pct != null ? a.base_growth_pct + '%' : '—'],
     ['애널리스트 내년 매출 전망', a.consensus_growth_pct != null ? a.consensus_growth_pct + '%' : '—'],
     ['최근 분기 매출 YoY', a.recent_growth_pct != null ? a.recent_growth_pct + '%' : '—'],
@@ -2878,7 +2907,8 @@ function renderMarketContext(market, isKRW, mood) {
     const tones = { danger: 1, caution: 1, good: 1, info: 1, neutral: 1 };
     if (mood && mood.title) {
       moodEl.className = `mc-mood tone-${tones[mood.tone] ? mood.tone : 'neutral'}`;
-      moodEl.innerHTML = `<div class="mc-mood-title">${_esc(mood.title)}</div>${mood.text ? `<div class="mc-mood-text">${_esc(mood.text)}</div>` : ''}`;
+      moodEl.innerHTML = `<div class="mc-mood-title">${_esc(mood.title)}</div>${mood.text ? `<div class="mc-mood-text">${_esc(mood.text)}</div>` : ''}`
+        + (mood.macro ? `<div class="mc-mood-macro rg-${mood.macro_regime || 'neutral'}">${_esc(mood.macro)}</div>` : '');
     } else {
       moodEl.className = 'mc-mood hidden';
       moodEl.innerHTML = '';
