@@ -55,6 +55,7 @@ DART_FATAL = {"010": "등록되지 않은 DART API 키", "011": "사용할 수 �
               "901": "DART API 키 기간 만료"}
 SEC_SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 # 미국 유상증자 · 자사주 매입 (한국 DART 와 같은 4개 분류)
+SEC_CONTRACT_ITEM = "1.01"            # 8-K Item 1.01 중요 계약 체결 → '수주·계약'(contract)
 SEC_OFFERING_ITEM = "3.02"            # 8-K Item 3.02 미등록 증권 발행(사모 유상증자) → 항목 번호만으로 판정
 SEC_BUYBACK_ITEMS = ("8.01", "7.01")  # 8-K 기타 사항 · Reg FD → 문서 앞부분에 자사주 매입 키워드가 있으면 buyback
 SEC_FORMS = ("4", "8-K", "424B5")     # 실시간 피드에서 보는 양식 (424B5 = 공모·ATM 신주 발행 설명서)
@@ -174,7 +175,12 @@ def query(market="ALL", category="ALL", ticker=None, days=14, limit=50):
     q = E.query.filter(E.disclosed_at >= _utcnow() - timedelta(days=max(1, min(int(days or 14), RETENTION_DAYS))))
     if market in ("KR", "US"):
         q = q.filter(E.market == market)
-    if category in CATEGORIES:
+    if category == "contract":
+        q = q.filter(D["db"].or_(E.category == "contract",
+                                 D["db"].and_(E.category == "material_8k", E.summary.like("%Item 1.01%"))))
+    elif category == "material_8k":                    # Item 1.01 이 든 예전 행은 위 contract 쪽으로 보이므로 여기선 뺀다
+        q = q.filter(E.category == "material_8k", D["db"].not_(E.summary.like("%Item 1.01%")))
+    elif category in CATEGORIES:
         q = q.filter(E.category == category)
     if ticker:
         q = q.filter(E.ticker == ticker.upper())
@@ -182,8 +188,31 @@ def query(market="ALL", category="ALL", ticker=None, days=14, limit=50):
     return [to_dict(r) for r in rows]
 
 
+def _norm_category(r):
+    """예전에 material_8k 로 저장된 8-K Item 1.01 은 contract 로 보여 준다."""
+    if r.category == "material_8k" and r.source == "SEC" and "Item 1.01" in (r.summary or ""):
+        return "contract"
+    return r.category
+
+
+def migrate_8k_contract():
+    """서버 기동 시 1번: 예전에 material_8k 로 저장된 SEC 8-K Item 1.01 행을 contract 로 바꾼다. → 바꾼 행 수"""
+    E, db = D["DisclosureEvent"], D["db"]
+    try:
+        n = (E.query.filter(E.source == "SEC", E.category == "material_8k", E.summary.like("%Item 1.01%"))
+             .update({"category": "contract"}, synchronize_session=False))
+        db.session.commit()
+        if n:
+            log(f"8-K Item 1.01 {n}건 → 수주·계약(contract)")
+        return n
+    except Exception as e:
+        db.session.rollback()
+        log(f"8-K 분류 변환 실패 (조회 때 보정함): {e}")
+        return 0
+
+
 def to_dict(r):
-    return {"id": r.id, "market": r.market, "ticker": r.ticker, "name": r.name, "source": r.source, "category": r.category,
+    return {"id": r.id, "market": r.market, "ticker": r.ticker, "name": r.name, "source": r.source, "category": _norm_category(r),
             "sentiment": r.sentiment, "title": r.title, "summary": r.summary, "source_url": r.source_url,
             "disclosed_at": r.disclosed_at.isoformat() + "Z" if r.disclosed_at else None}
 
@@ -690,11 +719,13 @@ def _scan_feed(form, since, deadline, get=None):
 
 
 def _8k_event(items, cik, acc, t, nm, at):
+    """8-K 1.01·2.01·2.02. Item 1.01(중요 계약 체결)이 있으면 한국 공급계약과 같은 '수주·계약'(contract)으로."""
     keep = [i for i in items if i in SEC_ITEMS]
     if not keep:
         return None
     senti = "positive" if any(SEC_ITEMS[i][1] == "positive" for i in keep) else "neutral"
-    return {"market": "US", "ticker": t, "name": nm, "source": "SEC", "category": "material_8k", "sentiment": senti,
+    cat = "contract" if SEC_CONTRACT_ITEM in keep else "material_8k"
+    return {"market": "US", "ticker": t, "name": nm, "source": "SEC", "category": cat, "sentiment": senti,
             "title": "8-K · " + " · ".join(SEC_ITEMS[i][0] for i in keep),
             "summary": " · ".join(f"Item {i} {SEC_ITEMS[i][0]}" for i in keep) + ("" if len(keep) == len(items) else
                        f" (그 외 {', '.join(i for i in items if i not in SEC_ITEMS)})"),
