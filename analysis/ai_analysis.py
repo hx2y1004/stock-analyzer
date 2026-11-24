@@ -876,6 +876,9 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         _delta = _cur - _prev_s
         _prev_s = _cur
         details[_i]["axis"] = round(max(0.0, min(100.0, 50 + 50 * _delta / _AXIS_MAX[_i])), 1)
+    # BB 는 중심선 위·아래에서 점수를 주지 않으므로(MA20 과 중복) 가감점이 0 이면 밴드 내 위치로 25~75 를 매긴다
+    if len(details) > 1 and _snaps[1] - _snaps[0] == 0 and bb_position is not None:
+        details[1]["axis"] = round(max(25.0, min(75.0, 25 + bb_position * 0.5)), 1)
     tech_gauge = _tech_gauge(details[:6], overheat_reasons, adx_v, adx_regime, pdi_v, mdi_v)
 
     # ── 펀더멘털 분석 추가 ────────────────────────────

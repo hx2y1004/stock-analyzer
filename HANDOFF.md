@@ -57,6 +57,25 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 투자 판단 · 밸류에이션 로직 버그 수정 · 무채색 UI (PR #73)
+- `analysis/advanced.py`
+  - 배당: `_dividend_pct` — 네이버 DPS/가격 → dividendYield(% 단위) 를 배당금/가격으로 교차 검증. 예전 '≤1 이면 ×100' 은 0.5% 를 50% 로 만들었다.
+  - 자사주: `_buyback_yield` → (매입 %, 순발행 희석 %). Net Common Stock Issuance 가 양수(희석)면 매입 0, `dilution_pct` 로 따로.
+  - 음수 PER·EV/EBITDA → 15점, 음수 PEG → 제외 (예전 만점). ROE/ROA 는 항상 ×100 (ROE 150% 가 1.5% 되던 문제).
+  - F-Score 정석 9항목(`_piotroski_detail`, 항목별 pass): 순이익>0 중복 제거, 총자산회전율 개선 추가, 장기부채/총자산 비율 + 무차입 유지 통과.
+  - 이자보상배율(`interest_coverage`, 이자비용 행이 없으면 '알 수 없음', 0 이면 무차입) · 6개월 수익률 추가. 팩터 항목이 절반 미만이면 50 쪽으로 당김(`_avg_present`).
+  - 금융주(`is_financial`: industry 에 bank·insurance·capital markets·mortgage finance, 카드·결제 제외): Quality=ROE·ROA, Value=PER·PBR·배당, F-Score 미계산.
+- `analysis/valuation.py`
+  - 운전자본: 매출 증가분 대비 투자율(0~25%, 최근 2~3년 평균). 성장 시 현금 유출, 역성장 시 현금 창출 없음.
+  - 영업이익률: 최근 2~3년 평균(`ebit_margin_latest_pct` 따로). 비지배지분 차감. `_path` 는 N년차에 정확히 영구성장률.
+  - 역DCF: 상한·하한(lo > -9.5%) 모두 검사. 성장률 출처 분리: `consensus_growth`(app 이 `stock.revenue_estimate` +1y growth, 6시간 캐시) vs `recent_growth`(info.revenueGrowth = 최근 분기 YoY).
+  - 금융주: `compute_pb_roe` — 적정 P/B = (ROE−g)/(COE−g), 실패 시 'DCF 미적용 (금융주 — PBR·ROE·애널리스트 목표가 참고)'. 응답 `model` = dcf / pb_roe.
+- app.py: `valuation_ranges`(DCF·애널리스트 목표 저/평균/고·52주) · 미국 종목 `oi_quarters`(분기 영업이익 확정치). `_ANALYZE_VER` v6.
+- 화면: 투자 판단 = 종합 등급 + 4축 가로 바(ⓘ) → 재무 건전성(F-Score 9도트 + ROE·부채비율·유동비율·이자보상배율·주주환원율) | 분기 실적(매출·영업이익 확정치, 성장/둔화/감소) → 회사 소개 → '세부 지표와 항목별 판단 보기'(접힘).
+  밸류에이션 = 풋볼필드(현재가 점선) → 역DCF 1줄 + 보수/기본/낙관 → '5×5 민감도 표 및 DCF 가정 보기'(접힘).
+- 덤: 레이더 BB 축은 가감점 0 일 때 밴드 위치로 25~75. 매매 전략 손익비 옆 '(목표/저항 하단 기준)'.
+- 캐시: main.js v92, style.css v104, sa-v70.
+
 ### 종목 상세 4탭 재편 · 매매 전략 탭 · 가격 구간 순서 보정 (PR #72)
 - 하단 탭: `기술적 분석 | 투자 판단 | 밸류에이션 | 매매 전략`. 밸류에이션 탭은 늘 보이고 DCF 가 없으면 `#dcfEmpty` 안내.
 - 기술적 분석: 위 패널(왼쪽 반원 속도계 · 오른쪽 6축 레이더, 순수 인라인 SVG, 768px 이하 위아래) + 무채색 6카드(3×2 / 1024px↓ 2열 / 640px↓ 1열).

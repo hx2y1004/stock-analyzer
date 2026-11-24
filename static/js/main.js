@@ -1693,135 +1693,144 @@ function renderDrawdowns(stock) {
 }
 
 // ── DCF 밸류에이션 ──────────────────────────────────────
+function _vlFootball(stock) {
+  const vr = stock.valuation_ranges || {};
+  const krw = stock.currency === 'KRW';
+  const f = (v) => _stFmt(v, krw);
+  const cur = vr.current || stock.current_price;
+  const rows = [];
+  if (vr.dcf) rows.push({ k: vr.dcf.label || 'DCF 적정가', lo: vr.dcf.low, mid: vr.dcf.mid, hi: vr.dcf.high, sub: `보수 ${f(vr.dcf.low)} · 기본 ${f(vr.dcf.mid)} · 낙관 ${f(vr.dcf.high)}` });
+  if (vr.analyst) rows.push({ k: '애널리스트 목표', lo: vr.analyst.low, mid: vr.analyst.mid, hi: vr.analyst.high, sub: `${f(vr.analyst.low)} ~ ${f(vr.analyst.high)} · 평균 ${f(vr.analyst.mid)}${vr.analyst.count ? ` · ${vr.analyst.count}명` : ''}` });
+  if (vr.week52) rows.push({ k: '52주 가격 범위', lo: vr.week52.low, mid: null, hi: vr.week52.high, sub: `${f(vr.week52.low)} ~ ${f(vr.week52.high)}` });
+  if (!rows.length || !cur) return '';
+  const all = rows.flatMap((r) => [r.lo, r.hi]).concat([cur]).filter((v) => v != null && isFinite(v));
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const pad = (hi - lo) * 0.06 || cur * 0.05; lo -= pad; hi += pad;
+  const x = (v) => ((v - lo) / (hi - lo) * 100).toFixed(2);
+  const cx = x(cur);
+  const missing = [!vr.dcf && 'DCF', !vr.analyst && '애널리스트 목표', !vr.week52 && '52주 범위'].filter(Boolean);
+  return `
+    <section class="vl-ff" aria-label="밸류에이션 범위 비교">
+      <div class="vl-ff-h"><h4>밸류에이션 범위 비교</h4><span>점선 = 현재가</span></div>
+      <div class="vl-ff-row vl-ff-now"><span class="vl-ff-k"></span><span class="vl-ff-t"><em style="left:${cx}%">현재가 ${f(cur)}</em></span></div>
+      ${rows.map((r) => {
+        const inRange = cur >= r.lo && cur <= r.hi;
+        const pos = cur < r.lo ? '현재가가 범위 아래' : cur > r.hi ? '현재가가 범위 위' : '범위 안';
+        return `
+      <div class="vl-ff-row">
+        <span class="vl-ff-k"><b>${r.k}</b><small>${r.sub}</small></span>
+        <span class="vl-ff-t" title="${pos}">
+          <i class="vl-ff-bar${inRange ? ' in' : ''}" style="left:${x(r.lo)}%;width:${Math.max(0.6, x(r.hi) - x(r.lo)).toFixed(2)}%"></i>
+          ${r.mid != null ? `<i class="vl-ff-mid" style="left:${x(r.mid)}%"></i>` : ''}
+          <i class="vl-ff-line" style="left:${cx}%"></i>
+        </span>
+      </div>`;
+      }).join('')}
+      ${missing.length ? `<p class="vl-note">${missing.join(' · ')} 자료 없음</p>` : ''}
+    </section>`;
+}
+
 function renderDcf(stock) {
   const card = document.getElementById('dcfCard');
   const tabBtn = document.getElementById('valuationTabBtn');
   if (!card) return;
   const d = stock.dcf;
-  // 종목마다 DCF 가능 여부가 다르므로 탭 자체를 조건부 노출, 탭은 항상 기술적 분석으로 초기화
   switchDetailTab('technical');
-  const empty = document.getElementById('dcfEmpty');
   tabBtn?.classList.remove('hidden');
+  const ff = document.getElementById('valFootball');
+  if (ff) ff.innerHTML = _vlFootball(stock);
+  const empty = document.getElementById('dcfEmpty');
   if (!d || !d.fair_value) {
     card.classList.add('hidden');
-    empty?.classList.remove('hidden');
+    if (empty) {
+      empty.textContent = d && d.model === 'pb_roe'
+        ? (d.message || 'DCF 미적용 (금융주 — PBR·컨센서스 참고)')
+        : '영업적자이거나 현금흐름 자료가 부족해 DCF 적정가를 계산하지 않았습니다. 위 애널리스트 목표가·52주 범위를 참고하세요.';
+      empty.classList.remove('hidden');
+    }
     return;
   }
   empty?.classList.add('hidden');
-  const cur = stock.currency;
-
-  // 1) 주인공 — 역산 (성장률 우선, 불가 시 영업이익률로 전환)
-  const labEl = document.getElementById('dcfHeroLabel');
-  const impEl = document.getElementById('dcfImplied');
-  const cmpEl = document.getElementById('dcfImpliedCmp');
-  const altEl = document.getElementById('dcfImpliedAlt');
+  const krw = stock.currency === 'KRW';
+  const f = (v) => _stFmt(v, krw);
   const a = d.assumptions || {};
-  altEl.textContent = '';
+  const pb = d.model === 'pb_roe';
+  const up = (v) => (v == null ? '' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`);
 
-  if (d.implied_growth_pct != null) {
-    // 마진을 현재 수준으로 고정했을 때, 시장이 전제하는 매출성장률
-    labEl.textContent = '현재 주가가 반영 중인 매출성장률';
-    impEl.textContent = `연 ${d.implied_growth_pct}%`;
-    impEl.className = 'dcf-hero-val';
+  // 역DCF 1줄 요약
+  let head, sub = '';
+  if (pb) {
+    head = d.implied_roe_pct != null
+      ? `현재 주가는 ROE <b>${d.implied_roe_pct.toFixed(1)}%</b> 가 계속되는 것을 반영 중`
+      : '현재 PBR 로 역산한 ROE 를 계산할 수 없습니다';
+    sub = `현재 ROE ${a.roe_pct}% · 자기자본비용 ${a.cost_equity_pct}% · 적정 PBR ${a.fair_pb}배 (현재 ${a.pbr_now ?? '—'}배)`;
+  } else if (d.implied_growth_pct != null) {
+    head = `현재 주가는 향후 ${a.years}년간 연 <b>${d.implied_growth_pct > 0 ? '+' : ''}${d.implied_growth_pct.toFixed(1)}%</b> 매출 성장을 반영 중`;
     const parts = [];
-    if (a.consensus_growth_pct != null) parts.push(`컨센서스 ${a.consensus_growth_pct}%`);
-    if (a.hist_cagr_pct != null) parts.push(`과거 ${a.hist_cagr_pct}%`);
-    let verdict = '';
-    if (a.consensus_growth_pct != null) {
-      const gap = d.implied_growth_pct - a.consensus_growth_pct;
-      verdict = gap > 10 ? ' · 컨센서스보다 공격적인 기대'
-              : gap < -5 ? ' · 컨센서스보다 보수적인 기대'
-              : ' · 컨센서스와 비슷한 수준';
-    }
-    cmpEl.textContent = (parts.length ? parts.join(' · ') : '') + verdict;
-    if (d.implied_margin_pct != null && a.ebit_margin_pct != null) {
-      altEl.textContent =
-        `또는 성장률이 컨센서스 수준이라면, 영업이익률이 ${a.ebit_margin_pct}% → ${d.implied_margin_pct}%로 올라야 합니다`;
-    }
+    if (a.consensus_growth_pct != null) parts.push(`애널리스트 내년 전망 ${a.consensus_growth_pct}%`);
+    if (a.recent_growth_pct != null) parts.push(`최근 분기 YoY ${a.recent_growth_pct}%`);
+    if (a.hist_cagr_pct != null) parts.push(`과거 연평균 ${a.hist_cagr_pct}%`);
+    sub = parts.join(' · ') + (parts.length ? ' · ' : '') + `성장률은 ${a.years}년에 걸쳐 영구성장률 ${a.terminal_g_pct}% 로 낮아지는 경로`;
   } else if (d.implied_margin_pct != null) {
-    // 성장률만으로는 설명 불가 → 시장이 전제하는 '수익성 개선'으로 해석
-    labEl.textContent = '현재 주가가 반영 중인 영업이익률';
-    impEl.textContent = `${d.implied_margin_pct}%`;
-    impEl.className = 'dcf-hero-val';
-    cmpEl.textContent =
-      `현재 ${a.ebit_margin_pct}% → 필요 ${d.implied_margin_pct}%` +
-      (a.base_growth_pct != null ? ` (매출 연 ${a.base_growth_pct}% 성장 가정 시)` : '');
-    altEl.textContent =
-      '성장률만으로는 현재 주가를 설명할 수 없어, 수익성 개선을 전제로 역산한 값입니다';
+    head = `현재 주가는 영업이익률 <b>${d.implied_margin_pct}%</b> 를 반영 중`;
+    sub = `최근 ${a.ebit_margin_years || 1}년 평균 ${a.ebit_margin_pct}% · 성장률만으로는 설명되지 않아 수익성 개선을 전제로 역산`;
   } else {
-    // 성장·마진 어느 쪽으로도 설명 불가 — '실패'가 아니라 그 자체가 신호
-    labEl.textContent = '현재 주가가 반영 중인 기대';
-    impEl.textContent = '재무 범위 밖';
-    impEl.className = 'dcf-hero-val dcf-na';
-    cmpEl.textContent =
-      `매출 연 60% 성장 또는 영업이익률 70%를 가정해도 현재가에 도달하지 않습니다` +
-      (a.ebit_margin_pct != null ? ` (현재 영업이익률 ${a.ebit_margin_pct}%)` : '');
-    altEl.textContent =
-      '시장이 재무제표에 아직 없는 요인(신사업·시장 재편 기대)을 반영하고 있다는 뜻입니다';
+    head = '현재 주가는 이 모델의 재무 범위 밖';
+    sub = '매출 연 60% 성장이나 영업이익률 70% 를 가정해도 도달하지 않습니다. 재무제표에 아직 없는 기대를 반영 중입니다.';
   }
+  const rel = { high: '신뢰도 높음', medium: '참고용', low: '해석 주의' }[d.reliability] || '참고용';
 
-  // 2) 3개 기준점
-  document.getElementById('dcfPrice').textContent = fmt(d.current_price, cur);
+  // 시나리오 3카드
+  const sc = d.scenarios || {};
+  const scen = [['bear', '보수'], ['base', '기본'], ['bull', '낙관']].map(([k, n]) => {
+    const s = sc[k] || {};
+    const basis = pb ? `ROE ${s.roe_pct ?? '—'}% · 적정 PBR ${s.fair_pb ?? '—'}배`
+                     : `매출 성장 ${s.start_growth_pct ?? '—'}% 에서 출발`;
+    return `<div class="vl-sc${k === 'base' ? ' base' : ''}"><span class="vl-sc-k">${n}</span><b>${f(s.fair_value)}</b>
+      <span class="vl-sc-u ${s.upside_pct > 0 ? 'up' : s.upside_pct < 0 ? 'dn' : ''}">${up(s.upside_pct)}</span><small>${basis}</small></div>`;
+  }).join('');
 
-  const fairEl = document.getElementById('dcfFair');
-  fairEl.textContent = fmt(d.fair_value, cur);
-  fairEl.className = 'dcf-ref-val ' +
-    (d.upside_pct > 0 ? 'dcf-up' : d.upside_pct < 0 ? 'dcf-down' : '');
-  const s = d.scenarios || {};
-  document.getElementById('dcfFairRange').textContent =
-    (s.bear && s.bull && s.bear.fair_value && s.bull.fair_value)
-      ? `${d.upside_pct > 0 ? '+' : ''}${d.upside_pct}% · 범위 ${fmt(s.bear.fair_value, cur)}~${fmt(s.bull.fair_value, cur)}`
-      : `${d.upside_pct > 0 ? '+' : ''}${d.upside_pct}%`;
+  // 민감도 5×5
+  const sens = d.sensitivity;
+  const sensHTML = sens && sens.grid ? `
+    <div class="vl-sens-wrap"><table class="vl-sens">
+      <caption>WACC(행) × 영구성장률(열) 별 주당 가치</caption>
+      <thead><tr><th>WACC \ g</th>${sens.g_axis.map((g) => `<th>${g.toFixed(1)}%</th>`).join('')}</tr></thead>
+      <tbody>${sens.grid.map((row, i) => `<tr><th>${sens.wacc_axis[i].toFixed(1)}%</th>${row.map((v, j) =>
+        `<td class="${i === 2 && j === 2 ? 'mid' : ''}${v != null && d.current_price && v >= d.current_price ? ' ge' : ''}">${v == null ? '—' : f(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>` : '';
 
-  const tEl = document.getElementById('dcfTarget');
-  const tSub = document.getElementById('dcfTargetSub');
-  if (d.analyst_target) {
-    tEl.textContent = fmt(d.analyst_target, cur);
-    const up = (d.analyst_target / d.current_price - 1) * 100;
-    tEl.className = 'dcf-ref-val ' + (up > 0 ? 'dcf-up' : up < 0 ? 'dcf-down' : '');
-    tSub.textContent = `${up > 0 ? '+' : ''}${up.toFixed(1)}%` +
-      (d.analyst_count ? ` · ${d.analyst_count}명` : '') +
-      ' · 글로벌 집계';
-  } else {
-    tEl.textContent = '—'; tEl.className = 'dcf-ref-val'; tSub.textContent = '';
-  }
-
-  // 3) 신뢰도 뱃지
-  const relEl = document.getElementById('dcfReliability');
-  const relMap = {
-    high:   ['신뢰도 높음', 'rel-high'],
-    medium: ['참고용', 'rel-mid'],
-    low:    ['해석 주의', 'rel-low'],
-  };
-  const [relTxt, relCls] = relMap[d.reliability] || relMap.medium;
-  relEl.textContent = relTxt;
-  relEl.className = 'dcf-rel ' + relCls;
-
-  // 4) 경고
-  const warnEl = document.getElementById('dcfWarnings');
-  warnEl.innerHTML = (d.warnings || [])
-    .map(w => `<div class="dcf-warn">⚠️ ${escapeHtmlMain(w)}</div>`).join('');
-
-  // 5) 가정
-  const rows = [
+  const rows = pb ? [
+    ['ROE', a.roe_pct + '%'], ['자기자본비용', a.cost_equity_pct + '%'], ['영구성장률', a.terminal_g_pct + '%'],
+    ['적정 PBR', a.fair_pb + '배'], ['현재 PBR', a.pbr_now != null ? a.pbr_now + '배' : '—'], ['주당순자산', f(a.bvps)],
+    ['베타 (조정)', `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}`], ['무위험수익률', a.risk_free_pct + '%'],
+  ] : [
     ['WACC (할인율)', a.wacc_pct != null ? a.wacc_pct + '%' : '—'],
     ['자기자본비용', a.cost_equity_pct != null ? a.cost_equity_pct + '%' : '—'],
     ['베타 (조정)', a.beta != null ? `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}` : '—'],
     ['무위험수익률', a.risk_free_pct != null ? a.risk_free_pct + '%' : '—'],
     ['적용 매출성장률', a.base_growth_pct != null ? a.base_growth_pct + '%' : '—'],
-    ['영업이익률', a.ebit_margin_pct != null ? a.ebit_margin_pct + '%' : '—'],
+    ['애널리스트 내년 매출 전망', a.consensus_growth_pct != null ? a.consensus_growth_pct + '%' : '—'],
+    ['최근 분기 매출 YoY', a.recent_growth_pct != null ? a.recent_growth_pct + '%' : '—'],
+    ['과거 연평균 성장률', a.hist_cagr_pct != null ? a.hist_cagr_pct + '%' : '—'],
+    ['영업이익률', a.ebit_margin_pct != null ? `${a.ebit_margin_pct}% (${a.ebit_margin_years || 1}년 평균 · 최근 ${a.ebit_margin_latest_pct}%)` : '—'],
+    ['운전자본 투자율', a.wc_invest_pct != null ? `매출 증가분의 ${a.wc_invest_pct}%` : '—'],
     ['영구성장률', a.terminal_g_pct != null ? a.terminal_g_pct + '%' : '—'],
     ['예측 기간', a.years ? a.years + '년' : '—'],
     ['법인세율', a.tax_rate_pct != null ? a.tax_rate_pct + '%' : '—'],
     ['터미널 비중', a.terminal_share_pct != null ? a.terminal_share_pct + '%' : '—'],
+    ['비지배지분 차감', a.minority_interest ? f(a.minority_interest) : '없음'],
   ];
+
+  document.getElementById('vlImplied').innerHTML = `
+    <div class="vl-im-h"><span class="vl-im-k">${pb ? '역산 ROE' : '역DCF 핵심 해석'}</span><span class="st-tag">${rel}</span>${pb ? '<span class="st-tag">금융주 · P/B-ROE 모델</span>' : ''}</div>
+    <p class="vl-im-main">${head}</p><p class="vl-im-sub">${sub}</p>`;
+  document.getElementById('vlScen').innerHTML = scen;
+  document.getElementById('dcfWarnings').innerHTML = (d.warnings || []).map((w) => `<p class="vl-warn">${escapeHtmlMain(w)}</p>`).join('');
+  document.getElementById('dcfSens').innerHTML = sensHTML;
   document.getElementById('dcfAssumptions').innerHTML = rows.map(([k, v]) =>
-    `<div class="dcf-as-item"><span class="dcf-as-k">${k}</span><span class="dcf-as-v">${v}</span></div>`
-  ).join('');
-
+    `<div class="dcf-as-item"><span class="dcf-as-k">${k}</span><span class="dcf-as-v">${v}</span></div>`).join('');
   card.classList.remove('hidden');
-
-  // 6) AI 해설은 종목 인사이트(통합 1회 호출)와 함께 /api/analyze/extra 로 온다 → loadAnalyzeExtras 에서 채움
   renderDcfComment(null);
 }
 
@@ -1842,7 +1851,7 @@ function renderDcfComment(text) {
   const el = document.getElementById('dcfComment');
   if (!el) return;
   if (!text) { el.classList.add('hidden'); el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="dcf-comment-label">🤖 AI 해설</div>` +
+  el.innerHTML = `<div class="dcf-comment-label">AI 해설</div>` +
                  `<p>${escapeHtmlMain(text).replace(/\n/g, '<br>')}</p>`;
   el.classList.remove('hidden');
 }
@@ -1857,7 +1866,7 @@ async function loadDcfComment(ticker) {
     if (!r.ok) return;
     const d = await r.json();
     if (!d || !d.comment) return;
-    el.innerHTML = `<div class="dcf-comment-label">🤖 AI 해설</div>` +
+    el.innerHTML = `<div class="dcf-comment-label">AI 해설</div>` +
                    `<p>${escapeHtmlMain(d.comment).replace(/\n/g, '<br>')}</p>`;
     el.classList.remove('hidden');
   } catch (e) { /* 해설 실패는 조용히 무시 — 숫자는 이미 표시됨 */ }
@@ -2242,14 +2251,9 @@ document.addEventListener('click', (e) => {
 });
 
 // ── 월가 스타일 펀더멘탈 스코어카드 (4팩터 + 10지표) ────────
-function renderScorecard(sc, stock) {
-  const panel = document.getElementById('scorecardPanel');
-  if (!panel) return;
-  if (!sc || !sc.factors || !sc.metrics) {
-    panel.classList.add('hidden');
-    return;
-  }
-  panel.classList.remove('hidden');
+// 세부 지표 표 (Quality·Value·Growth·Momentum 10여 개) — 투자 판단 탭 아래 '세부 지표 보기' 안에 들어간다
+function _scDetailHTML(sc, stock) {
+  if (!sc || !sc.factors || !sc.metrics) return '';
   const F = sc.factors, M = sc.metrics;
   const isKR = stock && stock.currency === 'KRW';
 
@@ -2324,7 +2328,7 @@ function renderScorecard(sc, stock) {
   // 한국 전용 섹션 (네이버에서 가져온 데이터)
   const krSupplySection = isKR ? `
     <div class="sc-metric-section sc-kr-section">
-      <div class="sc-section-title">🇰🇷 한국 시장 시그널 <small>네이버 금융 · ${krSupplyDate || '최근'}</small></div>
+      <div class="sc-section-title">한국 시장 시그널 <small>네이버 금융 · ${krSupplyDate || '최근'}</small></div>
       <div class="sc-metric-row"><span>외국인 보유율 ${_helpIcon('kr_foreign')}</span><span>${krForRatio != null ? krForRatio.toFixed(2) + '%' : '<span class="m-na">—</span>'}</span></div>
       <div class="sc-metric-row"><span>외국인 순매수 (5일) ${_helpIcon('kr_for_net')}</span><span class="${krForNet5d != null ? (krForNet5d > 0 ? 'good' : (krForNet5d < 0 ? 'bad' : '')) : ''}">${_fmtShares(krForNet5d)}주</span></div>
       <div class="sc-metric-row"><span>기관 순매수 (5일) ${_helpIcon('kr_inst_net')}</span><span class="${krInstNet5d != null ? (krInstNet5d > 0 ? 'good' : (krInstNet5d < 0 ? 'bad' : '')) : ''}">${_fmtShares(krInstNet5d)}주</span></div>
@@ -2338,14 +2342,14 @@ function renderScorecard(sc, stock) {
   const krNotice = isKR ? `
     <div class="sc-kr-notice">
       ⓘ 한국 종목은 yfinance에서 <strong>내부자 매매</strong>·<strong>F-Score</strong>가 비어있는 경우가 많아,
-      위 <strong>🇰🇷 한국 시장 시그널</strong>(네이버 스크래핑)을 참고하세요.
+      <strong>한국 시장 시그널</strong>(네이버 스크래핑)을 참고하세요.
       외국인 순매수와 기관 순매수가 동시에 양(+)이면 강한 매수세입니다.
     </div>` : '';
 
   const metricsHTML = `
     <div class="sc-metrics">
       <div class="sc-metric-section">
-        <div class="sc-section-title">💎 Quality <small>품질 — 진짜 수익성</small></div>
+        <div class="sc-section-title">Quality <small>품질 — 진짜 수익성</small></div>
         <div class="sc-metric-row"><span>FCF Margin ${_helpIcon('fcf_margin')}</span><span class="${_gradeFmt(M.fcf_margin, 15, 0)}">${_fmt(M.fcf_margin, '%')}</span></div>
         <div class="sc-metric-row"><span>FCF Yield ${_helpIcon('fcf_yield')}</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
         <div class="sc-metric-row"><span>영업이익률 ${_helpIcon('op_margin')}</span><span class="${_gradeFmt(M.operating_margin, 15, 0)}">${_fmt(M.operating_margin, '%')}</span></div>
@@ -2355,20 +2359,20 @@ function renderScorecard(sc, stock) {
       </div>
 
       <div class="sc-metric-section">
-        <div class="sc-section-title">💰 Value <small>밸류에이션 — 비싼가/싼가</small></div>
+        <div class="sc-section-title">Value <small>밸류에이션 — 비싼가/싼가</small></div>
         <div class="sc-metric-row"><span>PEG Ratio ${_helpIcon('peg')}</span><span class="${M.peg != null ? (M.peg < 1 ? 'good' : (M.peg > 2 ? 'bad' : '')) : ''}">${_fmt(M.peg, 'x')}</span></div>
         <div class="sc-metric-row"><span>EV / EBITDA ${_helpIcon('ev_ebitda')}</span><span class="${M.ev_ebitda != null ? (M.ev_ebitda < 12 ? 'good' : (M.ev_ebitda > 25 ? 'bad' : '')) : ''}">${_fmt(M.ev_ebitda, 'x')}</span></div>
         <div class="sc-metric-row"><span>FCF Yield ${_helpIcon('fcf_yield')}</span><span class="${_gradeFmt(M.fcf_yield, 5, 0)}">${_fmt(M.fcf_yield, '%')}</span></div>
       </div>
 
       <div class="sc-metric-section">
-        <div class="sc-section-title">📈 Growth <small>성장 — 마진 추세</small></div>
+        <div class="sc-section-title">Growth <small>성장 — 마진 추세</small></div>
         <div class="sc-metric-row"><span>마진 추세 (영업 YoY) ${_helpIcon('op_yoy')}</span><span class="${_signClass(M.operating_margin_yoy)}">${_fmt(M.operating_margin_yoy, 'pp')}</span></div>
         <div class="sc-metric-row"><span>마진 추세 (매출총 YoY) ${_helpIcon('gm_yoy')}</span><span class="${_signClass(M.gross_margin_yoy)}">${_fmt(M.gross_margin_yoy, 'pp')}</span></div>
       </div>
 
       <div class="sc-metric-section">
-        <div class="sc-section-title">⚡ Momentum & Signals <small>수급 시그널</small></div>
+        <div class="sc-section-title">Momentum & Signals <small>수급 시그널</small></div>
         <div class="sc-metric-row"><span>EPS Revision (30일) ${_helpIcon('eps_rev')}</span><span class="${_signClass(rev.score_pct)}">${rev.score_pct != null ? ((rev.score_pct>=0?'+':'') + rev.score_pct + '%') : '<span class="m-na">—</span>'}${rev.up_30d != null ? ` <small>(↑${rev.up_30d} ↓${rev.down_30d})</small>` : ''}</span></div>
         <div class="sc-metric-row"><span>${isKR ? '공매도 비중 (당일)' : 'Short % of Float'} ${_helpIcon('short_float')}</span><span class="${M.short_pct_of_float != null ? (M.short_pct_of_float > 10 ? 'bad' : '') : ''}">${_fmt(M.short_pct_of_float, '%')}</span></div>
         ${!isKR ? `<div class="sc-metric-row"><span>내부자 매매 (6M) ${_helpIcon('insider')}</span><span class="${ins.net > 0 ? 'good' : (ins.net < 0 ? 'bad' : '')}">${ins.net != null ? `${ins.net >= 0 ? '+' : ''}${ins.net}건 <small>(↑${ins.buys} ↓${ins.sells})</small>` : '<span class="m-na">—</span>'}</span></div>` : ''}
@@ -2379,30 +2383,46 @@ function renderScorecard(sc, stock) {
     ${krNotice}
   `;
 
-  const _gradeHelp = 'A+ ~ A: 우수 (매수 관점)\nB+ ~ B: 양호 (적정 수준)\nC+ ~ C: 보통 (다른 시그널 확인 필요)\nD ~ F: 주의/위험 (펀더멘탈 약함)\n\n각 팩터 점수는 0~100, 등급은 그 점수의 변환입니다.';
+  return metricsHTML;
+}
 
+const _FJ_DESC = {
+  quality:  ['Quality', '돈을 잘 버는 사업인가 — ROE·영업이익률·FCF·F-Score·부채·이자보상배율'],
+  value:    ['Value', '주가가 싼가 — PER·PEG·EV/EBITDA·FCF 수익률 (적자·음수 배수는 낮은 점수)'],
+  growth:   ['Growth', '성장하는가 — 매출·이익 성장률, 매출총이익률 추세'],
+  momentum: ['Momentum', '시장이 좋아하기 시작했는가 — 1·6개월 수익률, EPS 추정치 수정, 마진 추세'],
+};
+
+// 투자 판단 상단: 종합 등급 + 4축 팩터 가로 바
+function renderScorecard(sc, stock) {
+  const panel = document.getElementById('scorecardPanel');
+  if (!panel) return;
+  if (!sc || !sc.factors) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
+  panel.classList.remove('hidden');
+  const F = sc.factors;
+  const ov = F.overall || {};
+  const rows = ['quality', 'value', 'growth', 'momentum'].map((k) => {
+    const f = F[k] || {}, v = f.score;
+    return `<div class="fj-row">
+      <span class="fj-name">${_FJ_DESC[k][0]}</span>
+      <span class="fj-track"><i style="width:${v == null ? 0 : Math.max(2, Math.min(100, v))}%"></i></span>
+      <b class="fj-score">${v == null ? '—' : Math.round(v)}</b>
+      <span class="fj-g">${f.grade || '—'}</span>
+    </div>`;
+  }).join('');
   panel.innerHTML = `
-    <div class="sc-header">
-      <div class="sc-header-left">
-        <div class="sc-title">📊 펀더멘탈 스코어카드 ${_helpInline(_gradeHelp)}</div>
-        <div class="sc-subtitle">월가 표준 4팩터 (Quality · Value · Growth · Momentum) 종합 등급</div>
+    <div class="fj-card">
+      <div class="fj-top">
+        <div class="fj-overall"><b>${ov.grade || '—'}</b><span>${ov.score != null ? Math.round(ov.score) + '점' : '—'}</span></div>
+        <div class="fj-title">펀더멘털 종합<small>4개 팩터 평균 · 0~100${F.is_financial ? ' · 금융주 기준(ROE·PBR·배당)' : ''}</small></div>
+        <button type="button" class="tc-info" aria-expanded="false" aria-controls="fjHelp" aria-label="팩터 설명 보기" onclick="_taToggleHelp(this)">${_INFO_SVG}</button>
       </div>
-      <div class="sc-overall sc-${ovCls}" title="${_gradeHelp}" onclick="toggleScHelp(this.parentElement.querySelector('.m-help-inline'), event)">
-        <div class="sc-overall-grade">${ovGrade}</div>
-        <div class="sc-overall-score">${ovScore}<small>/100</small></div>
+      <div class="fj-help tc-help" id="fjHelp" hidden>
+        ${Object.values(_FJ_DESC).map(([n, d]) => `<p><b>${n}</b> ${d}</p>`).join('')}
+        <p class="tc-tip">A+~A 우수 · B+~B 양호 · C+~C 보통 · D~F 주의. 자료가 절반도 없는 팩터는 50점 쪽으로 당겨 계산합니다.</p>
       </div>
-    </div>
-    <div class="sc-factors">
-      ${factorCard('Quality',  '💎', F.quality)}
-      ${factorCard('Value',    '💰', F.value)}
-      ${factorCard('Growth',   '📈', F.growth)}
-      ${factorCard('Momentum', '⚡', F.momentum)}
-    </div>
-    <details class="sc-details">
-      <summary>📋 10개 지표 상세 보기 <small>(각 지표 옆 ⓘ 마우스 올리면 설명)</small></summary>
-      ${metricsHTML}
-    </details>
-  `;
+      <div class="fj-rows">${rows}</div>
+    </div>`;
 }
 
 // ── 투자 판단 카드 ────────────────────────────────────────
@@ -2431,7 +2451,6 @@ function renderFundamental(details, stock) {
     html += `
       <div class="company-overview-card">
         <div class="co-header">
-          <span class="co-icon">🏢</span>
           <span class="co-title">기업 분석 (AI)</span>
           ${stock.sector ? `<span class="co-sector">${sectorKo(stock.sector)}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
         </div>
@@ -2448,8 +2467,7 @@ function renderFundamental(details, stock) {
       html += `
         <div class="company-overview-card">
           <div class="co-header">
-            <span class="co-icon">🏢</span>
-            <span class="co-title">회사 소개</span>
+              <span class="co-title">회사 소개</span>
             ${stock.sector ? `<span class="co-sector">${sectorKo(stock.sector)}${stock.industry ? ' · ' + stock.industry : ''}</span>` : ''}
           </div>
           <p class="co-desc">${formatted}</p>
@@ -2457,152 +2475,94 @@ function renderFundamental(details, stock) {
     }
   }
 
-  // ── 2. 분기 실적 추이 (매출 + EPS/영업이익, 발표치 + 추정치) ──────────
-  const revQ = (stock && stock.revenue_quarters) ? stock.revenue_quarters : [];
-  const epsQ = (stock && stock.eps_quarters)     ? stock.eps_quarters     : [];
-  const oiQ  = (stock && stock.oi_quarters)      ? stock.oi_quarters      : [];
-  const cur2    = (stock && stock.currency) || 'USD';
-  const isKRW2  = cur2 === 'KRW';
-  // 한국 주식이면 영업이익, 아니면 EPS
-  const secQ  = isKRW2 ? oiQ : epsQ;
+  // ── 2. 재무 건전성 | 분기 실적 (2단) ────────────────────────
+  const sc = (window._lastAnalysis && window._lastAnalysis.scorecard) || null;
+  const top = `<div class="fj-grid">${_fjHealthCard(sc, stock)}${_fjQuarterCard(stock)}</div>`;
 
-  if (revQ.length >= 2 || secQ.length >= 2) {
-    const cur   = cur2;
-    const isKRW = isKRW2;
+  // ── 3. 세부 지표 · 항목별 판단 (기본 접힘) ─────────────────────
+  const more = `
+    <details class="vl-more">
+      <summary>세부 지표와 항목별 판단 보기</summary>
+      ${_scDetailHTML(sc, stock)}
+      <div class="detail-list detail-grid fj-legacy">${_buildCards(details)}</div>
+    </details>`;
 
-    // period "YYYY-MM" → "Q? 'YY"
-    function toQLabel(p) {
-      if (!p) return p;
-      const [y, m] = p.split('-').map(Number);
-      const q = Math.ceil(m / 3);
-      return `Q${q} '${String(y).slice(2)}`;
-    }
+  el.innerHTML = top + html + more;
+}
 
-    // 매출/영업이익 포맷 (억원/조원 or $B/$M)
-    function fmtRev(v) {
-      if (v == null) return '—';
-      if (isKRW) {
-        if (Math.abs(v) >= 1e12) return (v / 1e12).toFixed(1) + '조';
-        if (Math.abs(v) >= 1e8)  return Math.round(v / 1e8) + '억';
-        return v.toLocaleString('ko-KR');
-      }
-      if (Math.abs(v) >= 1e9) return '$' + (v / 1e9).toFixed(1) + 'B';
-      if (Math.abs(v) >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
-      return '$' + v.toLocaleString();
-    }
+function _fjHealthCard(sc, stock) {
+  const M = (sc && sc.metrics) || {};
+  const fd = M.f_score_detail;
+  const fin = !!M.is_financial;
+  const dots = fd ? fd.items.map((it) =>
+    `<i class="fj-dot ${it.pass === true ? 'on' : it.pass === false ? 'off' : 'na'}" title="${it.label}: ${it.pass === true ? '충족' : it.pass === false ? '미충족' : '자료 없음'}"></i>`).join('') : '';
+  const pct = (v, d = 1) => (v == null ? '—' : `${(+v).toFixed(d)}%`);
+  const icr = M.interest_coverage != null ? `${M.interest_coverage.toFixed(1)}배` : (M.no_interest_expense ? '이자비용 없음' : '—');
+  const shy = M.shareholder_yield_pct != null
+    ? `${M.shareholder_yield_pct.toFixed(2)}%<small> 배당 ${(M.dividend_yield_pct || 0).toFixed(2)} + 자사주 ${(M.buyback_yield_pct || 0).toFixed(2)}</small>` : '—';
+  const rows = [
+    ['ROE', pct(M.roe_pct), M.roe_pct == null ? '' : M.roe_pct >= 15 ? '우수' : M.roe_pct >= 8 ? '보통' : '낮음'],
+    ['부채비율', fin ? '—' : pct(M.debt_to_equity_pct, 0), fin ? '금융업은 예금·보험부채라 비교하지 않음' : M.debt_to_equity_pct == null ? '' : M.debt_to_equity_pct < 100 ? '안정' : M.debt_to_equity_pct < 200 ? '보통' : '높음'],
+    ['유동비율', fin ? '—' : (M.current_ratio == null ? '—' : `${M.current_ratio.toFixed(2)}배`), fin ? '금융업 해당 없음' : M.current_ratio == null ? '' : M.current_ratio >= 1.5 ? '안정' : M.current_ratio >= 1 ? '보통' : '주의'],
+    ['이자보상배율', fin ? '—' : icr, fin ? '금융업 해당 없음' : M.no_interest_expense && M.interest_coverage == null ? '무차입' : M.interest_coverage == null ? '' : M.interest_coverage >= 5 ? '안정' : M.interest_coverage >= 1.5 ? '보통' : '위험'],
+    ['주주환원율', shy, M.dilution_pct ? `순발행 희석 ${M.dilution_pct.toFixed(2)}%` : ''],
+  ];
+  return `
+    <section class="fj-box">
+      <div class="fj-box-h"><h4>재무 건전성</h4>
+        <span class="fj-fs">${fd ? `Piotroski F-Score <b>${fd.score}</b>/9` : 'F-Score 자료 없음'}</span></div>
+      ${fd ? `<div class="fj-dots" role="img" aria-label="F-Score ${fd.score}/9">${dots}</div>
+        <div class="fj-dot-legend">${fd.items.map((it) => `<span class="${it.pass === true ? 'on' : it.pass === false ? 'off' : 'na'}">${it.label}</span>`).join('')}</div>`
+        : `<p class="fj-note">${fin ? '금융업은 유동비율·매출총이익률이 정의되지 않아 F-Score 를 계산하지 않습니다.' : '연간 재무제표가 2년치 이상 없어 계산하지 못했습니다.'}</p>`}
+      <div class="fj-table">${rows.map(([k, v, n]) => `<div class="fj-tr"><span>${k}</span><b>${v}</b><em>${n}</em></div>`).join('')}</div>
+    </section>`;
+}
 
-    // EPS 포맷 (미국 주식 전용)
-    function fmtEps(v) {
-      if (v == null) return '—';
-      return '$' + Number(v).toFixed(2);
-    }
-
-    // beat/miss 뱃지
-    function beatBadge(actual, estimate) {
-      if (actual == null || estimate == null || estimate === 0) return '';
-      const diff = ((actual - estimate) / Math.abs(estimate) * 100).toFixed(1);
-      const isBeat = parseFloat(diff) >= 0;
-      const sign   = isBeat ? '+' : '';
-      return `<span class="beat-badge ${isBeat ? 'beat' : 'miss'}">${isBeat ? '✅' : '❌'} ${sign}${diff}%</span>`;
-    }
-
-    // ── 공통: 바 1개 렌더링 (추정치 = 노란 점선 오버레이, 발표치 앞에 표시) ──
-    function makeBar(q, actPct, estPct, fmtFn, badge, isNeg) {
-      return `
-        <div class="qc-col">
-          <div class="qc-bar-wrap">
-            <div class="qc-bar-actual${isNeg ? ' neg' : ''}" style="height:${actPct}%"></div>
-            ${estPct != null ? `<div class="qc-bar-estimate" style="height:${estPct}%"></div>` : ''}
-          </div>
-          <div class="qc-actual">${fmtFn(q.actual)}</div>
-          ${q.estimate != null
-            ? `<div class="qc-estimate">▶ ${fmtFn(q.estimate)}</div>`
-            : '<div class="qc-estimate"></div>'}
-          ${badge ? `<div class="qc-beat-row">${badge}</div>` : '<div class="qc-beat-row"></div>'}
-          <div class="qc-period">${toQLabel(q.period)}</div>
-        </div>`;
-    }
-
-    // ── 매출 차트 ──
-    let revHtml = '';
-    if (revQ.length >= 2) {
-      const revList = [...revQ].reverse();
-      const maxAct  = Math.max(...revList.map(q => q.actual || 0));
-      const maxEst  = Math.max(...revList.map(q => q.estimate || 0));
-      const maxVal  = Math.max(maxAct, maxEst, 1);
-
-      // 발표 전 분기(실적 null, 추정치만 있음)는 비교에서 제외 — null 이 0 으로 계산돼 '감소'로 오판했었다
-      const revActuals = revList.map(q => q.actual).filter(v => v != null);
-      const oldest = revActuals[0], newest = revActuals[revActuals.length - 1];
-      const hasTrend = revActuals.length >= 2;
-      const revTrendLbl = !hasTrend ? '➡️ 보합' : newest > oldest * 1.05 ? '📈 증가' : newest < oldest * 0.95 ? '📉 감소' : '➡️ 보합';
-      const revTrendCls = !hasTrend ? 'rev-trend-flat' : newest > oldest * 1.05 ? 'rev-trend-up' : newest < oldest * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
-
-      const revBars = revList.map(q => {
-        const actPct = Math.round((q.actual || 0) / maxVal * 100);
-        const estPct = q.estimate != null ? Math.round(q.estimate / maxVal * 100) : null;
-        return makeBar(q, actPct, estPct, fmtRev, beatBadge(q.actual, q.estimate), false);
-      }).join('');
-
-      revHtml = `
-        <div class="qc-section">
-          <div class="qc-section-hd">
-            <span class="qc-section-title">💰 매출</span>
-            <span class="rev-trend ${revTrendCls}">${revTrendLbl}</span>
-          </div>
-          <div class="qc-bars">${revBars}</div>
-        </div>`;
-    }
-
-    // ── EPS (미국) / 영업이익 (한국) 차트 ──
-    let secHtml = '';
-    if (secQ.length >= 2) {
-      const secList  = [...secQ].reverse();
-      const actVals  = secList.map(q => q.actual).filter(v => v != null);
-      const estVals  = secList.map(q => q.estimate).filter(v => v != null);
-      const maxSec   = Math.max(...[...actVals, ...estVals].map(Math.abs), 1);
-      const fmtSec   = isKRW ? fmtRev : fmtEps;
-      const secTitle = isKRW ? '📊 영업이익' : '📊 주당순이익 (EPS)';
-
-      const secBars = secList.map(q => {
-        const actPct = q.actual != null ? Math.round(Math.abs(q.actual) / maxSec * 100) : 0;
-        const estPct = q.estimate != null ? Math.round(Math.abs(q.estimate) / maxSec * 100) : null;
-        const isNeg  = q.actual != null && q.actual < 0;
-        const badge  = (!isKRW && q.surprise_pct != null)
-          ? `<span class="beat-badge ${q.surprise_pct >= 0 ? 'beat' : 'miss'}">${q.surprise_pct >= 0 ? '✅' : '❌'} ${q.surprise_pct >= 0 ? '+' : ''}${q.surprise_pct.toFixed(1)}%</span>`
-          : beatBadge(q.actual, q.estimate);
-        return makeBar(q, actPct, estPct, fmtSec, badge, isNeg);
-      }).join('');
-
-      const secActuals = secList.map(q => q.actual).filter(v => v != null);
-      const secOld = secActuals[0], secNew = secActuals[secActuals.length - 1];
-      const secTrendLbl = secNew > secOld * 1.05 ? '📈 증가' : secNew < secOld * 0.95 ? '📉 감소' : '➡️ 보합';
-      const secTrendCls = secNew > secOld * 1.05 ? 'rev-trend-up' : secNew < secOld * 0.95 ? 'rev-trend-down' : 'rev-trend-flat';
-
-      secHtml = `
-        <div class="qc-section qc-section--eps">
-          <div class="qc-section-hd">
-            <span class="qc-section-title">${secTitle}</span>
-            <span class="rev-trend ${secTrendCls}">${secTrendLbl}</span>
-          </div>
-          <div class="qc-bars">${secBars}</div>
-        </div>`;
-    }
-
-    html += `
-      <div class="quarterly-card">
-        <div class="qc-header">📋 분기 실적 추이</div>
-        <div class="qc-sections-wrap">
-          ${revHtml}
-          ${secHtml}
-        </div>
+function _fjQuarterCard(stock) {
+  const krw = stock && stock.currency === 'KRW';
+  const money = (v) => {
+    if (v == null) return '—';
+    const a = Math.abs(v), sg = v < 0 ? '-' : '';
+    if (krw) return a >= 1e12 ? `${sg}${(a / 1e12).toFixed(1)}조` : a >= 1e8 ? `${sg}${Math.round(a / 1e8).toLocaleString()}억` : `${sg}${a.toLocaleString()}`;
+    return a >= 1e9 ? `${sg}$${(a / 1e9).toFixed(1)}B` : a >= 1e6 ? `${sg}$${Math.round(a / 1e6)}M` : `${sg}$${a.toLocaleString()}`;
+  };
+  const qlab = (p) => { if (!p) return ''; const [y, m] = p.split('-').map(Number); return `${String(y).slice(2)}.Q${Math.ceil(m / 3)}`; };
+  // 확정 실적만 (발표 전 추정치는 제외)
+  const act = (arr) => (arr || []).filter((q) => q && q.actual != null).sort((x, y) => (x.period < y.period ? -1 : 1)).slice(-5);
+  const trend = (list) => {
+    if (list.length < 2) return null;
+    const last = list[list.length - 1].actual;
+    const yearAgo = list.length >= 5 ? list[list.length - 5].actual : list[0].actual;
+    const prev = list[list.length - 2].actual;
+    if (!yearAgo) return null;
+    const ch = (last - yearAgo) / Math.abs(yearAgo) * 100;
+    const qoq = prev ? (last - prev) / Math.abs(prev) * 100 : 0;
+    const basis = list.length >= 5 ? '전년 동기 대비' : `${list.length - 1}분기 전 대비`;
+    const lab = ch < 0 ? '감소' : (ch >= 5 && qoq > -5) ? '성장' : '둔화';
+    return { lab, cls: { 성장: 'bull', 둔화: 'neu', 감소: 'bear' }[lab], txt: `${basis} ${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%` };
+  };
+  const chart = (title, list) => {
+    if (list.length < 2) return '';
+    const t = trend(list);
+    const mx = Math.max(...list.map((q) => Math.abs(q.actual)), 1);
+    return `
+      <div class="fj-q">
+        <div class="fj-q-h"><span>${title}</span>${t ? `<span class="tc-stat tc-${t.cls}"><i></i>${t.lab}</span><small>${t.txt}</small>` : ''}</div>
+        <div class="fj-bars">${list.map((q) => `
+          <div class="fj-bar">
+            <span class="fj-bv">${money(q.actual)}</span>
+            <span class="fj-bw"><i class="${q.actual < 0 ? 'neg' : ''}" style="height:${Math.max(3, Math.abs(q.actual) / mx * 100).toFixed(1)}%"></i></span>
+            <span class="fj-bl">${qlab(q.period)}</span>
+          </div>`).join('')}</div>
       </div>`;
-  }
-
-  // ── 3. 기존 투자 판단 항목들 ──────────────────────────
-  html += _buildCards(details);
-
-  el.innerHTML = html;
+  };
+  const rev = act(stock && stock.revenue_quarters), oi = act(stock && stock.oi_quarters);
+  const body = chart('매출', rev) + chart('영업이익', oi);
+  return `
+    <section class="fj-box">
+      <div class="fj-box-h"><h4>분기 실적 추이</h4><span class="fj-fs">확정 실적 · 최근 ${Math.max(rev.length, oi.length)}개 분기</span></div>
+      ${body || '<p class="fj-note">분기 실적 자료가 부족합니다.</p>'}
+    </section>`;
 }
 
 function toggleCoDesc() {
@@ -2699,7 +2659,7 @@ function renderStrategy(analysis, stock) {
   const tags = [
     _TREND_TXT[trend] || '횡보',
     rec === 'avoid' ? '진입 비추천' : rec === 'strong' ? '추세 매수' : '분할 접근',
-    plan.rr_now != null ? `현재가 손익비 ${rr(plan.rr_now)}` : null,
+    plan.rr_now != null ? `현재가 손익비 ${rr(plan.rr_now)}<small class="st-basis">${isRes ? '저항 하단 기준' : '목표 하단 기준'}</small>` : null,
     analysis.overheat ? '단기 과열' : null,
     plan.stop.broken ? '손절선 이탈' : null,
   ].filter(Boolean);
@@ -2716,11 +2676,11 @@ function renderStrategy(analysis, stock) {
     nLines.push(`지금은 ${_TREND_TXT[trend] || '약세'}라 위쪽 ${f(plan.upper.low)} 부근이 반등 때 매물이 나오는 저항이에요.`);
     if (ma20 && ma20.value) nLines.push(`확인 조건 1 · 종가가 20일선(${f(ma20.value)}) 위로 회복`);
     nLines.push(`확인 조건 2 · 거래량을 동반한 반등 (평소의 1.5배 이상)`);
-    nLines.push(`지금 사면 손익비 ${rr(plan.rr_now)} — ${plan.rr_now != null && plan.rr_now >= 1.5 ? '숫자는 괜찮지만 추세가 받쳐 주지 않아요' : '위험 대비 기대 수익이 작아요'}`);
+    nLines.push(`지금 사면 손익비 ${rr(plan.rr_now)} <small class="st-basis">저항 하단 기준</small> — ${plan.rr_now != null && plan.rr_now >= 1.5 ? '숫자는 괜찮지만 추세가 받쳐 주지 않아요' : '위험 대비 기대 수익이 작아요'}`);
   } else {
     const ready = analysis.entry_confidence === 'immediate';
     nTitle = ready ? '분할 진입 가능' : '진입 추천가까지 대기'; nTone = ready ? 'bull' : 'neu';
-    if (plan.entry) nLines.push(`진입 추천가 ${f(plan.entry)} (현재가 대비 ${_stPct((plan.entry - plan.current) / plan.current * 100)}) · 손익비 ${rr(plan.rr_entry)}`);
+    if (plan.entry) nLines.push(`진입 추천가 ${f(plan.entry)} (현재가 대비 ${_stPct((plan.entry - plan.current) / plan.current * 100)}) · 손익비 ${rr(plan.rr_entry)} <small class="st-basis">목표 하단 기준</small>`);
     nLines.push(`손절 ${f(plan.stop.price)} (${_stPct(plan.stop.pct)}) · 목표 ${f(plan.upper.low)}~${f(plan.upper.high)} (${_stPct(plan.upper.pct_low)})`);
     nLines.push(ready ? '한 번에 사지 말고 2~3번에 나눠 들어가세요.' : `주요 지지 ${f(plan.support.high)}(${plan.support.basis}) 부근까지 눌릴 때 나눠 사는 편이 유리해요.`);
     if (analysis.overheat) nLines.push('단기 과열 상태라 추격 매수는 피하고 눌림을 기다리세요.');

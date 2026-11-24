@@ -3035,6 +3035,33 @@ def _get_financials(ticker, stock):
     return inc, cf, bs
 
 
+_CONS_G_CACHE = {}
+
+
+def _get_consensus_rev_growth(ticker, stock):
+    """애널리스트 '내년(+1y)' 매출 성장률 컨센서스(소수, 6시간 캐시). 없으면 None.
+
+    info.revenueGrowth 는 최근 분기 실적의 전년 대비 성장률이라 컨센서스가 아니다.
+    """
+    now = time.time()
+    c = _CONS_G_CACHE.get(ticker)
+    if c and (now - c[0]) < _FIN_TTL:
+        return c[1]
+    g = None
+    try:
+        re_df = stock.revenue_estimate
+        if re_df is not None and not re_df.empty and "growth" in re_df.columns:
+            for row in ("+1y", "0y"):
+                if row in re_df.index:
+                    g = safe_float(re_df.loc[row, "growth"])
+                    if g is not None:
+                        break
+    except Exception:
+        g = None
+    _CONS_G_CACHE[ticker] = (now, g)
+    return g
+
+
 _RF_CACHE = {"ts": 0.0, "value": None}
 _RF_TTL   = 60 * 60 * 12          # 12시간
 
@@ -3692,7 +3719,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v5"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v6"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
@@ -3800,6 +3827,11 @@ def _move_reason_fallback(chg, news, disc=None):
 
 def _dcf_brief(dcf):
     a = dcf.get("assumptions") or {}
+    if dcf.get("model") == "pb_roe":
+        return (f"금융주라 DCF 대신 적정 PBR 모델. 현재가 {dcf.get('current_price')}, 적정가 {dcf.get('fair_value')} "
+                f"(상승여력 {dcf.get('upside_pct')}%), ROE {a.get('roe_pct')}%, 자기자본비용 {a.get('cost_equity_pct')}%, "
+                f"적정 PBR {a.get('fair_pb')} / 현재 PBR {a.get('pbr_now')}, 현재가가 반영한 ROE {dcf.get('implied_roe_pct')}%, "
+                f"애널리스트 목표가 {dcf.get('analyst_target')}")
     return (f"현재가 {dcf.get('current_price')}, DCF 적정주가 {dcf.get('fair_value')} "
             f"(상승여력 {dcf.get('upside_pct')}%), 시나리오 비관/기본/낙관 "
             f"{(dcf.get('scenarios') or {}).get('bear', {}).get('fair_value')}/"
@@ -3807,7 +3839,8 @@ def _dcf_brief(dcf):
             f"{(dcf.get('scenarios') or {}).get('bull', {}).get('fair_value')}, "
             f"현재가가 반영한 매출성장률(역산) {dcf.get('implied_growth_pct')}%, 역산 영업이익률 {dcf.get('implied_margin_pct')}% "
             f"(현재 {a.get('ebit_margin_pct')}%), 적용 성장률 {a.get('base_growth_pct')}% "
-            f"(컨센서스 {a.get('consensus_growth_pct')}%, 과거 {a.get('hist_cagr_pct')}%), WACC {a.get('wacc_pct')}%, "
+            f"(애널리스트 내년 매출 성장률 {a.get('consensus_growth_pct')}%, 최근 분기 YoY {a.get('recent_growth_pct')}%, "
+            f"과거 CAGR {a.get('hist_cagr_pct')}%), WACC {a.get('wacc_pct')}%, "
             f"애널리스트 목표가 {dcf.get('analyst_target')}, 신뢰도 {dcf.get('reliability')}")
 
 
@@ -4578,8 +4611,20 @@ def analyze():
             revenue_quarters = []
             eps_quarters     = []
 
-        # ── 한국 주식 전용: 분기 영업이익 (발표치 + 추정치) ─────────────
+        # ── 분기 영업이익: 미국 = quarterly_income_stmt 발표치, 한국 = 네이버·DART (발표치 + 추정치) ──
         oi_quarters = []
+        if not is_korean:
+            try:
+                if qf is not None and not qf.empty:
+                    for key in ["Operating Income", "OperatingIncome", "EBIT"]:
+                        if key in qf.index:
+                            for idx, val in qf.loc[key].dropna().sort_index(ascending=False).items():
+                                v = safe_float(val)
+                                if v is not None and len(oi_quarters) < 5:
+                                    oi_quarters.append({"period": str(idx)[:7], "actual": v, "estimate": None})
+                            break
+            except Exception as e:
+                app.logger.debug(f"us oi_quarters: {e}")
         if is_korean:
             try:
                 krx_code = ticker.split(".")[0]
@@ -4779,10 +4824,26 @@ def analyze():
                 *_get_financials(ticker, stock),
                 current_price, stock_data.get("currency", "USD"),
                 risk_free_rate=_get_risk_free_rate(stock_data.get("currency")),
+                consensus_growth=_get_consensus_rev_growth(ticker, stock),
             )
         except Exception as e:
             app.logger.warning(f"[dcf] {ticker}: {e}")
             stock_data["dcf"] = None
+
+        # ── 밸류에이션 풋볼필드: DCF 범위 · 애널리스트 목표가 범위 · 52주 범위 (DCF 가 없어도 나머지는 그린다) ──
+        _d = stock_data.get("dcf") or {}
+        _sc = _d.get("scenarios") or {}
+        _vals = [(_sc.get(k) or {}).get("fair_value") for k in ("bear", "base", "bull")]
+        stock_data["valuation_ranges"] = {
+            "current": current_price,
+            "dcf": ({"low": min(v for v in _vals if v), "mid": _vals[1], "high": max(v for v in _vals if v),
+                     "label": "적정 PBR" if _d.get("model") == "pb_roe" else "DCF 적정가"}
+                    if _vals[1] and all(_vals) else None),
+            "analyst": ({"low": safe_float(info.get("targetLowPrice")), "mid": safe_float(info.get("targetMeanPrice")),
+                         "high": safe_float(info.get("targetHighPrice")), "count": info.get("numberOfAnalystOpinions")}
+                        if safe_float(info.get("targetLowPrice")) and safe_float(info.get("targetHighPrice")) else None),
+            "week52": ({"low": year_low, "high": year_high} if year_low and year_high else None),
+        }
 
         is_kr_stock  = ticker.endswith('.KS') or ticker.endswith('.KQ')
 
