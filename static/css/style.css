@@ -6098,3 +6098,83 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 @keyframes ds-pulse { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .ds-st.run i { animation: none; } }
 .ds-refresh:disabled { opacity: .6; cursor: default; }
+
+/* ── 기술적 분석: 신호등 바 + 6카드 (PR #71) ───────────────────── */
+.ta-wrap { display: flex; flex-direction: column; gap: 12px; }
+.ta-bull { --ta: var(--green); --ta-bg: rgba(63,185,80,0.14); }
+.ta-bear { --ta: var(--red);   --ta-bg: rgba(248,81,73,0.14); }
+.ta-neu  { --ta: var(--yellow); --ta-bg: rgba(210,153,34,0.13); }
+.ta-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ta); flex: none; }
+.ta-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg3);
+}
+.ta-tally { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--text2); }
+.ta-cnt { display: inline-flex; align-items: center; gap: 6px; }
+.ta-cnt b { color: var(--ta); font-size: 16px; font-variant-numeric: tabular-nums; }
+.ta-sep { color: var(--border); }
+.ta-hot {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
+  font-size: 11px; font-weight: 700; color: #f0883e; background: rgba(240,136,62,0.14);
+  border: 1px solid rgba(240,136,62,0.35); border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+}
+.ta-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.ta-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ta) 40%, transparent); background: var(--ta-bg);
+  color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit;
+}
+.ta-badge:hover { border-color: var(--ta); }
+.ta-badge:focus-visible, .ta-help-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+.ta-card {
+  position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  padding: 14px 14px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2);
+  border-top: 3px solid var(--ta);
+}
+.ta-card.ta-flash { animation: taFlash 1.2s ease-out; }
+@keyframes taFlash { 0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ta) 55%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.ta-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.ta-name { margin: 0; font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.ta-state {
+  font-size: 11px; font-weight: 700; color: var(--ta); background: var(--ta-bg);
+  border-radius: 6px; padding: 3px 8px; text-align: right; line-height: 1.35;
+}
+.ta-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ta-m { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ta-m span { font-size: 11px; color: var(--text2); }
+.ta-m b { font-size: 15px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ta-gauge { display: flex; flex-direction: column; gap: 4px; }
+.ta-track { position: relative; height: 8px; border-radius: 999px; background: var(--bg3); }
+.ta-g-rsi .ta-track { background: linear-gradient(to right, rgba(63,185,80,.55) 0 30%, var(--bg3) 30% 70%, rgba(248,81,73,.55) 70% 100%); }
+.ta-g-bb  .ta-track { background: linear-gradient(to right, rgba(63,185,80,.45), var(--bg3) 50%, rgba(248,81,73,.45)); }
+.ta-g-adx .ta-track { background: linear-gradient(to right, var(--bg3) 0 33.3%, rgba(210,153,34,.35) 33.3% 41.7%, rgba(88,166,255,.55) 41.7% 100%); }
+.ta-mark { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--text2); opacity: .6; }
+.ta-pin {
+  position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: var(--text); border: 3px solid var(--bg2); box-shadow: 0 0 0 1px var(--ta);
+}
+.ta-glabels { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; color: var(--text2); }
+.ta-glabels b { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+.ta-help-btn {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin-top: auto;
+  background: none; border: 0; padding: 4px 0; color: var(--text2); font-size: 12px; cursor: pointer; font-family: inherit;
+  min-height: 28px;
+}
+.ta-help-btn:hover { color: var(--accent); }
+.ta-q {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
+  border: 1px solid currentColor; font-size: 10px; font-weight: 700;
+}
+.ta-caret { transition: transform .15s; }
+.ta-help-btn[aria-expanded="true"] .ta-caret { transform: rotate(180deg); }
+.ta-help { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.ta-help[hidden] { display: none; }
+.ta-tip { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text); background: rgba(88,166,255,0.07); border-radius: 8px; padding: 8px 10px; }
+.ta-desc { margin: 0; font-size: 12px; line-height: 1.65; color: var(--text2); }
+@media (max-width: 1024px) { .ta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .ta-grid { grid-template-columns: 1fr; gap: 10px; }
+  .ta-bar { padding: 10px 12px; }
+  .ta-badge { font-size: 11.5px; padding: 4px 9px; }
+}

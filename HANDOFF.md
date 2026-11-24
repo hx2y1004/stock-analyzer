@@ -57,6 +57,24 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 기술적 분석 엔진 버그 수정 · 탭 UI 개편 (PR #71)
+- `analysis/indicators.py`: RSI 를 Wilder 평활(`ewm(alpha=1/14, adjust=False)`)로 변경(하락 0 → 100, 변화 0 → 50).
+  ATR(14) = 정식 True Range(전일 종가 갭 포함)의 Wilder 평균. ADX·+DI·-DI(14), OBV·OBV_MA20 컬럼 추가. BB 폭 0 나눗셈 방어.
+  기존 컬럼 이름은 그대로라 `bot_engine.compute_features`(자체 ATR 로 덮어씀)·차트 API 는 그대로 동작.
+  **봇 RSI 값도 Wilder 로 바뀐다** (단순평균보다 완만, 봇 신호 임계값은 손대지 않음).
+- `analysis/ai_analysis.py`:
+  - 거래량 급증 +20 은 양봉(종가 > 시가)일 때만. 음봉 급증은 `vol_spike_down` 만 표시.
+  - 주봉 MA5/20 크로스 검사에 최신 주봉 포함(`range(-5, 0)`).
+  - MACD 히스토그램 확대/축소는 |현재| > |직전| 으로 판정.
+  - 일목 전환선 = 기준선이면 0점. BB 중심선 위 +5 제거(MA20 과 중복).
+  - 과열 분리: 강한 상승(MA5>MA20>MA60, 또는 ADX≥25·+DI>-DI·종가>MA20)에서는 RSI≥70·BB 상단 돌파를 감점하지 않고
+    `⚠️ 단기 과열` 배지(info 신호, `overheat`)만 붙인다. 추세 없을 땐 각각 -5(예전 -10).
+  - 6번째 카드 `수급 · ADX` (ADX 추세장/횡보장 ±5, OBV 20일 유입/이탈 ±5).
+  - 카드마다 `short`·`metrics`·`gauge`(rsi/bb/adx) 추가. 응답에 `adx`·`plus_di`·`minus_di`·`adx_regime`·`obv_flow`·`overheat`·`atr` 등 추가. `_ANALYZE_VER` v4.
+- 화면(`main.js renderDetail`): 위 신호등 바(강세·중립·약세 개수 + 6개 배지, 누르면 해당 카드로 이동) → 6카드 3×2(1024px↓ 2열, 640px↓ 1열).
+  '? 쉬운 설명'은 기본 접힘. RSI 쉬운 설명 키 불일치(`RSI (상대강도지수)` → `RSI (14)`) 수정. 투자 판단 탭은 기존 `_buildCards` 유지.
+- 캐시: main.js v90, style.css v102, 서비스 워커 sa-v68.
+
 ### 미국 8-K Item 1.01 → 수주·계약 · 필터 경쟁 상태 (PR #70)
 - 새로 저장: 8-K 에 Item 1.01(중요 계약 체결)이 있으면 `contract`(positive). 우선순위 3.02 유상증자 > 자사주 > 1.01 계약 > 2.01·2.02(`material_8k`).
 - 예전 행: 서버 기동 시 `disclosures.migrate_8k_contract()` 가 SEC `material_8k` 중 요약에 `Item 1.01` 이 든 행을 `contract` 로 변환(멱등).
