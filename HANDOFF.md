@@ -57,6 +57,19 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 공시·수주 레이더: 시장별 최초 14일 백필 (PR #66)
+- 프로세스 첫 `tick` 에서 `disclosure_events` 를 시장별로 확인 → 0건인 시장만 14일 백필을 예약(`_check_backfill`). 시간창과 무관.
+  `_backfilled[시장]`: None(확인 전) · False(진행 중) · True(끝남/불필요). 재시작해도 DB 에 공시가 있으면 다시 하지 않는다.
+- 백필은 여러 tick 에 나눠 이어서 한다 (`_bf[시장]` 에 위치 저장, tick 마다 `TICK_BUDGET` 40초). **저장만 하고 알림은 보내지 않는다.**
+  백필이 진행 중이어도 정기 수집(DART 15분 · SEC 30분)은 그대로 돌고, 새로 감지된 공시만 알림.
+- 한국: `list.json` `bgn_de`=오늘-14일 ~ `end_de`=오늘, 공시유형 `B`(주요사항보고) · `I`(거래소공시) 로 나눠 유형마다 최대 30쪽,
+  공급계약 원문 최대 30건.
+- 미국: EDGAR 전문 검색(efts) 대신 공식 문서가 있는 회사별 최근 제출 목록 `data.sec.gov/submissions/CIK##########.json`.
+  대상 회사마다 1회 → 8-K 는 `items` 로 바로 판정, Form 4 는 `primaryDocument`(xsl 경로 앞부분을 떼서 원본 XML)를 최신부터 최대 600건.
+  `sec_user_agent()` · 0.2초 간격 · 403/429 처리 그대로. **이 환경에서 data.sec.gov 실제 호출은 확인하지 못함** (형식 샘플로만 검증).
+- 수동: `POST /api/disclosures/refresh` 에 `{"backfill": true, "markets": ["KR","US"]}` 또는 `?backfill=1` (소유자 전용).
+  그 요청에서 최대 90초, 남은 건 스케줄러가 이어서. 진행 상황은 `/api/disclosures` 의 `status.KR.backfill` (`running` / `done (N건)`).
+
 ### 공시 → 종목 상세 · AI 급등락 사유 연결 (PR #65)
 - 외부 호출 없이 `disclosure_events` DB 조회만. `app._recent_disclosures(ticker, days, limit)` (= `disclosures.query`).
 - 종목 상세: `loadAnalyzeExtras` 시작 때 `/api/disclosures?ticker=&days=30&limit=5` 를 따로 불러(느린 뉴스·AI 를 기다리지 않음)

@@ -42,6 +42,13 @@ SEC_FEED_PAGES = 4              # 최신 공시 피드 페이지(100건씩) 상�
 SEC_FILINGS_PER_RUN = 30        # Form 4 / 8-K 상세 조회 상한 (한 번에)
 SEC_ITEMS = {"1.01": ("중요 계약 체결", "positive"), "2.01": ("인수·자산 취득 완료", "positive"),
              "2.02": ("실적 발표", "neutral")}
+# 최초 백필: 시장별 DB 가 0건인 프로세스 첫 tick 에 최근 14일을 알림 없이 채운다 (여러 tick 에 나눠, tick 마다 TICK_BUDGET 안에서)
+BACKFILL_DAYS = 14
+DART_BACKFILL_TYPES = ("B", "I")      # 주요사항보고(자기주식 취득·유상증자) · 거래소공시(공급계약·주식소각)
+DART_BACKFILL_PAGES = 30              # 유형마다 최대 30쪽(100건씩) → 최대 60회
+DART_BACKFILL_DOCS = 30               # 공급계약 원문(계약금액·매출 대비 %) 조회 상한
+SEC_BACKFILL_FORM4 = 600              # Form 4 XML 조회 상한 (최신부터)
+SEC_SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 
 
 def init(deps):
@@ -253,23 +260,105 @@ def _dart_contract_detail(key, rcept_no, get):
         return {}
 
 
-def collect_dart(tg=None, now=None, deadline=None, get=None):
-    """오늘(한국 날짜) 공시목록 → 대상 종목의 공급계약·자사주·유상증자 이벤트 목록."""
+def _dart_code_map(tg):
+    code2t = {}
+    for t, nm in tg["KR"].items():
+        code2t.setdefault(t.split(".")[0].upper(), (t, nm))
+    return code2t
+
+
+def _dart_event(it, hit, key, get, day, want_doc):
+    """DART 목록 1건 → 이벤트 dict | None. want_doc 이면 공급계약 원문에서 계약금액·매출 대비 % 를 읽는다."""
+    cls = classify_dart(it.get("report_nm"))
+    if not cls:
+        return None
+    cat, senti, label = cls
+    t, nm = hit
+    rno = str(it.get("rcept_no"))
+    summary = {"contract": "공급계약 체결", "buyback": "주주환원 (자사주)", "offering": "신주 발행 — 주식 수 희석 주의"}[cat]
+    if cat == "contract" and senti == "negative":
+        summary = "기존 공급계약 해지"
+    if cat == "contract" and senti == "positive" and want_doc:
+        det = _dart_contract_detail(key, rno, get)
+        parts = [f"계약금액 {fmt_krw(det['amount'])}" if det.get("amount") else "",
+                 f"최근 매출 대비 {det['ratio']:g}%" if det.get("ratio") is not None else ""]
+        summary = " · ".join(p for p in parts if p) or summary
+    try:
+        d0 = datetime.strptime(str(it.get("rcept_dt") or ""), "%Y%m%d").date()
+    except ValueError:
+        d0 = day
+    at = _utcnow() if d0 == day else datetime(d0.year, d0.month, d0.day, 9, tzinfo=KST).astimezone(timezone.utc).replace(tzinfo=None)
+    return {"market": "KR", "ticker": t, "name": it.get("corp_name") or nm, "source": "DART", "category": cat,
+            "sentiment": senti, "title": label, "summary": summary,
+            "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rno}",
+            "external_id": f"DART:{rno}", "disclosed_at": at}
+
+
+def _dart_backfill(key, tg, now, deadline, get):
+    """최근 14일 (bgn_de = 오늘 - 14일 ~ end_de = 오늘). 공시유형 B·I 로 나눠 유형마다 최대 30쪽.
+    시간 예산이 끝나면 위치를 _bf["KR"] 에 남기고 다음 tick 에 이어서 한다."""
+    st = _bf["KR"]
+    day = now.astimezone(KST).date()
+    st.setdefault("bgn", (day - timedelta(days=BACKFILL_DAYS)).strftime("%Y%m%d"))
+    st.setdefault("end", day.strftime("%Y%m%d"))
+    st.setdefault("ti", 0); st.setdefault("page", 1); st.setdefault("docs", 0); st.setdefault("calls", 0)
+    code2t = _dart_code_map(tg)
+    out = []
+    while st["ti"] < len(DART_BACKFILL_TYPES):
+        if deadline and time.time() > deadline:
+            return out                                # 다음 tick 에 이어서
+        ty = DART_BACKFILL_TYPES[st["ti"]]
+        try:
+            r = get(DART_LIST, params={"crtfc_key": key, "bgn_de": st["bgn"], "end_de": st["end"], "pblntf_ty": ty,
+                                       "page_no": st["page"], "page_count": 100}, timeout=10)
+            j = r.json()
+        except Exception as e:
+            log(f"DART 백필 목록 실패 {ty} p{st['page']}: {e}")
+            return out                                # 네트워크 오류: 다음 tick 에 같은 쪽부터
+        st["calls"] += 1
+        items = (j.get("list") or []) if j.get("status") == "000" else []
+        if j.get("status") not in ("000", "013"):
+            log(f"DART 백필 응답 {j.get('status')} {j.get('message')}")
+        for it in items:
+            hit = code2t.get(str(it.get("stock_code") or "").strip().upper())
+            if not hit:
+                continue
+            want_doc = st["docs"] < DART_BACKFILL_DOCS and classify_dart(it.get("report_nm")) and \
+                classify_dart(it.get("report_nm"))[:2] == ("contract", "positive")
+            if want_doc:
+                st["docs"] += 1
+            ev = _dart_event(it, hit, key, get, day, want_doc)
+            if ev:
+                out.append(ev)
+        if not items or len(items) < 100 or st["page"] >= DART_BACKFILL_PAGES:
+            st["ti"] += 1; st["page"] = 1           # 다음 공시유형
+        else:
+            st["page"] += 1
+            time.sleep(0.1)
+    st["done"] = True
+    return out
+
+
+def collect_dart(tg=None, now=None, deadline=None, get=None, backfill=False):
+    """오늘(한국 날짜) 공시목록 → 대상 종목의 공급계약·자사주·유상증자 이벤트 목록.
+    backfill=True 면 최근 14일 (진행 상태는 _bf["KR"], 끝나면 _bf["KR"]["done"] = True)."""
     key = os.environ.get("DART_API_KEY", "").strip()
     if not key:
         STATUS["KR"]["note"] = "DART_API_KEY 없음"
+        if backfill:
+            _bf["KR"]["done"] = True                  # 키가 없으면 채울 수 없음 (다시 시도하지 않음)
         return []
     import requests
     get = get or requests.get
     now = now or datetime.now(KST)
+    tg = tg if tg is not None else targets()
+    if backfill:
+        return _dart_backfill(key, tg, now, deadline, get)
     day = now.astimezone(KST).date()
     if _dart_seen["day"] != day:
         _dart_seen.update(day=day, ids=set())
     cold = not _dart_seen["ids"]
-    tg = tg if tg is not None else targets()
-    code2t = {}
-    for t, nm in tg["KR"].items():
-        code2t.setdefault(t.split(".")[0].upper(), (t, nm))
+    code2t = _dart_code_map(tg)
     out, docs = [], 0
     for page in range(1, (DART_PAGES_COLD if cold else DART_PAGES_WARM) + 1):
         if deadline and time.time() > deadline:
@@ -293,30 +382,11 @@ def collect_dart(tg=None, now=None, deadline=None, get=None):
             if not hit:
                 continue
             cls = classify_dart(it.get("report_nm"))
-            if not cls:
-                continue
-            cat, senti, label = cls
-            t, nm = hit
-            rno = str(it.get("rcept_no"))
-            summary = {"contract": "공급계약 체결", "buyback": "주주환원 (자사주)", "offering": "신주 발행 — 주식 수 희석 주의"}[cat]
-            if cat == "contract" and senti == "negative":
-                summary = "기존 공급계약 해지"
-            if cat == "contract" and senti == "positive" and docs < DART_DOC_PER_RUN:
-                docs += 1
-                det = _dart_contract_detail(key, rno, get)
-                parts = [f"계약금액 {fmt_krw(det['amount'])}" if det.get("amount") else "",
-                         f"최근 매출 대비 {det['ratio']:g}%" if det.get("ratio") is not None else ""]
-                summary = " · ".join(p for p in parts if p) or summary
-            rdt = str(it.get("rcept_dt") or "")
-            try:
-                d0 = datetime.strptime(rdt, "%Y%m%d").date()
-            except ValueError:
-                d0 = day
-            at = _utcnow() if d0 == day else datetime(d0.year, d0.month, d0.day, 9, tzinfo=KST).astimezone(timezone.utc).replace(tzinfo=None)
-            out.append({"market": "KR", "ticker": t, "name": it.get("corp_name") or nm, "source": "DART", "category": cat,
-                        "sentiment": senti, "title": label, "summary": summary,
-                        "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rno}",
-                        "external_id": f"DART:{rno}", "disclosed_at": at})
+            want_doc = bool(cls) and cls[:2] == ("contract", "positive") and docs < DART_DOC_PER_RUN
+            docs += int(want_doc)
+            ev = _dart_event(it, hit, key, get, day, want_doc)
+            if ev:
+                out.append(ev)
         if not items or len(items) < 100 or (not cold and len(fresh) < len(items)):
             break                                     # 마지막 페이지 · 이미 본 구간에 닿음
         time.sleep(0.1)
@@ -558,18 +628,127 @@ def _scan_feed(form, since, deadline, get=None):
     return out
 
 
-def collect_sec(tg=None, now=None, deadline=None, get=None):
-    """Form 4 장내 매수 · 8-K 핵심 항목 이벤트 목록."""
+def _8k_event(items, cik, acc, t, nm, at):
+    keep = [i for i in items if i in SEC_ITEMS]
+    if not keep:
+        return None
+    senti = "positive" if any(SEC_ITEMS[i][1] == "positive" for i in keep) else "neutral"
+    return {"market": "US", "ticker": t, "name": nm, "source": "SEC", "category": "material_8k", "sentiment": senti,
+            "title": "8-K · " + " · ".join(SEC_ITEMS[i][0] for i in keep),
+            "summary": " · ".join(f"Item {i} {SEC_ITEMS[i][0]}" for i in keep) + ("" if len(keep) == len(items) else
+                       f" (그 외 {', '.join(i for i in items if i not in SEC_ITEMS)})"),
+            "source_url": f"{_filing_dir(cik, acc)}/{acc}-index.htm", "external_id": f"SEC:{acc}", "disclosed_at": at}
+
+
+def _sec_time(s, fallback_date=None):
+    """'2026-11-20T21:05:12.000Z' → UTC naive. 없으면 제출일 자정(ET)."""
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).astimezone(timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        try:
+            d0 = datetime.strptime(str(fallback_date), "%Y-%m-%d")
+            return d0.replace(tzinfo=ET_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+        except (TypeError, ValueError):
+            return _utcnow()
+
+
+def parse_submissions(js, since_date):
+    """data.sec.gov/submissions JSON → [{form, accession, date, at, doc, items}] (since_date 이후 Form 4 · 8-K 만)."""
+    rec = ((js or {}).get("filings") or {}).get("recent") or {}
+    forms = rec.get("form") or []
+    out = []
+    for i, f in enumerate(forms):
+        if f not in ("4", "4/A", "8-K", "8-K/A"):
+            continue
+        fd = (rec.get("filingDate") or [None] * len(forms))[i]
+        if not fd or fd < since_date:
+            continue
+        out.append({"form": f, "accession": (rec.get("accessionNumber") or [""] * len(forms))[i], "date": fd,
+                    "at": _sec_time((rec.get("acceptanceDateTime") or [None] * len(forms))[i], fd),
+                    "doc": (rec.get("primaryDocument") or [""] * len(forms))[i] or "",
+                    "items": [x.strip() for x in str((rec.get("items") or [""] * len(forms))[i] or "").split(",") if x.strip()]})
+    return out
+
+
+def _sec_backfill(cik2t, now, deadline, get):
+    """최근 14일: 대상 회사마다 최근 제출 목록 1번 → 8-K 는 항목으로 바로 판정, Form 4 는 XML 을 최신부터 최대 600건.
+    진행 상태는 _bf["US"] (회사 목록 위치 · Form 4 대기열). 시간 예산이 끝나면 다음 tick 에 이어서 한다."""
+    st = _bf["US"]
+    E = D["DisclosureEvent"]
+    if "ciks" not in st:
+        st.update(ciks=sorted(cik2t), i=0, q=[], j=0, calls=0,
+                  since=(now.astimezone(ET_TZ).date() - timedelta(days=BACKFILL_DAYS)).isoformat())
+    out = []
+    while st["i"] < len(st["ciks"]):                  # 1단계: 회사별 최근 제출 목록
+        if deadline and time.time() > deadline:
+            return out
+        cik = st["ciks"][st["i"]]
+        r = sec_get(SEC_SUBMISSIONS.format(cik=cik), get=get)
+        st["calls"] += 1
+        st["i"] += 1
+        if r is None:
+            continue                                  # 이 회사는 건너뜀 (403/429 면 sec_get 이 10분 쉰다)
+        try:
+            rows = parse_submissions(r.json(), st["since"])
+        except Exception as e:
+            log(f"SEC 제출 목록 파싱 실패 CIK {cik}: {e}")
+            continue
+        t, nm = cik2t[cik]
+        for f in rows:
+            if f["form"].startswith("8-K"):
+                ev = _8k_event(f["items"], cik, f["accession"], t, nm, f["at"])
+                if ev:
+                    out.append(ev)
+            else:
+                st["q"].append((f["at"], cik, f["accession"], f["doc"]))
+    if st["q"] and not st.get("sorted"):              # 2단계 준비: 최신부터, 이미 저장된 공시 제외, 상한
+        st["q"].sort(key=lambda x: x[0], reverse=True)
+        accs = [f"SEC:{x[2]}" for x in st["q"]]
+        have = set()
+        for k in range(0, len(accs), 300):
+            have |= {r[0] for r in D["db"].session.query(E.external_id).filter(E.external_id.in_(accs[k:k + 300])).all()}
+        st["q"] = [x for x in st["q"] if f"SEC:{x[2]}" not in have][:SEC_BACKFILL_FORM4]
+        st["sorted"] = True
+    while st["j"] < len(st["q"]):                     # 2단계: Form 4 XML → 장내 매수(P)만
+        if deadline and time.time() > deadline:
+            return out
+        at, cik, acc, doc = st["q"][st["j"]]
+        st["j"] += 1
+        raw = doc.split("/")[-1] if doc.lower().endswith(".xml") else None    # 'xslF345X05/form4.xml' → 원본 'form4.xml'
+        url = f"{_filing_dir(cik, acc)}/{raw}" if raw else _form4_xml_url(cik, acc, get=get)
+        r = sec_get(url, get=get) if url else None
+        st["calls"] += 1
+        if r is None:
+            continue
+        try:
+            p = parse_form4(r.text)
+        except ET.ParseError as e:
+            log(f"Form 4 XML 파싱 실패 {acc}: {e}")
+            continue
+        _sec["seen"].add(acc)
+        if p["buys"]:
+            t, nm = cik2t[cik]
+            out.append({"market": "US", "ticker": t, "name": nm, "source": "SEC", "category": "insider_buy", "sentiment": "positive",
+                        "title": "Form 4 · 내부자 장내 매수", "summary": form4_summary(p),
+                        "source_url": f"{_filing_dir(cik, acc)}/{acc}-index.htm", "external_id": f"SEC:{acc}", "disclosed_at": at})
+    st["done"] = True
+    return out
+
+
+def collect_sec(tg=None, now=None, deadline=None, get=None, backfill=False):
+    """Form 4 장내 매수 · 8-K 핵심 항목 이벤트 목록. backfill=True 면 최근 14일 (진행 상태는 _bf["US"])."""
     tg = tg if tg is not None else targets()
     tmap = sec_ticker_map(get=get)
     if not tmap:
         STATUS["US"]["note"] = "SEC 티커 매핑을 받지 못함"
-        return []
+        return []                                     # 백필이면 다음 tick 에 다시 시도
     cik2t = {}
     for t, nm in tg["US"].items():
         c = tmap.get(t.upper().replace(".", "-"))
         if c:
             cik2t.setdefault(c, (t, nm))
+    if backfill:
+        return _sec_backfill(cik2t, now or datetime.now(timezone.utc), deadline, get)
     E = D["DisclosureEvent"]
     out, budget = [], SEC_FILINGS_PER_RUN
     for form in ("4", "8-K"):
@@ -618,13 +797,7 @@ def collect_sec(tg=None, now=None, deadline=None, get=None):
                     items = parse_8k_items(r.text) if r is not None else []
                     if r is None:
                         continue
-                keep = [i for i in items if i in SEC_ITEMS]
-                if keep:
-                    senti = "positive" if any(SEC_ITEMS[i][1] == "positive" for i in keep) else "neutral"
-                    ev = {"category": "material_8k", "sentiment": senti,
-                          "title": "8-K · " + " · ".join(SEC_ITEMS[i][0] for i in keep),
-                          "summary": " · ".join(f"Item {i} {SEC_ITEMS[i][0]}" for i in keep) + ("" if len(keep) == len(items) else
-                                     f" (그 외 {', '.join(i for i in items if i not in SEC_ITEMS)})")}
+                ev = _8k_event(items, f["cik"], f["accession"], t, nm, f["updated"])
             _sec["seen"].add(f["accession"])
             if ev:
                 ev.update(market="US", ticker=t, name=nm or f["company"], source="SEC", source_url=index_url,
@@ -650,16 +823,77 @@ def _us_window(now):
 
 # (이름, 시장, 주기(분), 실행 시간 판정, 수집 함수). 2차: ("g2b", "KR", 60, ...) · ("usaspending", "US", 60, ...)
 COLLECTORS = [("dart", "KR", 15, _kr_window, collect_dart), ("sec", "US", 30, _us_window, collect_sec)]
-STATUS = {"KR": {"last_run": None, "saved": 0, "note": None}, "US": {"last_run": None, "saved": 0, "note": None}}
+STATUS = {"KR": {"last_run": None, "saved": 0, "note": None, "backfill": None},
+          "US": {"last_run": None, "saved": 0, "note": None, "backfill": None}}
 _last = {}
 _cleanup_day = {"d": None}
+# 최초 백필: 이 프로세스에서 시장별로 한 번. None = 아직 DB 확인 전, True = 끝남(또는 필요 없음), False = 진행 중
+_backfilled = {"KR": None, "US": None}
+_bf = {"KR": {}, "US": {}}                         # 진행 상태 (여러 tick 에 걸쳐 이어서)
+BACKFILL_COLLECTOR = {"KR": collect_dart, "US": collect_sec}
 
 
-def run(names=None, force=False, now=None):
-    """주기가 된(또는 force) 수집기를 돌리고 새 이벤트를 저장·알림 → {이름: 새로 저장된 건수}."""
+def _check_backfill():
+    """첫 tick: 시장별 DB 공시가 0건이면 14일 백필을 예약한다 (시간창과 무관). DB 오류면 다음 tick 에 다시 확인."""
+    E = D["DisclosureEvent"]
+    for m in ("KR", "US"):
+        if _backfilled[m] is not None:
+            continue
+        try:
+            empty = E.query.filter(E.market == m).first() is None
+        except Exception as e:
+            D["db"].session.rollback()
+            log(f"백필 확인 실패 {m}: {e}")
+            continue
+        if empty:
+            start_backfill([m], reason="DB 0건")
+        else:
+            _backfilled[m] = True
+
+
+def start_backfill(markets=("KR", "US"), reason="수동"):
+    """14일 백필을 (다시) 시작한다. 진행 상태를 비우고 다음 run 부터 이어서 처리."""
+    for m in markets:
+        _backfilled[m] = False
+        _bf[m] = {"started": _utcnow().isoformat() + "Z"}
+        STATUS[m]["backfill"] = "running"
+        log(f"{m} 최근 {BACKFILL_DAYS}일 백필 시작 ({reason})")
+
+
+def _run_backfill(now, deadline, tg):
+    """진행 중인 백필을 시간 예산 안에서 이어서 한다. 저장만 하고 알림은 절대 보내지 않는다. → {시장: 저장 건수}"""
+    res = {}
+    for m in ("KR", "US"):
+        if _backfilled[m] is not False or time.time() > deadline:
+            continue
+        try:
+            events = BACKFILL_COLLECTOR[m](tg=tg, now=now, deadline=deadline, backfill=True)
+            rows = save_events(events)                # notify 없음 (과거 공시)
+        except Exception as e:
+            D["db"].session.rollback()
+            log(f"{m} 백필 실패: {e}")
+            continue
+        st = _bf[m]
+        st["saved"] = st.get("saved", 0) + len(rows)
+        res[m] = len(rows)
+        if st.get("done"):
+            _backfilled[m] = True
+            STATUS[m]["backfill"] = f"done ({st['saved']}건)"
+            log(f"{m} 백필 완료: {st['saved']}건 저장 (요청 {st.get('calls', 0)}회, 알림 없음)")
+    return res
+
+
+def run(names=None, force=False, now=None, budget=None):
+    """(1) 진행 중인 최초 백필을 이어서 (알림 없음) → (2) 주기가 된(또는 force) 수집기를 돌리고 새 이벤트를 저장·알림.
+    → {이름: 새로 저장된 건수} (백필은 'backfill_KR' · 'backfill_US')"""
     now = now or datetime.now(timezone.utc)
-    deadline = time.time() + TICK_BUDGET
+    deadline = time.time() + (budget or TICK_BUDGET)
     res, tg = {}, None
+    _check_backfill()
+    if any(v is False for v in _backfilled.values()):
+        tg = targets()
+        for m, n in _run_backfill(now, deadline, tg).items():
+            res[f"backfill_{m}"] = n
     for name, market, every, window, fn in COLLECTORS:
         if names and name not in names:
             continue
