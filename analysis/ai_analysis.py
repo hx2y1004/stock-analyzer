@@ -350,6 +350,41 @@ def _analyze_fundamental(df, info):
     return {"details": details, "score": score, "market_position": market_position}
 
 
+TECH_WEIGHT, FUND_WEIGHT = 0.55, 0.45
+
+
+def combine_scores(tech_gauge, scorecard):
+    """종합 점수(-100~+100) = 기술 55% + 펀더멘털 45%. 펀더멘털이 없으면 기술 100%.
+
+    - 기술: 하단 '기술적 분석' 반원 게이지 값(6축 평균, 0~100)을 그대로 쓴다 → (값 - 50) × 2
+      → 상단 종합 판단과 하단 게이지가 같은 기술 평가를 공유한다.
+    - 펀더멘털: 4팩터(Quality·Value·Growth·Momentum) 종합 점수(0~100) → (값 - 50) × 2
+    """
+    tv = (tech_gauge or {}).get("value")
+    tv = 50.0 if tv is None else float(tv)
+    tech_norm = (tv - 50.0) * 2
+    ov = (((scorecard or {}).get("factors") or {}).get("overall") or {})
+    fv = ov.get("score")
+    if fv is not None:
+        fund_norm = (float(fv) - 50.0) * 2
+        combined = TECH_WEIGHT * tech_norm + FUND_WEIGHT * fund_norm
+        w = {"tech": TECH_WEIGHT, "fund": FUND_WEIGHT}
+    else:
+        fund_norm = None
+        combined = tech_norm
+        w = {"tech": 1.0, "fund": 0.0}
+    combined = int(round(max(-100.0, min(100.0, combined))))
+    tone = (tech_gauge or {}).get("tone") or ("bull" if tv >= 55 else "bear" if tv <= 45 else "neu")
+    breakdown = {
+        "tech": {"score": round(tv), "norm": round(tech_norm, 1), "tone": tone,
+                 "label": {"bull": "강세", "bear": "약세"}.get(tone, "중립")},
+        "fund": ({"score": round(float(fv)), "norm": round(fund_norm, 1), "grade": ov.get("grade")}
+                 if fv is not None else None),
+        "weights": w,
+    }
+    return combined, breakdown
+
+
 def _tech_gauge(cards, overheat_reasons, adx_v, adx_regime, pdi_v, mdi_v):
     """기술 카드 6개 → 반원 게이지 값(0~100)과 라벨. 축 점수 평균이 기준."""
     axes = [c.get("axis", 50.0) for c in cards]
@@ -902,8 +937,9 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         except Exception as _e:
             scorecard = None
 
-    # ── 종합 판단 (기술 + 펀더멘털 통합) ──────────────
-    combined_score = max(-100, min(100, score + fund_score))
+    # ── 종합 판단 (기술 55% + 펀더멘털 45% 가중 합산) ──────────────
+    # 예전: clip(기술 원점수 + 펀더멘털 원점수) → 두 점수 범위가 달라 ±100 에 쉽게 붙었다(포화).
+    combined_score, score_breakdown = combine_scores(tech_gauge, scorecard)
 
     # ── 1개월 기반 박스권 정보 (참고용 구간) ────────────
     # 정식 True Range(전일 종가 갭 포함)의 Wilder 평균. 지표 컬럼이 있으면 그대로, 없으면 여기서 계산
@@ -1216,6 +1252,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         "vol_spike_up":  vol_spike_up,
         "vol_spike_down": vol_spike_down,
         "macd_hist_expanding": hist_expanding,
-        "tech_gauge":    tech_gauge,          # 반원 게이지 (0~100) · 라벨 · 강세/중립/약세 수
+        "tech_gauge":    tech_gauge,
+        "score_breakdown": score_breakdown,   # 기술(게이지) · 펀더멘털(4팩터) · 가중치          # 반원 게이지 (0~100) · 라벨 · 강세/중립/약세 수
         "price_plan":    price_plan,          # 손절 ≤ 지지 < 현재가 < 목표/저항 · 거리 % · 손익비
     }
