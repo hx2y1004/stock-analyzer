@@ -1067,6 +1067,136 @@ def overlay_live(quotes, tickers, pending, market):
     return out
 
 
+# ── 체결 대기(PENDING) 신호 전용: 오늘 정규장 시가를 지연 없이 확보 ─────────────────────────────
+# Yahoo 5분봉은 15~20분 늦고 한국 우선주(00680K.KS 등)는 아예 빠지기도 해 체결이 장 마감 배치까지 밀렸다.
+# 우선순위  KR: 네이버 실시간(KRX 공식 openPrice) → 토스 1분봉(09:00 KST 이후 첫 봉) → Yahoo 5분봉
+#           US: 토스 1분봉(09:30 ET 이후 첫 봉) + 토스 실시간 현재가 → Yahoo 5분봉
+# 끝내 못 구한 종목은 기존처럼 장 마감 배치(track_signals)가 일봉 시가로 처리한다.
+_NAVER_H = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0.0.0 Safari/537.36", "Referer": "https://finance.naver.com/"}
+PENDING_MINUTE_PAGES = 4        # 토스 1분봉 최대 페이지(200봉씩). 오늘 개장 전 봉까지 닿아야 '첫 봉 = 시가'를 믿는다
+
+
+def _num_comma(v):
+    """'193,200' 같은 쉼표 숫자 → float (기존 _num 은 NaN 처리용이라 이름을 나눔)."""
+    try:
+        v = float(str(v).replace(",", ""))
+        return None if math.isnan(v) else v
+    except (TypeError, ValueError):
+        return None
+
+
+def _naver_session_quotes(tickers, today, now=None):
+    """네이버 실시간 폴링 → {ticker: (시가, 고가, 저가, 현재가, 날짜)}.
+    최상위 openPrice/highPrice/lowPrice/closePrice 는 KRX 정규장 값이다
+    (NXT 프리·애프터마켓 값은 overMarketPriceInfo 안에 따로 있어 쓰지 않는다).
+    오늘 날짜 · 09:00 KST 이후 체결 · 값 > 0 인 것만 받는다 (개장 전에는 어제 값이 오므로 버린다)."""
+    import requests
+    tz = _tz("KR")
+    now = now or datetime.now(tz)
+    if (now.hour, now.minute) < SESSION["KR"][0]:
+        return {}
+    code2t = {t.split(".")[0].upper(): t for t in tickers}
+    codes, out = list(code2t), {}
+    for i in range(0, len(codes), 50):
+        try:
+            r = requests.get("https://polling.finance.naver.com/api/realtime/domestic/stock/" + ",".join(codes[i:i + 50]),
+                             headers=_NAVER_H, timeout=4)
+            datas = (r.json() or {}).get("datas") or []
+        except Exception as e:
+            log(f"intraday 네이버 시가 실패: {e}")
+            continue
+        for d in datas:
+            t = code2t.get(str(d.get("itemCode") or "").upper())
+            o, h, l, c = (_num_comma(d.get(k)) for k in ("openPrice", "highPrice", "lowPrice", "closePrice"))
+            if not t or not o or o <= 0 or not c or c <= 0:
+                continue
+            if str(d.get("marketStatus") or "").upper() not in ("OPEN", "CLOSE"):
+                continue
+            try:
+                at = datetime.fromisoformat(str(d.get("localTradedAt"))).astimezone(tz)
+            except (TypeError, ValueError):
+                continue
+            if at.date() != today or (at.hour, at.minute) < SESSION["KR"][0]:
+                continue
+            out[t] = (o, max(h or c, o, c), min(l or c, o, c), c, today)
+    return out
+
+
+def _first_regular_bar(df, market, today, live=None):
+    """1분봉 DataFrame → 오늘 정규장 (시가, 고가, 저가, 현재가, 날짜) | None.
+    시가 = 개장 시각(KR 09:00 / US 09:30, 거래소 시간) 이후 첫 봉의 Open. 프리마켓 봉은 버린다.
+    받은 봉이 오늘 개장 전(또는 전날)까지 닿지 않으면 첫 봉이 시가라는 보장이 없어 None."""
+    if df is None or len(df) == 0:
+        return None
+    tz = _tz(market)
+    idx = df.index.tz_convert(tz) if df.index.tz is not None else df.index.tz_localize(tz)
+    (oh, om), (ch, cm) = SESSION[market]
+    open_ts = pd.Timestamp(datetime(today.year, today.month, today.day, oh, om)).tz_localize(tz)
+    close_ts = pd.Timestamp(datetime(today.year, today.month, today.day, ch, cm)).tz_localize(tz)
+    if idx.min() >= open_ts:
+        return None
+    m = (idx >= open_ts) & (idx < close_ts)
+    reg = df[m]
+    if not len(reg):
+        return None
+    o = float(reg["Open"].iloc[0])
+    h, l, c = float(reg["High"].max()), float(reg["Low"].min()), float(reg["Close"].iloc[-1])
+    if live and live > 0:
+        c = float(live)
+        h, l = max(h, c), min(l, c)
+    if not o or o <= 0:
+        return None
+    return (o, max(h, o), min(l, o), c, today)
+
+
+def _toss_session_quotes(tickers, market, today):
+    """토스 1분봉에서 오늘 정규장 첫 봉 시가. US 는 현재가를 토스 실시간 가격으로."""
+    try:
+        import toss_api
+        if not toss_api.is_enabled():
+            return {}
+    except Exception:
+        return {}
+    live = {}
+    if market == "US":
+        try:
+            live = {t: (v or {}).get("price") for t, v in (toss_api.get_prices_cached(tickers) or {}).items()}
+        except Exception as e:
+            log(f"intraday 토스 현재가 실패: {e}")
+    out = {}
+    for t in tickers:
+        try:
+            q = _first_regular_bar(toss_api.get_minute_df(t, max_pages=PENDING_MINUTE_PAGES), market, today, live.get(t))
+        except Exception as e:
+            log(f"intraday 토스 1분봉 실패 {t}: {e}")
+            q = None
+        if q:
+            out[t] = q
+    return out
+
+
+def pending_open_quotes(tickers, market, today=None):
+    """체결 대기 종목의 오늘 정규장 시가 → ({ticker: (o, h, l, c, day)}, {ticker: 출처})."""
+    today = today or market_today(market)
+    quotes, src = {}, {}
+    steps = [("naver", lambda ts: _naver_session_quotes(ts, today))] if market == "KR" else []
+    steps.append(("toss", lambda ts: _toss_session_quotes(ts, market, today)))
+    for name, fn in steps:
+        left = [t for t in tickers if t not in quotes]
+        if not left:
+            break
+        try:
+            got = fn(left) or {}
+        except Exception as e:
+            log(f"intraday {name} 시가 실패: {e}")
+            got = {}
+        for t, q in got.items():
+            if t in left and q:
+                quotes[t], src[t] = q, name
+    return quotes, src
+
+
 def intraday_check(market, quotes=None):
     """장중: 대기 신호를 오늘 시가로 체결(B 방식), 보유 신호는 오늘 고가·저가로 손절·트레일링·익절 판정 후
     봇 계좌에 반영. 시간 청산·추세 이탈·AI 악재는 장 마감 배치에서 판정한다. quotes 는 테스트용."""
@@ -1078,8 +1208,21 @@ def intraday_check(market, quotes=None):
         return {"checked": 0}
     if quotes is None:
         tickers = sorted({r.ticker for r in rows})
-        quotes = download_intraday(tickers, market)
-        quotes = overlay_live(quotes, tickers, {r.ticker for r in rows if r.status == "PENDING"}, market)
+        pending = {r.ticker for r in rows if r.status == "PENDING"}
+        quotes, src = {}, {}
+        if pending:                          # 체결 대기가 있을 때만 (없으면 추가 호출 0회)
+            quotes, src = pending_open_quotes(sorted(pending), market, today)
+        rest = [t for t in tickers if t not in quotes]
+        if rest:
+            yq = download_intraday(rest, market)
+            quotes.update(yq)
+            src.update({t: "yahoo" for t in yq if t in pending})
+        quotes = overlay_live(quotes, tickers, pending, market)
+        if pending:
+            miss = sorted(pending - set(quotes))
+            cnt = {k: sum(1 for t in pending if src.get(t) == k) for k in ("naver", "toss", "yahoo")}
+            log(f"intraday {market} 대기 {len(pending)}종목 시가: 네이버 {cnt['naver']} · 토스 {cnt['toss']} · Yahoo {cnt['yahoo']}"
+                + (f" · 미확보 {miss} (장 마감 배치에서 처리)" if miss else ""))
     # 오손절 방어: 진입가 대비 -40% 이상(분할 비율만큼 떨어진 것처럼 보임)이면 판정 전에 액면분할부터 확인.
     # 분할이면 신호·봇 포지션·계좌를 보정하고 그 종목은 이번 회차 판정을 건너뛴다 (다음 5분 체크에서 보정값으로)
     split_hit = set()
