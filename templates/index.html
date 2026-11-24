@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=103" />
+  <link rel="stylesheet" href="/static/css/style.css?v=104" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -391,57 +391,24 @@
 
       <div id="fundamentalContainer" class="hidden">
         <div id="scorecardPanel" class="scorecard-panel hidden"></div>
-        <div id="fundamentalList" class="detail-list detail-grid"></div>
+        <div id="fundamentalList" class="fj-wrap"></div>
       </div>
 
       <!-- 밸류에이션 (DCF) -->
       <div id="valuationPanel" class="hidden">
-      <p id="dcfEmpty" class="no-data dcf-empty hidden">이 종목은 현금흐름 자료가 부족해 DCF 밸류에이션을 계산할 수 없습니다.</p>
+      <div id="valFootball"></div>
+      <p id="dcfEmpty" class="no-data dcf-empty hidden"></p>
       <div class="dcf-card hidden" id="dcfCard">
-      <div class="dcf-head">
-        <span id="dcfReliability" class="dcf-rel"></span>
-      </div>
-
-      <!-- 주인공: 현재가가 반영 중인 성장률 -->
-      <div class="dcf-hero">
-        <div id="dcfHeroLabel" class="dcf-hero-label">현재 주가가 반영 중인 매출성장률</div>
-        <div id="dcfImplied" class="dcf-hero-val">—</div>
-        <div id="dcfImpliedCmp" class="dcf-hero-cmp"></div>
-        <div id="dcfImpliedAlt" class="dcf-hero-alt"></div>
-      </div>
-
-      <!-- 3개 기준점 -->
-      <div class="dcf-refs">
-        <div class="dcf-ref">
-          <div class="dcf-ref-label">현재가</div>
-          <div id="dcfPrice" class="dcf-ref-val">—</div>
-        </div>
-        <div class="dcf-ref">
-          <div class="dcf-ref-label">DCF 적정주가</div>
-          <div id="dcfFair" class="dcf-ref-val">—</div>
-          <div id="dcfFairRange" class="dcf-ref-sub"></div>
-        </div>
-        <div class="dcf-ref">
-          <div class="dcf-ref-label">애널리스트 목표가 <span class="dcf-ref-src">Yahoo 컨센서스</span></div>
-          <div id="dcfTarget" class="dcf-ref-val">—</div>
-          <div id="dcfTargetSub" class="dcf-ref-sub"></div>
-        </div>
-      </div>
-
-      <div id="dcfWarnings" class="dcf-warnings"></div>
-
-      <!-- AI 해설 -->
-      <div id="dcfComment" class="dcf-comment hidden"></div>
-
-      <!-- 가정 (접이식) -->
-      <details class="dcf-assume">
-        <summary>계산 가정 보기</summary>
-        <div id="dcfAssumptions" class="dcf-assume-grid"></div>
-        <p class="dcf-disclaimer">
-          ⓘ DCF는 과거 재무와 가정에 기반한 이론값입니다. 신사업·플랫폼 전환 등
-          미래 옵션가치는 반영되지 않으므로 참고 지표로만 활용하세요. 투자 권유가 아닙니다.
-        </p>
-      </details>
+        <div id="vlImplied" class="vl-implied"></div>
+        <div id="vlScen" class="vl-scen"></div>
+        <div id="dcfWarnings" class="dcf-warnings"></div>
+        <div id="dcfComment" class="dcf-comment hidden"></div>
+        <details class="vl-more">
+          <summary>5×5 민감도 표 및 DCF 가정 보기</summary>
+          <div id="dcfSens"></div>
+          <div id="dcfAssumptions" class="dcf-assume-grid"></div>
+          <p class="dcf-disclaimer">DCF는 과거 재무와 가정에 기반한 이론값입니다. 신사업·플랫폼 전환 같은 미래 옵션가치는 반영되지 않으니 참고 지표로만 쓰세요. 투자 권유가 아닙니다.</p>
+        </details>
       </div><!-- /#dcfCard -->
       </div><!-- /#valuationPanel -->
     </section>
@@ -571,6 +538,6 @@
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=8"></script>
   <script src="/static/js/hsort.js?v=1"></script>
-  <script src="/static/js/main.js?v=91"></script>
+  <script src="/static/js/main.js?v=92"></script>
 </body>
 </html>
