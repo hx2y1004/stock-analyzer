@@ -57,6 +57,29 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 공시·수주 레이더 1차: DART · SEC EDGAR (PR #63)
+- `disclosures.py` + `DisclosureEvent`(`disclosure_events`, `external_id` 유니크, `disclosed_at` 인덱스, 30일 보관·하루 1회 정리).
+  - 수집기 = "조회 → 이벤트 dict 목록" 함수, 저장·중복 방지·알림은 공통 `save_events` → `notify`. `COLLECTORS` 에
+    (이름, 시장, 주기, 시간대 판정, 함수)로 등록. **2차(나라장터 · USAspending.gov)는 수집 함수 하나 + COLLECTORS 한 줄**이면 된다.
+  - 스케줄: 새 스레드 없이 `bot_engine._scheduler_loop`(20초) 끝에서 `disclosures.tick()`. DART 평일 08:00~19:30 KST 15분,
+    SEC 평일 06:00~22:30 ET 30분. 한 번에 최대 40초(`TICK_BUDGET`). `DISCLOSURES_ENABLED=0` 이면 멈춤. `BOT_SCHEDULER=0` 이면 안 돎.
+  - 대상: 섹터맵 유니버스(KR 350 · US 537) + 사용자 보유(실제·모의)·관심종목.
+- DART: 기존 `DART_API_KEY`. 오늘 `list.json` 을 페이지로 훑어(재시작 직후 최대 20쪽, 이후 5쪽 · 이미 본 접수번호에서 멈춤)
+  보고서명으로 분류: 단일판매·공급계약체결(+해지=negative) · 자기주식 취득 결정/신탁 · 주식소각결정 · 유상증자결정(negative).
+  무상증자·자기주식처분 제외. 공급계약은 `document.xml` 원문에서 계약금액·매출 대비 % (한 번에 10건). 링크 `dsaf001/main.do?rcpNo=`.
+- SEC: `SEC_USER_AGENT` 헤더, 요청 간 0.2초, 403/429 면 10분 쉼. `company_tickers.json` 하루 1회(BRK.B ↔ BRK-B).
+  최신 공시 Atom 피드(`browse-edgar?action=getcurrent&type=4|8-K&output=atom`)에서 대상 CIK 만.
+  Form 4 는 Issuer 항목만 → `index.json` 에서 XML 찾기 → `transactionCode == 'P'` 이고 취득(A)인 비파생 거래만 (M·G·A·F·S 제외).
+  8-K 는 피드 요약의 Item 번호, 없으면 `{acc}.hdr.sgml` 의 `<ITEMS>` → 1.01·2.01·2.02 만.
+  **클라우드 세션에서는 SEC·DART 실제 호출을 확인하지 못함** (SEC: 권한 거부, DART: 키 없음). 공식 형식을 따른 샘플로만 검증.
+  운영 반영 뒤 로그 `[DISCLOSURE] dart: 새 공시 N건` / `sec: …` 와 `/api/disclosures` 결과를 확인할 것.
+- API: `GET /api/disclosures?market=&category=&ticker=&days=14&limit=50` (+ 수집 상태 `status`),
+  `POST /api/disclosures/refresh` (소유자 전용, 즉시 수집).
+- 알림: `user_signal_subscriptions.disclosure_alerts` (무중단 ALTER). 설정 모달 체크박스. `notifier.dispatch_disclosures`:
+  켠 사용자 중 보유·관심종목에 새 공시가 있으면 인앱(kind `disclosure`) + 푸시 `[DART 수주] 삼성E&A · 단일판매·공급계약체결` → `/stock/<티커>`,
+  한 번에 4건 이상이면 푸시 요약 1건(`/screener?tab=disclosures`).
+- 화면: `/screener?tab=disclosures` (4탭, 480px 이하 탭 글자·여백 축소로 한 줄). 시장 · 유형 칩 · URL 동기화(market, cat).
+
 ### 체결 대기(PENDING) 신호: 개장 직후 정규장 시가로 즉시 체결 (PR #61)
 - `bot_engine.intraday_check` 가 PENDING 종목이 있을 때만 `pending_open_quotes(tickers, market)` 로 오늘 정규장 (시가, 고가, 저가, 현재가) 확보.
   - KR: ① 네이버 실시간 `polling.finance.naver.com/api/realtime/domestic/stock/<코드>` 최상위 `openPrice` (KRX 정규장 값.

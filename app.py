@@ -64,7 +64,7 @@ from flask_login import LoginManager, login_required, current_user
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf
-from models import AppliedStockSplit, DropHoldState
+from models import AppliedStockSplit, DropHoldState, DisclosureEvent
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
                     BotPosition, PushSubscription, ScreenerSnapshot, TrendSetup)
@@ -260,6 +260,17 @@ with app.app_context():
                     print(f"[migration] paper_holdings.{_col} 추가")
     except Exception as e:
         print(f"[migration] paper_holdings 예약 컬럼: {e}")
+
+    # 공시·수주 알림 설정 컬럼 (2026-11). disclosure_events 테이블은 위 create_all 이 만든다
+    try:
+        from sqlalchemy import inspect as _sa_inspect2, text as _text_d
+        _cols2 = {c["name"] for c in _sa_inspect2(db.engine).get_columns("user_signal_subscriptions")}
+        if "disclosure_alerts" not in _cols2:
+            with db.engine.begin() as _cd:
+                _cd.execute(_text_d("ALTER TABLE user_signal_subscriptions ADD COLUMN disclosure_alerts BOOLEAN DEFAULT FALSE"))
+            print("[migration] user_signal_subscriptions.disclosure_alerts 추가")
+    except Exception as e:
+        print(f"[migration] disclosure_alerts 컬럼: {e}")
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -6733,6 +6744,14 @@ bot_engine.D["split_market"] = splits.check_market
 bot_engine.D["split_guard"] = splits.guard_drop
 bot_engine.D["drop_decision"] = splits.drop_decision       # 이중 방어: 분할 의심 보류 · 급락 1회 보류
 bot_engine.D["split_evidence"] = splits.history_evidence
+# 공시·수주 레이더 (DART · SEC EDGAR). 새 스레드 없이 봇 스케줄러 루프에서 주기적으로 (DART 15분 · SEC 30분)
+import disclosures
+import sector_map as _sector_map_for_disc
+disclosures.init({
+    "app": app, "db": db, "DisclosureEvent": DisclosureEvent, "Holding": Holding, "PaperHolding": PaperHolding,
+    "WatchlistItem": WatchlistItem, "universe": _sector_map_for_disc.universe, "notify": notifier.dispatch_disclosures,
+})
+bot_engine.D["disclosures_tick"] = disclosures.tick
 bot_engine.start_scheduler()
 
 import sector_map
@@ -7064,8 +7083,8 @@ def _strategies_public():
 def signal_subscription_get():
     sub = UserSignalSubscription.query.filter_by(user_id=current_user.id).first()
     cfg = ({"enabled": bool(sub.enabled), "strategies": [k for k in (sub.strategy_keys or "").split(",") if k],
-            "scope": sub.scope, "min_confidence": sub.min_confidence}
-           if sub else {"enabled": False, "strategies": [], "scope": "all", "min_confidence": 70})
+            "scope": sub.scope, "min_confidence": sub.min_confidence, "disclosure_alerts": bool(sub.disclosure_alerts)}
+           if sub else {"enabled": False, "strategies": [], "scope": "all", "min_confidence": 70, "disclosure_alerts": False})
     return jsonify({"subscription": cfg, "strategies": _strategies_public(),
                     "scopes": [{"key": "all", "label": "전체 종목"}, {"key": "portfolio", "label": "보유 종목 (실제 + 모의투자)"},
                                {"key": "watchlist", "label": "관심종목"}]})
@@ -7088,10 +7107,41 @@ def signal_subscription_put():
         sub = UserSignalSubscription(user_id=current_user.id, strategy_keys="")
         db.session.add(sub)
     sub.strategy_keys, sub.scope, sub.min_confidence, sub.enabled = ",".join(keys), scope, min_conf, enabled
+    if "disclosure_alerts" in body:              # 보유·관심종목 핵심 공시 알림 (봇 신호 알림과 따로)
+        sub.disclosure_alerts = bool(body.get("disclosure_alerts"))
     sub.updated_at = datetime.utcnow()
     db.session.commit()
     return jsonify({"ok": True, "subscription": {"enabled": enabled, "strategies": keys, "scope": scope,
-                                                 "min_confidence": min_conf}})
+                                                 "min_confidence": min_conf, "disclosure_alerts": bool(sub.disclosure_alerts)}})
+
+
+# ── 공시·수주 레이더 ─────────────────────────────────────────────────────────────
+@app.route("/api/disclosures")
+def disclosures_list():
+    """?market=ALL|KR|US &category=ALL|contract|buyback|insider_buy|offering|material_8k &ticker= &days=14 &limit=50"""
+    a = request.args
+    market = (a.get("market") or "ALL").upper()
+    category = (a.get("category") or "ALL").lower()
+    try:
+        days = max(1, min(30, int(a.get("days", 14))))
+        limit = max(1, min(200, int(a.get("limit", 50))))
+    except ValueError:
+        days, limit = 14, 50
+    items = disclosures.query(market, category if category in disclosures.CATEGORIES else "ALL",
+                              (a.get("ticker") or "").strip() or None, days, limit)
+    return jsonify({"items": items, "status": disclosures.STATUS, "days": days,
+                    "sources": {"KR": "OpenDART", "US": "SEC EDGAR"}})
+
+
+@app.route("/api/disclosures/refresh", methods=["POST"])
+@login_required
+def disclosures_refresh():
+    """소유자 전용: 주기와 상관없이 지금 수집 (운영 점검·로컬 확인용)"""
+    if not _is_toss_owner():
+        return jsonify({"error": "권한이 없습니다"}), 403
+    names = [n for n in (request.get_json(silent=True) or {}).get("sources") or [] if n in ("dart", "sec")] or None
+    res = disclosures.run(names=names, force=True)
+    return jsonify({"ok": True, "saved": res, "status": disclosures.STATUS})
 
 
 # ── 알림 (헤더 종 아이콘) ─────────────────────────────────────────────────────

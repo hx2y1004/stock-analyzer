@@ -45,6 +45,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `bot_engine.py`, `bot_trader.py`, `notifier.py` | AI 매매 신호 봇: 신호 생성·추적, 봇 가상 계좌 매매, 알림 |
 | `webpush.py` | PWA 웹 푸시 (VAPID 키가 없으면 자동으로 꺼짐, pywebpush 는 보낼 때만 import) |
 | `screener.py` | 스크리너 스냅샷(`screener_snapshots`) 갱신·조회와 종목 비교. 가격은 섹터맵, 기술 지표는 봇 배치에서 받고 펀더멘탈은 7일 순환 |
+| `disclosures.py` | 공시·수주 레이더(`disclosure_events`): DART 공급계약·자사주·유상증자(15분) · SEC Form 4 장내 매수·8-K(30분). 봇 스케줄러 루프에 합류(새 스레드 없음), 30일 보관, 보유·관심종목 알림. 화면은 `/screener?tab=disclosures` |
 | `analysis/` | 기술적 분석(`indicators.py`, `advanced.py`), 종합 판단(`ai_analysis.py`), 밸류에이션과 DCF(`valuation.py`) |
 | `stock_db.json` | 종목 검색 DB (KOSPI, KOSDAQ, S&P500, NASDAQ). `build_stock_db.py`로 생성 |
 | `static/js/chart.js` | 종목 상세 기술적 분석 차트 (LightweightCharts 4.1: 툴바, 동기화, 터치, 전체화면). main.js 는 `renderCharts(data)` 만 부른다 |

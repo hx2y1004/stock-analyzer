@@ -6024,3 +6024,39 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .pos-toggles .hsort-slot, .pos-toggles .hsort { flex: 1 1 auto; }
   .pos-toggles .hsort-sel { flex: 0 1 auto; }
 }
+
+/* ── 발굴 → 공시·수주 레이더 (DART · SEC EDGAR) ── */
+.ds-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; min-height: 160px; align-content: start; transition: opacity .15s; }
+.ds-list.is-loading { opacity: .5; }
+.ds-list > .ab-empty, .ds-list > .ab-muted { grid-column: 1 / -1; }
+.ds-item { display: flex; flex-direction: column; gap: 8px; padding: 14px; min-width: 0; border-left: 3px solid var(--border); }
+.ds-item.ds-pos { border-left-color: rgba(63,185,80,.7); }
+.ds-item.ds-neg { border-left-color: rgba(248,81,73,.75); }
+.ds-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ds-top .sa-logo--md { --lg-size: 32px; }
+.ds-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.ds-id .sc-name { color: var(--text); font-weight: 700; font-size: 15px; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+@media (hover: hover) { .ds-id .sc-name:hover { text-decoration: underline; } }
+.ds-id .ab-muted { font-size: 12px; }
+.ds-badge { flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.ds-badge.pos { color: var(--green); border-color: rgba(63,185,80,.45); background: rgba(63,185,80,.1); }
+.ds-badge.neg { color: var(--red); border-color: rgba(248,81,73,.45); background: rgba(248,81,73,.1); }
+.ds-badge.neu { color: var(--text2); border-color: var(--border); background: var(--bg3); }
+.ds-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.45; overflow-wrap: anywhere; }
+.ds-sum { font-size: 13px; color: var(--text2); line-height: 1.5; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.ds-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 4px; }
+.ds-foot time { font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ds-acts { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.ds-src { display: inline-flex; align-items: center; height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.ds-src:hover { border-color: var(--accent); }
+.ds-src:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 발굴 탭 4개: 좁은 화면에서도 한 줄 · 가로 넘침 없이 (글자·여백만 줄인다) */
+@media (max-width: 480px) {
+  .sc-tabs { gap: 0; }
+  .sc-tab { flex: 1 1 auto; padding: 10px 4px; font-size: 13.5px; letter-spacing: -0.3px; }
+  .ds-list { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 360px) {
+  .sc-tab { font-size: 12.5px; padding: 10px 2px; }
+}

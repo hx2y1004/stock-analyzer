@@ -71,7 +71,7 @@
     panel.style.left = Math.max(8, left) + 'px';
   }
 
-  const KIND_ICON = { signal_new: '🟢', signal_exit: '🏁', signal_cancel: '⚪', paper_exit: '🎯' };
+  const KIND_ICON = { signal_new: '🟢', signal_exit: '🏁', signal_cancel: '⚪', paper_exit: '🎯', disclosure: '📢' };
 
   async function openPanel() {
     if (window.SAProfile) window.SAProfile.close(false);
@@ -195,6 +195,13 @@
         <input type="range" id="subConf" min="50" max="95" step="5" value="${sub.min_confidence}" />
         <div class="sub-hint">AI 봇은 AI 확신도와 정량 점수를 합친 값, 기준선 봇은 정량 점수입니다.</div>
       </div>
+      <div class="sub-group sub-disc">
+        <label class="sub-switch">
+          <input type="checkbox" id="subDisc" ${sub.disclosure_alerts ? 'checked' : ''} />
+          <span>보유·관심종목 핵심 공시·수주·내부자 매수 알림</span>
+        </label>
+        <div class="sub-hint">보유(실제·모의투자)·관심종목에 한국 DART 공급계약·자사주·유상증자, 미국 SEC Form 4 장내 매수·8-K 핵심 공시가 올라오면 바로 알려 드려요. 봇 신호 알림과 따로 켜고 끕니다.</div>
+      </div>
       <div class="sub-group push-box" id="pushBox">
         <div class="sub-legend">모바일/브라우저 푸시 알림</div>
         <div class="push-row">
@@ -221,10 +228,12 @@
       const enabled = box.querySelector('#subEnabled').checked;
       if (enabled && !bots.length) { msg.textContent = '받을 봇을 하나 이상 골라 주세요.'; msg.className = 'sub-msg err'; return; }
       const scopeEl = box.querySelector('input[name="subScope"]:checked');
+      const disc = box.querySelector('#subDisc').checked;
       try {
         const r = await api('/api/signal-subscription', { method: 'PUT', body: JSON.stringify({
-          enabled, strategies: bots, scope: scopeEl ? scopeEl.value : 'all', min_confidence: Number(conf.value) }) });
-        msg.textContent = r.subscription.enabled ? '저장했습니다. 다음 장 마감 후 신호부터 알려 드립니다.' : '알림을 껐습니다.';
+          enabled, strategies: bots, scope: scopeEl ? scopeEl.value : 'all', min_confidence: Number(conf.value), disclosure_alerts: disc }) });
+        const on = [r.subscription.enabled ? '봇 신호' : '', r.subscription.disclosure_alerts ? '보유·관심종목 공시' : ''].filter(Boolean);
+        msg.textContent = on.length ? `저장했습니다. ${on.join(' · ')} 알림을 보내 드립니다.` : '알림을 모두 껐습니다.';
         msg.className = 'sub-msg ok';
         if (r.subscription.scope === 'watchlist') { try { await SAWatch.load(true); } catch (e) {} }
         if (r.subscription.scope === 'watchlist' && SAWatch.size() === 0) {
