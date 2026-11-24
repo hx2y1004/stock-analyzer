@@ -2571,9 +2571,17 @@ function renderFundamental(details, stock) {
   el.innerHTML = top + html + more;
 }
 
+const _FS_SHORT = {
+  roa: 'ROA 흑자', cfo: '영업현금 흑자', d_roa: 'ROA 개선',
+  accrual: '현금 > 순이익', d_lever: '레버리지 개선', d_cr: '유동성 개선',
+  no_dilute: '신주 발행 없음', d_gm: '마진 개선', d_turn: '자산회전율 개선',
+};
+
 function _fjHealthCard(sc, stock) {
   const M = (sc && sc.metrics) || {};
   const fd = M.f_score_detail;
+  const fsBand = fd ? (fd.score >= 7 ? 'hi' : fd.score >= 4 ? 'mid' : 'lo') : 'na';
+  const fsWord = { hi: '우수', mid: '보통', lo: '취약' }[fsBand] || '';
   const fin = !!M.is_financial;
   const dots = fd ? fd.items.map((it) =>
     `<i class="fj-dot ${it.pass === true ? 'on' : it.pass === false ? 'off' : 'na'}" title="${it.label}: ${it.pass === true ? '충족' : it.pass === false ? '미충족' : '자료 없음'}"></i>`).join('') : '';
@@ -2598,9 +2606,13 @@ function _fjHealthCard(sc, stock) {
   return `
     <section class="fj-box">
       <div class="fj-box-h"><h4>재무 건전성</h4>
-        <span class="fj-fs">${fd ? `Piotroski F-Score <b>${fd.score}</b>/9` : 'F-Score 자료 없음'}</span></div>
+        ${fd ? `<span class="fs-badge fs-${fsBand}" title="Piotroski F-Score">F-Score ${fd.score}/9 · ${fsWord}</span>` : '<span class="fj-fs">F-Score 자료 없음</span>'}</div>
       ${fd ? `<div class="fj-dots" role="img" aria-label="F-Score ${fd.score}/9">${dots}</div>
-        <div class="fj-dot-legend">${fd.items.map((it) => `<span class="${it.pass === true ? 'on' : it.pass === false ? 'off' : 'na'}">${it.label}</span>`).join('')}</div>`
+        <div class="fs-chips" role="list">${fd.items.map((it) => {
+          const st = it.pass === true ? 'ok' : it.pass === false ? 'no' : 'na';
+          const mark = st === 'ok' ? '✓' : st === 'no' ? '✕' : '–';
+          return `<span class="fs-chip fs-${st}" role="listitem" title="${it.label}: ${st === 'ok' ? '충족' : st === 'no' ? '미충족' : '자료 없음'}"><i aria-hidden="true">${mark}</i>${_FS_SHORT[it.key] || it.label}</span>`;
+        }).join('')}</div>`
         : `<p class="fj-note">${fin ? '금융업은 유동비율·매출총이익률이 정의되지 않아 F-Score 를 계산하지 않습니다.' : '연간 재무제표가 2년치 이상 없어 계산하지 못했습니다.'}</p>`}
       <div class="fj-table">${rows.map(([k, v, n], i) => `<div class="fj-tr"><span>${k}</span><b class="${tone[i] || ''}">${v}</b><em>${n}</em></div>`).join('')}</div>
     </section>`;

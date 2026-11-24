@@ -295,7 +295,7 @@ function renderPositions(positions) {
     cost: (p) => toKrw(p.purchase_price * p.quantity, p.currency),
     name: (p) => p.name || p.ticker,
   }) : positions;
-  el.innerHTML = sorted.map((p) => {
+  const cardsHTML = sorted.map((p) => {
     // 순위 메달·번호 대신 회사 로고 (홈 '내 포트폴리오'와 같은 원형 로고 · 실패 시 이니셜)
     const rank = `<div class="trend-rank trend-rank-logo">${window.renderStockLogo ? renderStockLogo(p.ticker, p.name, 'md') : ''}</div>`;
     const cls = p.pnl_pct > 0 ? 'up' : p.pnl_pct < 0 ? 'down' : 'flat';
@@ -345,6 +345,26 @@ function renderPositions(positions) {
         ${p.note ? `<div class="pf-note">메모 · ${escapeHtml(p.note)}</div>` : ''}
       </div>`;
   }).join('');
+  // PC(> 768px): 홈 '내 포트폴리오'와 같은 증권사식 1줄 표 / 모바일: 위 카드. 같은 정렬·통화 상태를 쓴다
+  el.innerHTML = `
+    <div class="pft tpt" role="table" aria-label="모의투자 보유 종목">
+      <div class="pft-head tpt-head" role="row">
+        <span role="columnheader">종목</span><span role="columnheader">수량 · 매입→현재</span><span role="columnheader">평가금액</span>
+        <span role="columnheader">손익 · 수익률</span><span role="columnheader">손절 ↔ 익절</span><span role="columnheader" class="pft-h-acts">관리</span>
+      </div>
+      ${sorted.map((p) => _tptRowHTML(p, rate)).join('')}
+    </div>
+    <div class="tr-cards">${cardsHTML}</div>`;
+  // 표의 행도 누르면 종목 상세로 (버튼은 각자 동작)
+  el.querySelectorAll('.tpt-row').forEach((row) => {
+    const go = () => { location.href = row.dataset.href; };
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('button, a, input, select, textarea')) return;
+      if (window.getSelection && String(window.getSelection())) return;
+      go();
+    });
+    row.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === row) { e.preventDefault(); go(); } });
+  });
   // 카드 아무 곳이나 누르면 종목 상세로 (안의 버튼·링크는 각자 동작, 텍스트를 드래그해 고를 때는 이동 안 함)
   el.querySelectorAll('.tr-pos-card').forEach((card) => card.addEventListener('click', (e) => {
     if (e.target.closest('button, a, input, select, textarea')) return;
@@ -359,6 +379,49 @@ function renderPositions(positions) {
     else if (b.dataset.act === 'exit') openExitModal(p);
     else openSellModal(p.ticker, p.name, p.currency, p.current_price || 0, p.quantity);
   }));
+}
+
+// PC 표 한 줄: 종목 | 수량·매입→현재 | 평가금액 | 손익·수익률 | 손절↔익절 | 관리
+const _NOTE_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3 2.5h10v8.5l-3 3H3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5.5 6h5M5.5 8.5h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+
+function _tptExit(p) {
+  const lo = p.stop_loss_price, hi = p.target_price, cur = p.current_price;
+  const f = (v) => fmtNative(v, p.currency);
+  if (lo != null && hi != null && hi > lo && cur != null) {
+    const pos = Math.max(0, Math.min(100, (cur - lo) / (hi - lo) * 100));
+    const zone = pos >= 66 ? 'near-t' : pos <= 33 ? 'near-s' : 'mid';
+    return `<div class="tpt-x ${zone}" title="손절 ${f(lo)} ↔ 익절 ${f(hi)}">
+      <span class="tpt-x-track"><span class="tpt-x-fill" style="width:${pos.toFixed(1)}%"></span><span class="tpt-x-dot" style="left:${pos.toFixed(1)}%"></span></span>
+      <span class="tpt-x-lab"><span class="s">${((lo / cur - 1) * 100).toFixed(1)}%</span><span class="t">+${((hi / cur - 1) * 100).toFixed(1)}%</span></span>
+    </div>`;
+  }
+  if (hi != null) return `<span class="tpt-x-one t">익절 ${f(hi)}</span>`;
+  if (lo != null) return `<span class="tpt-x-one s">손절 ${f(lo)}</span>`;
+  return '<span class="tpt-none">—</span>';
+}
+
+function _tptRowHTML(p, rate) {
+  const cls = p.pnl_pct > 0 ? 'up' : p.pnl_pct < 0 ? 'down' : 'flat';
+  const tk = escapeHtml(p.ticker), nm = escapeHtml(p.name);
+  const href = `/stock/${encodeURIComponent(p.ticker)}`;
+  const value = _convCur((p.current_price || 0) * p.quantity, p.currency, _posCur, rate);
+  const pnl = _convCur(((p.current_price || 0) - p.purchase_price) * p.quantity, p.currency, _posCur, rate);
+  const logo = window.renderStockLogo ? renderStockLogo(p.ticker, p.name, 'sm') : '';
+  const note = p.note ? `<span class="tpt-note" title="메모 · ${escapeHtml(p.note)}" aria-label="메모 있음">${_NOTE_SVG}</span>` : '';
+  return `
+    <div class="pft-row tpt-row pf-${cls}" role="row" tabindex="0" data-t="${tk}" data-href="${href}" aria-label="${nm} 종목 분석 보기">
+      <div class="pft-stock">${logo}<div class="pft-id"><div class="pft-name">${nm}${note}</div><div class="pft-tk">${tk}</div></div></div>
+      <div class="pft-qty"><div>${p.quantity}주</div><div class="pft-sub">${fmtNative(p.purchase_price, p.currency)} → <b class="pf-${cls}">${fmtNative(p.current_price, p.currency)}</b></div></div>
+      <div class="pft-val">${_fmtCur(value, _posCur)}</div>
+      <div class="pft-pl ${cls}"><div>${(pnl >= 0 ? '+' : '') + _fmtCur(pnl, _posCur)}</div><div class="pft-sub">${p.pnl_pct == null ? '—' : (p.pnl_pct > 0 ? '+' : '') + p.pnl_pct.toFixed(2) + '%'}</div></div>
+      <div class="tpt-exit">${_tptExit(p)}</div>
+      <div class="tpt-acts">
+        <button type="button" class="trade-action-btn exit" data-act="exit" data-t="${tk}" aria-label="${nm} 목표가·손절가 예약">목표/손절</button>
+        <button type="button" class="trade-action-btn buy" data-act="buy" data-t="${tk}" aria-label="${nm} 추가매수">추매</button>
+        <button type="button" class="trade-action-btn sell" data-act="sell" data-t="${tk}" aria-label="${nm} 매도">매도</button>
+      </div>
+      ${p.note ? `<div class="tpt-note-line">메모 · ${escapeHtml(p.note)}</div>` : ''}
+    </div>`;
 }
 
 // ── 거래 내역 (필터 · 검색) ────────────────────────────────────────────────
