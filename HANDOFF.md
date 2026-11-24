@@ -57,6 +57,20 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 공시 수집 병목 수정 · 상태 배너 · 소유자 '지금 수집' (PR #67)
+- 증상(PR #66 배포 후): `/api/disclosures` 의 `status` 가 전부 null → 공시 수집 `tick` 이 이 프로세스에서 한 번도 안 돎.
+  원인 후보: 스케줄러 루프에서 공시 수집이 **장 마감 배치(한국 15:45 · 미국 16:30 ET) 뒤**에 있어 배치가 수십 분 돌면 그동안 못 돎.
+  → `bot_engine._scheduler_loop` 맨 앞(장중 체크·배치 전)으로 옮김. 배치가 도는 동안은 여전히 멈추지만 재시작 직후 첫 회차에 바로 돈다.
+- 백필: 시장마다 독립 예산 `BACKFILL_MARKET_BUDGET`=20초 (한국이 다 써도 미국이 같은 tick 에 진행). 정기 수집은 따로 `TICK_BUDGET`=30초.
+  찾는 즉시 저장(DART 쪽마다 · SEC 회사마다 · Form 4 건마다 `emit` → `save_events` 커밋). SEC 는 회사 하나씩 제출 목록 → 8-K → 그 회사 Form 4(최신 10건).
+- 실패 처리: DART 020(요청 제한)·800·연결 실패 → 같은 쪽부터 다음 tick 재시도, 010/011/012/901·키 없음 → `error` 로 종료, 연속 20회 오류면 종료.
+  SEC 403/429 → 위치 유지하고 쉰 뒤 같은 회사부터, 404 → 그 회사 건너뜀, 연결 실패·5xx → 3번까지 재시도.
+- 상태: `STATUS[시장].backfill = {state: running|done|error, progress: {done,total,unit}, saved, note, started, finished}`,
+  `STATUS.tick = {last, count, busy}` (tick 이 한 번이라도 돌았는지). `/api/disclosures` 에 `can_refresh`(소유자) 추가.
+  `run()` 은 `_RUN_GUARD` 로 스케줄러와 수동 수집이 겹치지 않게 (겹치면 수동은 409).
+- 화면: 공시·수주 탭 상단 1줄 `한국 DART: 14일치 수집 중 (12/60쪽) · 7건 · 미국 SEC: 14일치 완료 18건` (오류 빨강),
+  수집 중이면 12초마다 재조회, tick 미실행이면 안내. 소유자만 `🔄 지금 수집` (목록이 비면 14일 백필 요청).
+
 ### 공시·수주 레이더: 시장별 최초 14일 백필 (PR #66)
 - 프로세스 첫 `tick` 에서 `disclosure_events` 를 시장별로 확인 → 0건인 시장만 14일 백필을 예약(`_check_backfill`). 시간창과 무관.
   `_backfilled[시장]`: None(확인 전) · False(진행 중) · True(끝남/불필요). 재시작해도 DB 에 공시가 있으면 다시 하지 않는다.

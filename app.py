@@ -7188,7 +7188,11 @@ def disclosures_list():
         days, limit = 14, 50
     items = disclosures.query(market, category if category in disclosures.CATEGORIES else "ALL",
                               (a.get("ticker") or "").strip() or None, days, limit)
-    return jsonify({"items": items, "status": disclosures.STATUS, "days": days,
+    try:
+        can_refresh = bool(current_user.is_authenticated and _is_toss_owner())
+    except Exception:
+        can_refresh = False
+    return jsonify({"items": items, "status": disclosures.STATUS, "days": days, "can_refresh": can_refresh,
                     "sources": {"KR": "OpenDART", "US": "SEC EDGAR"}})
 
 
@@ -7203,11 +7207,17 @@ def disclosures_refresh():
         # 최근 14일 백필 (알림 없음). 이 요청에서 최대 90초 하고, 남은 건 스케줄러 tick 이 이어서 한다
         markets = [m for m in (body.get("markets") or ["KR", "US"]) if m in ("KR", "US")] or ["KR", "US"]
         disclosures.start_backfill(markets)
-        res = disclosures.run(names=["-"], budget=90)          # 정기 수집기는 돌리지 않음
+        res = disclosures.run(names=["-"], backfill_budget=40)  # 정기 수집기는 돌리지 않음, 시장마다 40초 · 나머지는 스케줄러가
+        if res.get("busy"):
+            return jsonify({"ok": False, "busy": True, "error": "지금 수집이 진행 중이에요. 잠시 뒤 다시 확인해 주세요.",
+                            "status": disclosures.STATUS}), 409
         return jsonify({"ok": True, "backfill": {m: disclosures._backfilled[m] for m in markets}, "saved": res,
                         "status": disclosures.STATUS})
     names = [n for n in body.get("sources") or [] if n in ("dart", "sec")] or None
-    res = disclosures.run(names=names, force=True)
+    res = disclosures.run(names=names, force=True)          # 진행 중인 백필도 시장마다 20초씩 이어서
+    if res.get("busy"):
+        return jsonify({"ok": False, "busy": True, "error": "지금 수집이 진행 중이에요. 잠시 뒤 다시 확인해 주세요.",
+                        "status": disclosures.STATUS}), 409
     return jsonify({"ok": True, "saved": res, "status": disclosures.STATUS})
 
 

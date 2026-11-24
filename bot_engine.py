@@ -1288,6 +1288,17 @@ def _scheduler_loop():
     while True:
         try:
             with D["app"].app_context():
+                # 공시·수주 레이더 (disclosures.py): 루프 맨 앞에서. 장 마감 배치(한국 15:45 · 미국 16:30 ET)가 수십 분 돌면
+                # 그 뒤에 있던 공시 수집이 배치 내내 밀렸다 → 재시작 직후 첫 회차에 바로 돈다.
+                # 주기가 된 수집기만 (DART 15분 · SEC 30분), 최초 백필은 시장마다 20초씩
+                if D.get("disclosures_tick"):
+                    try:
+                        D["disclosures_tick"]()
+                    except Exception as e:
+                        D["db"].session.rollback()
+                        log(f"scheduler: 공시 수집 실패: {e}")
+                    finally:
+                        D["db"].session.remove()
                 for market in ("KR", "US"):
                     # 장중: 매 5분 정각(0·5·10…분)에 체결·청산 확인. 섹터맵 갱신(7·22·37·52분)과 겹치지 않게 시계에 맞춘다.
                     # (판정이 멱등이라 중복 실행돼도 결과 같음)
@@ -1326,15 +1337,6 @@ def _scheduler_loop():
                             log(f"scheduler: {market} 배치 실패: {e}")
                         finally:
                             D["db"].session.remove()
-            # 공시·수주 레이더 (disclosures.py): 주기가 된 수집기만 돈다 (DART 15분 · SEC 30분). 한 번에 최대 40초
-            if D.get("disclosures_tick"):
-                try:
-                    D["disclosures_tick"]()
-                except Exception as e:
-                    D["db"].session.rollback()
-                    log(f"scheduler: 공시 수집 실패: {e}")
-                finally:
-                    D["db"].session.remove()
         except Exception as e:
             log(f"scheduler loop 오류: {e}")
         time.sleep(20)          # 정각에 가깝게 잡도록 20초마다 확인

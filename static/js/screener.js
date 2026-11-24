@@ -651,11 +651,11 @@
     const items = d.items || [];
     $('#dsCount').textContent = items.length ? `${items.length}건` : '';
     const st = d.status || {};
-    const runs = ['KR', 'US'].map((m) => (st[m] && st[m].last_run ? `${m === 'KR' ? 'DART' : 'SEC'} ${dTime(st[m].last_run).rel} 확인` : '')).filter(Boolean);
-    $('#dsAsof').textContent = `한국 OpenDART 15분 · 미국 SEC EDGAR 30분마다 확인 · 최근 14일${runs.length ? ' · ' + runs.join(' · ') : ''}`;
+    S.dCount = items.length;
+    renderDsStatus(st, !!d.can_refresh);
     if (!items.length) {
-      const notes = ['KR', 'US'].map((m) => st[m] && st[m].note).filter(Boolean);
-      list.innerHTML = `<div class="card ab-empty">조건에 맞는 공시가 아직 없습니다.${notes.length ? ` <span class="ab-muted">(${esc(notes.join(' · '))})</span>` : ''}</div>`;
+      const running = ['KR', 'US'].some((m) => st[m] && st[m].backfill && st[m].backfill.state === 'running');
+      list.innerHTML = `<div class="card ab-empty">${running ? '최근 14일치 공시를 모으는 중입니다. 찾는 대로 여기에 바로 채워져요.' : '조건에 맞는 공시가 아직 없습니다.'}</div>`;
       return;
     }
     list.innerHTML = items.map((e) => {
@@ -684,6 +684,56 @@
     $$('.sc-star', list).forEach((b) => b.addEventListener('click', () => toggleStar(b)));
     paintRowButtons();
   }
+  // 수집 상태 1줄: 한국 DART · 미국 SEC 각각 — 백필 진행률 / 완료 건수 / 마지막 확인 / 오류 사유
+  const D_MK = { KR: '한국 DART', US: '미국 SEC' };
+  let _dsPoll = null;
+  function dsLine(m, s, tick) {
+    const bf = s && s.backfill;
+    const name = D_MK[m];
+    if (bf && bf.state === 'running') {
+      const p = bf.progress || {};
+      const prog = p.total ? ` (${p.done}/${p.total}${p.unit || ''})` : '';
+      return { cls: 'run', txt: `${name}: 14일치 수집 중${prog} · ${bf.saved || 0}건${bf.note ? ' · ' + bf.note : ''}` };
+    }
+    if (bf && bf.state === 'error') return { cls: 'err', txt: `${name}: ${bf.note || '수집 오류'}${bf.saved ? ` (${bf.saved}건까지 저장)` : ''}` };
+    if (s && s.note) return { cls: 'err', txt: `${name}: ${s.note}` };
+    const parts = [];
+    if (bf && bf.state === 'done') parts.push(`14일치 완료 ${bf.saved || 0}건`);
+    if (s && s.last_run) parts.push(`마지막 확인 ${dTime(s.last_run).rel}`);
+    if (!parts.length) parts.push(tick && tick.last ? '다음 수집 시간 대기' : '수집기 시작 대기');
+    return { cls: bf && bf.state === 'done' || (s && s.last_run) ? 'ok' : 'idle', txt: `${name}: ${parts.join(' · ')}` };
+  }
+  function renderDsStatus(st, canRefresh) {
+    const tick = st.tick || {};
+    const lines = ['KR', 'US'].map((m) => dsLine(m, st[m], tick));
+    const warn = !tick.last ? '<span class="ds-st idle">수집기가 이 서버에서 아직 한 번도 돌지 않았어요 (서버 시작 직후이거나 봇 스케줄러가 꺼져 있음)</span>' : '';
+    $('#dsStatus').innerHTML = lines.map((l) => `<span class="ds-st ${l.cls}"><i aria-hidden="true"></i>${esc(l.txt)}</span>`).join('') + warn;
+    const btn = $('#dsRefresh');
+    if (btn) btn.classList.toggle('hidden', !canRefresh);
+    // 14일치를 모으는 중이면 12초마다 가볍게 다시 불러 채워지는 걸 바로 보여 준다
+    clearTimeout(_dsPoll);
+    const running = ['KR', 'US'].some((m) => st[m] && st[m].backfill && st[m].backfill.state === 'running') || tick.busy;
+    if (running) _dsPoll = setTimeout(() => { if (S.tab === 'disclosures' && !document.hidden) loadDisclosures(); }, 12000);
+  }
+  const dsBtn = $('#dsRefresh');
+  if (dsBtn) dsBtn.addEventListener('click', async () => {
+    dsBtn.disabled = true;
+    const label = dsBtn.textContent;
+    dsBtn.textContent = '⏳ 수집 중…';
+    const backfill = !S.dCount;                                // 목록이 비어 있으면 최근 14일치부터
+    try {
+      const r = await fetch('/api/disclosures/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backfill ? { backfill: true } : {}) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) toast(j.error || `수집하지 못했어요 (${r.status})`);
+      else {
+        const saved = Object.values(j.saved || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+        toast(saved ? `새 공시 ${saved}건을 저장했어요` : backfill ? '최근 14일치를 모으기 시작했어요. 이어서 자동으로 채워져요' : '새로 찾은 공시가 없어요');
+      }
+    } catch (e) { toast('네트워크 오류로 수집하지 못했어요'); }
+    dsBtn.disabled = false; dsBtn.textContent = label;
+    loadDisclosures();
+  });
   $$('#dsMarket button').forEach((b) => b.addEventListener('click', () => { S.dMarket = b.dataset.m; b.blur(); writeUrl(); loadDisclosures(); }));
   $$('#dsCats button').forEach((b) => b.addEventListener('click', () => { S.dCat = b.dataset.c; b.blur(); writeUrl(); loadDisclosures(); }));
 

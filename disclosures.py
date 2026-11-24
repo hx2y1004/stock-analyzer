@@ -33,7 +33,8 @@ KST, ET_TZ = ZoneInfo("Asia/Seoul"), ZoneInfo("America/New_York")
 CATEGORIES = ("contract", "buyback", "offering", "insider_buy", "material_8k")
 CATEGORY_KO = {"contract": "수주", "buyback": "자사주", "offering": "유상증자", "insider_buy": "내부자 매수", "material_8k": "8-K"}
 RETENTION_DAYS = 30
-TICK_BUDGET = 40.0              # 초. 한 번의 tick 에서 수집에 쓰는 최대 시간
+TICK_BUDGET = 30.0              # 초. 한 번의 tick 에서 정기 수집에 쓰는 최대 시간
+BACKFILL_MARKET_BUDGET = 20.0   # 초. 백필은 시장마다 따로 (한국이 다 써도 미국은 자기 20초로 같은 tick 에 진행)
 DART_PAGES_COLD = 20            # 재시작 직후 첫 조회: 오늘 공시 최대 2,000건까지 훑는다
 DART_PAGES_WARM = 5             # 이후 15분마다: 최신 500건 (이미 본 접수번호를 만나면 멈춤)
 DART_DOC_PER_RUN = 10           # 공급계약 원문(계약금액·매출 대비 %) 조회는 한 번에 10건까지
@@ -47,7 +48,11 @@ BACKFILL_DAYS = 14
 DART_BACKFILL_TYPES = ("B", "I")      # 주요사항보고(자기주식 취득·유상증자) · 거래소공시(공급계약·주식소각)
 DART_BACKFILL_PAGES = 30              # 유형마다 최대 30쪽(100건씩) → 최대 60회
 DART_BACKFILL_DOCS = 30               # 공급계약 원문(계약금액·매출 대비 %) 조회 상한
-SEC_BACKFILL_FORM4 = 600              # Form 4 XML 조회 상한 (최신부터)
+SEC_BACKFILL_FORM4 = 600              # Form 4 XML 조회 상한 (전체)
+SEC_BACKFILL_FORM4_PER_CO = 10        # 회사마다 최신 Form 4 최대 10건
+BACKFILL_MAX_ERRORS = 20              # 같은 단계에서 연속 오류가 이만큼이면 오류로 끝낸다 (무한 반복 방지)
+DART_FATAL = {"010": "등록되지 않은 DART API 키", "011": "사용할 수 없는 DART API 키", "012": "접근할 수 없는 IP (DART)",
+              "901": "DART API 키 기간 만료"}
 SEC_SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 
 
@@ -294,66 +299,87 @@ def _dart_event(it, hit, key, get, day, want_doc):
             "external_id": f"DART:{rno}", "disclosed_at": at}
 
 
-def _dart_backfill(key, tg, now, deadline, get):
+def _bf_fail(m, msg, fatal=False):
+    """백필 오류 기록. 치명적이거나 연속 오류가 많으면 오류 상태로 끝내 무한 반복을 막는다."""
+    st = _bf[m]
+    st["errors"] = st.get("errors", 0) + 1
+    st["note"] = msg
+    if fatal or st["errors"] >= BACKFILL_MAX_ERRORS:
+        st.update(done=True, state="error")
+    log(f"{m} 백필 {'중단' if st.get('state') == 'error' else '재시도 예정'}: {msg}")
+
+
+def _dart_backfill(key, tg, now, deadline, get, emit):
     """최근 14일 (bgn_de = 오늘 - 14일 ~ end_de = 오늘). 공시유형 B·I 로 나눠 유형마다 최대 30쪽.
-    시간 예산이 끝나면 위치를 _bf["KR"] 에 남기고 다음 tick 에 이어서 한다."""
+    한 쪽을 받을 때마다 찾은 공시를 바로 저장(emit)한다. 시간 예산이 끝나면 위치를 _bf["KR"] 에 남기고 다음 tick 에 이어서."""
     st = _bf["KR"]
     day = now.astimezone(KST).date()
     st.setdefault("bgn", (day - timedelta(days=BACKFILL_DAYS)).strftime("%Y%m%d"))
     st.setdefault("end", day.strftime("%Y%m%d"))
     st.setdefault("ti", 0); st.setdefault("page", 1); st.setdefault("docs", 0); st.setdefault("calls", 0)
+    st.setdefault("pages_done", 0)
+    st["total"] = len(DART_BACKFILL_TYPES) * DART_BACKFILL_PAGES
     code2t = _dart_code_map(tg)
-    out = []
     while st["ti"] < len(DART_BACKFILL_TYPES):
         if deadline and time.time() > deadline:
-            return out                                # 다음 tick 에 이어서
+            return                                     # 다음 tick 에 이어서
         ty = DART_BACKFILL_TYPES[st["ti"]]
         try:
             r = get(DART_LIST, params={"crtfc_key": key, "bgn_de": st["bgn"], "end_de": st["end"], "pblntf_ty": ty,
                                        "page_no": st["page"], "page_count": 100}, timeout=10)
             j = r.json()
         except Exception as e:
-            log(f"DART 백필 목록 실패 {ty} p{st['page']}: {e}")
-            return out                                # 네트워크 오류: 다음 tick 에 같은 쪽부터
+            _bf_fail("KR", f"DART 연결 실패 ({type(e).__name__})")
+            return                                     # 같은 쪽부터 다시
         st["calls"] += 1
-        items = (j.get("list") or []) if j.get("status") == "000" else []
-        if j.get("status") not in ("000", "013"):
-            log(f"DART 백필 응답 {j.get('status')} {j.get('message')}")
+        status = str(j.get("status") or "")
+        if status in DART_FATAL:
+            _bf_fail("KR", f"{DART_FATAL[status]} ({status})", fatal=True)
+            return
+        if status not in ("000", "013"):
+            _bf_fail("KR", f"DART 응답 {status} {j.get('message') or ''}".strip())
+            return                                     # 요청 제한(020)·점검(800) 등: 다음 tick 에 같은 쪽부터
+        st["errors"], st["note"] = 0, None
+        items = (j.get("list") or []) if status == "000" else []
+        evs = []
         for it in items:
             hit = code2t.get(str(it.get("stock_code") or "").strip().upper())
             if not hit:
                 continue
-            want_doc = st["docs"] < DART_BACKFILL_DOCS and classify_dart(it.get("report_nm")) and \
-                classify_dart(it.get("report_nm"))[:2] == ("contract", "positive")
-            if want_doc:
-                st["docs"] += 1
+            cls = classify_dart(it.get("report_nm"))
+            want_doc = bool(cls) and cls[:2] == ("contract", "positive") and st["docs"] < DART_BACKFILL_DOCS
+            st["docs"] += int(want_doc)
             ev = _dart_event(it, hit, key, get, day, want_doc)
             if ev:
-                out.append(ev)
+                evs.append(ev)
+        emit(evs)                                      # 이 쪽에서 찾은 건 지금 바로 DB 에
+        st["pages_done"] += 1
         if not items or len(items) < 100 or st["page"] >= DART_BACKFILL_PAGES:
-            st["ti"] += 1; st["page"] = 1           # 다음 공시유형
+            st["total"] -= DART_BACKFILL_PAGES - st["page"]       # 이 유형은 끝 → 남은 쪽 수를 전체에서 뺀다
+            st["ti"] += 1; st["page"] = 1
         else:
             st["page"] += 1
             time.sleep(0.1)
     st["done"] = True
-    return out
 
 
-def collect_dart(tg=None, now=None, deadline=None, get=None, backfill=False):
+def collect_dart(tg=None, now=None, deadline=None, get=None, backfill=False, emit=None):
     """오늘(한국 날짜) 공시목록 → 대상 종목의 공급계약·자사주·유상증자 이벤트 목록.
     backfill=True 면 최근 14일 (진행 상태는 _bf["KR"], 끝나면 _bf["KR"]["done"] = True)."""
     key = os.environ.get("DART_API_KEY", "").strip()
     if not key:
-        STATUS["KR"]["note"] = "DART_API_KEY 없음"
+        STATUS["KR"]["note"] = "DART_API_KEY 미설정"
         if backfill:
-            _bf["KR"]["done"] = True                  # 키가 없으면 채울 수 없음 (다시 시도하지 않음)
+            _bf_fail("KR", "DART_API_KEY 미설정", fatal=True)      # 키가 없으면 채울 수 없음 (다시 시도하지 않음)
         return []
     import requests
     get = get or requests.get
     now = now or datetime.now(KST)
     tg = tg if tg is not None else targets()
     if backfill:
-        return _dart_backfill(key, tg, now, deadline, get)
+        out = []
+        _dart_backfill(key, tg, now, deadline, get, emit or out.extend)
+        return out
     day = now.astimezone(KST).date()
     if _dart_seen["day"] != day:
         _dart_seen.update(day=day, ids=set())
@@ -435,8 +461,10 @@ def sec_get(url, params=None, get=None):
         wait = SEC_GAP - (time.time() - _sec["last"])
         if wait > 0:
             time.sleep(wait)
+        _sec["last_status"] = None
         try:
             r = get(url, params=params, headers={"User-Agent": sec_user_agent(), "Accept-Encoding": "gzip, deflate"}, timeout=12)
+            _sec["last_status"] = r.status_code
         except Exception as e:
             log(f"SEC 요청 실패 {url}: {e}")
             return None
@@ -670,85 +698,113 @@ def parse_submissions(js, since_date):
     return out
 
 
-def _sec_backfill(cik2t, now, deadline, get):
-    """최근 14일: 대상 회사마다 최근 제출 목록 1번 → 8-K 는 항목으로 바로 판정, Form 4 는 XML 을 최신부터 최대 600건.
-    진행 상태는 _bf["US"] (회사 목록 위치 · Form 4 대기열). 시간 예산이 끝나면 다음 tick 에 이어서 한다."""
+def _sec_blocked():
+    return time.time() < _sec["blocked_until"]
+
+
+def _sec_backfill(cik2t, now, deadline, get, emit):
+    """최근 14일: 대상 회사를 하나씩 — 최근 제출 목록 1번 → 8-K 는 항목으로 바로 판정·저장, 그 회사 Form 4 는 원본 XML 을
+    최신부터 최대 10건 바로 받아 장내 매수(P)만 저장. 회사 단위로 진행 위치를 _bf["US"] 에 남겨 다음 tick 에 이어서.
+    SEC 가 막으면(403/429) 위치를 그대로 두고 쉰 뒤 같은 회사부터 다시."""
     st = _bf["US"]
     E = D["DisclosureEvent"]
     if "ciks" not in st:
-        st.update(ciks=sorted(cik2t), i=0, q=[], j=0, calls=0,
+        st.update(ciks=sorted(cik2t), i=0, cur=None, calls=0, f4=0, tries=0,
                   since=(now.astimezone(ET_TZ).date() - timedelta(days=BACKFILL_DAYS)).isoformat())
-    out = []
-    while st["i"] < len(st["ciks"]):                  # 1단계: 회사별 최근 제출 목록
+    st["total"] = len(st["ciks"])
+    while st["i"] < len(st["ciks"]):
         if deadline and time.time() > deadline:
-            return out
+            return
+        if _sec_blocked():
+            st["note"] = "SEC 요청 제한(403/429) — 잠시 뒤 이어서"
+            return
         cik = st["ciks"][st["i"]]
-        r = sec_get(SEC_SUBMISSIONS.format(cik=cik), get=get)
-        st["calls"] += 1
-        st["i"] += 1
-        if r is None:
-            continue                                  # 이 회사는 건너뜀 (403/429 면 sec_get 이 10분 쉰다)
-        try:
-            rows = parse_submissions(r.json(), st["since"])
-        except Exception as e:
-            log(f"SEC 제출 목록 파싱 실패 CIK {cik}: {e}")
-            continue
         t, nm = cik2t[cik]
-        for f in rows:
-            if f["form"].startswith("8-K"):
-                ev = _8k_event(f["items"], cik, f["accession"], t, nm, f["at"])
-                if ev:
-                    out.append(ev)
-            else:
-                st["q"].append((f["at"], cik, f["accession"], f["doc"]))
-    if st["q"] and not st.get("sorted"):              # 2단계 준비: 최신부터, 이미 저장된 공시 제외, 상한
-        st["q"].sort(key=lambda x: x[0], reverse=True)
-        accs = [f"SEC:{x[2]}" for x in st["q"]]
-        have = set()
-        for k in range(0, len(accs), 300):
-            have |= {r[0] for r in D["db"].session.query(E.external_id).filter(E.external_id.in_(accs[k:k + 300])).all()}
-        st["q"] = [x for x in st["q"] if f"SEC:{x[2]}" not in have][:SEC_BACKFILL_FORM4]
-        st["sorted"] = True
-    while st["j"] < len(st["q"]):                     # 2단계: Form 4 XML → 장내 매수(P)만
-        if deadline and time.time() > deadline:
-            return out
-        at, cik, acc, doc = st["q"][st["j"]]
-        st["j"] += 1
-        raw = doc.split("/")[-1] if doc.lower().endswith(".xml") else None    # 'xslF345X05/form4.xml' → 원본 'form4.xml'
-        url = f"{_filing_dir(cik, acc)}/{raw}" if raw else _form4_xml_url(cik, acc, get=get)
-        r = sec_get(url, get=get) if url else None
-        st["calls"] += 1
-        if r is None:
-            continue
-        try:
-            p = parse_form4(r.text)
-        except ET.ParseError as e:
-            log(f"Form 4 XML 파싱 실패 {acc}: {e}")
-            continue
-        _sec["seen"].add(acc)
-        if p["buys"]:
-            t, nm = cik2t[cik]
-            out.append({"market": "US", "ticker": t, "name": nm, "source": "SEC", "category": "insider_buy", "sentiment": "positive",
-                        "title": "Form 4 · 내부자 장내 매수", "summary": form4_summary(p),
-                        "source_url": f"{_filing_dir(cik, acc)}/{acc}-index.htm", "external_id": f"SEC:{acc}", "disclosed_at": at})
+        if st["cur"] is None:                          # 이 회사 제출 목록
+            r = sec_get(SEC_SUBMISSIONS.format(cik=cik), get=get)
+            st["calls"] += 1
+            if r is None:
+                if _sec_blocked():
+                    st["note"] = "SEC 요청 제한(403/429) — 잠시 뒤 이어서"
+                    st["errors"] = st.get("errors", 0) + 1
+                    if st["errors"] >= BACKFILL_MAX_ERRORS:
+                        _bf_fail("US", "SEC 요청이 계속 거부됨 (User-Agent 확인)", fatal=True)
+                    return
+                code = _sec.get("last_status")
+                if code is not None and 400 <= code < 500:
+                    st["tries"], st["i"] = 0, st["i"] + 1        # 404 등: 이 회사는 목록이 없음 → 건너뜀
+                    continue
+                st["tries"] += 1                                 # 연결 실패·5xx: 다음 tick 에 같은 회사 (세 번까지)
+                if st["tries"] < 3:
+                    st["note"] = "SEC 연결 오류 — 다음 회차에 이어서"
+                    return
+                st["tries"], st["i"] = 0, st["i"] + 1
+                continue
+            st["tries"], st["errors"], st["note"] = 0, 0, None
+            try:
+                rows = parse_submissions(r.json(), st["since"])
+            except Exception as e:
+                log(f"SEC 제출 목록 파싱 실패 CIK {cik}: {e}")
+                rows = []
+            emit([ev for ev in (_8k_event(f["items"], cik, f["accession"], t, nm, f["at"])
+                                for f in rows if f["form"].startswith("8-K")) if ev])
+            q = sorted([(f["at"], f["accession"], f["doc"]) for f in rows if not f["form"].startswith("8-K")], reverse=True)
+            if q:
+                have = {x[0] for x in D["db"].session.query(E.external_id)
+                        .filter(E.external_id.in_([f"SEC:{a}" for _, a, _ in q])).all()}
+                q = [x for x in q if f"SEC:{x[1]}" not in have][:SEC_BACKFILL_FORM4_PER_CO]
+            st["cur"] = {"q": q, "k": 0}
+        cur = st["cur"]
+        while cur["k"] < len(cur["q"]) and st["f4"] < SEC_BACKFILL_FORM4:      # 이 회사 Form 4 → 바로 저장
+            if deadline and time.time() > deadline:
+                return
+            if _sec_blocked():
+                st["note"] = "SEC 요청 제한(403/429) — 잠시 뒤 이어서"
+                return
+            at, acc, doc = cur["q"][cur["k"]]
+            raw = doc.split("/")[-1] if doc.lower().endswith(".xml") else None   # 'xslF345X05/form4.xml' → 원본 'form4.xml'
+            url = f"{_filing_dir(cik, acc)}/{raw}" if raw else _form4_xml_url(cik, acc, get=get)
+            r = sec_get(url, get=get) if url else None
+            st["calls"] += 1
+            if r is None and _sec_blocked():
+                return                                 # 같은 Form 4 부터 다시
+            cur["k"] += 1
+            st["f4"] += 1
+            if r is None:
+                continue
+            try:
+                p = parse_form4(r.text)
+            except ET.ParseError as e:
+                log(f"Form 4 XML 파싱 실패 {acc}: {e}")
+                continue
+            _sec["seen"].add(acc)
+            if p["buys"]:
+                emit([{"market": "US", "ticker": t, "name": nm, "source": "SEC", "category": "insider_buy",
+                       "sentiment": "positive", "title": "Form 4 · 내부자 장내 매수", "summary": form4_summary(p),
+                       "source_url": f"{_filing_dir(cik, acc)}/{acc}-index.htm", "external_id": f"SEC:{acc}",
+                       "disclosed_at": at}])
+        st["cur"], st["i"] = None, st["i"] + 1
     st["done"] = True
-    return out
 
 
-def collect_sec(tg=None, now=None, deadline=None, get=None, backfill=False):
+def collect_sec(tg=None, now=None, deadline=None, get=None, backfill=False, emit=None):
     """Form 4 장내 매수 · 8-K 핵심 항목 이벤트 목록. backfill=True 면 최근 14일 (진행 상태는 _bf["US"])."""
     tg = tg if tg is not None else targets()
     tmap = sec_ticker_map(get=get)
     if not tmap:
         STATUS["US"]["note"] = "SEC 티커 매핑을 받지 못함"
-        return []                                     # 백필이면 다음 tick 에 다시 시도
+        if backfill:
+            _bf_fail("US", "SEC 티커 매핑(company_tickers.json)을 받지 못함")   # 다음 tick 에 재시도 (연속 20번이면 종료)
+        return []
     cik2t = {}
     for t, nm in tg["US"].items():
         c = tmap.get(t.upper().replace(".", "-"))
         if c:
             cik2t.setdefault(c, (t, nm))
     if backfill:
-        return _sec_backfill(cik2t, now or datetime.now(timezone.utc), deadline, get)
+        out = []
+        _sec_backfill(cik2t, now or datetime.now(timezone.utc), deadline, get, emit or out.extend)
+        return out
     E = D["DisclosureEvent"]
     out, budget = [], SEC_FILINGS_PER_RUN
     for form in ("4", "8-K"):
@@ -824,13 +880,15 @@ def _us_window(now):
 # (이름, 시장, 주기(분), 실행 시간 판정, 수집 함수). 2차: ("g2b", "KR", 60, ...) · ("usaspending", "US", 60, ...)
 COLLECTORS = [("dart", "KR", 15, _kr_window, collect_dart), ("sec", "US", 30, _us_window, collect_sec)]
 STATUS = {"KR": {"last_run": None, "saved": 0, "note": None, "backfill": None},
-          "US": {"last_run": None, "saved": 0, "note": None, "backfill": None}}
+          "US": {"last_run": None, "saved": 0, "note": None, "backfill": None},
+          "tick": {"last": None, "count": 0, "busy": False}}
 _last = {}
 _cleanup_day = {"d": None}
 # 최초 백필: 이 프로세스에서 시장별로 한 번. None = 아직 DB 확인 전, True = 끝남(또는 필요 없음), False = 진행 중
 _backfilled = {"KR": None, "US": None}
 _bf = {"KR": {}, "US": {}}                         # 진행 상태 (여러 tick 에 걸쳐 이어서)
 BACKFILL_COLLECTOR = {"KR": collect_dart, "US": collect_sec}
+_RUN_GUARD = threading.Lock()                      # 스케줄러 tick 과 수동 수집이 겹치지 않게
 
 
 def _check_backfill():
@@ -851,49 +909,82 @@ def _check_backfill():
             _backfilled[m] = True
 
 
+def _bf_status(m):
+    """화면용 백필 상태: state(running · done · error) · 진행률 · 저장 건수 · 사유."""
+    st = _bf[m]
+    state = st.get("state") or ("done" if st.get("done") else "running")
+    if m == "KR":
+        prog = {"done": st.get("pages_done", 0), "total": st.get("total", len(DART_BACKFILL_TYPES) * DART_BACKFILL_PAGES), "unit": "쪽"}
+    else:
+        prog = {"done": st.get("i", 0), "total": st.get("total", 0), "unit": "종목"}
+    return {"state": state, "progress": prog, "saved": st.get("saved", 0), "note": st.get("note"),
+            "started": st.get("started"), "finished": st.get("finished")}
+
+
 def start_backfill(markets=("KR", "US"), reason="수동"):
     """14일 백필을 (다시) 시작한다. 진행 상태를 비우고 다음 run 부터 이어서 처리."""
     for m in markets:
         _backfilled[m] = False
-        _bf[m] = {"started": _utcnow().isoformat() + "Z"}
-        STATUS[m]["backfill"] = "running"
+        _bf[m] = {"started": _utcnow().isoformat() + "Z", "saved": 0}
+        STATUS[m]["backfill"] = _bf_status(m)
         log(f"{m} 최근 {BACKFILL_DAYS}일 백필 시작 ({reason})")
 
 
-def _run_backfill(now, deadline, tg):
-    """진행 중인 백필을 시간 예산 안에서 이어서 한다. 저장만 하고 알림은 절대 보내지 않는다. → {시장: 저장 건수}"""
+def _run_backfill(now, tg, budget=None):
+    """진행 중인 백필을 시장마다 독립 예산(기본 20초)으로 이어서 한다. 찾은 공시는 그 자리에서 바로 저장(커밋)하고,
+    알림은 절대 보내지 않는다. → {시장: 이번에 저장한 건수}"""
     res = {}
     for m in ("KR", "US"):
-        if _backfilled[m] is not False or time.time() > deadline:
-            continue
-        try:
-            events = BACKFILL_COLLECTOR[m](tg=tg, now=now, deadline=deadline, backfill=True)
-            rows = save_events(events)                # notify 없음 (과거 공시)
-        except Exception as e:
-            D["db"].session.rollback()
-            log(f"{m} 백필 실패: {e}")
+        if _backfilled[m] is not False:
             continue
         st = _bf[m]
-        st["saved"] = st.get("saved", 0) + len(rows)
-        res[m] = len(rows)
+        res[m] = 0
+
+        def emit(evs, m=m, st=st):
+            if not evs:
+                return
+            rows = save_events(evs)                   # notify 없음 (과거 공시)
+            st["saved"] = st.get("saved", 0) + len(rows)
+            res[m] += len(rows)
+
+        deadline = time.time() + (budget or BACKFILL_MARKET_BUDGET)       # 시장마다 따로
+        try:
+            BACKFILL_COLLECTOR[m](tg=tg, now=now, deadline=deadline, backfill=True, emit=emit)
+        except Exception as e:
+            D["db"].session.rollback()
+            _bf_fail(m, f"백필 오류: {str(e)[:80]}")
         if st.get("done"):
             _backfilled[m] = True
-            STATUS[m]["backfill"] = f"done ({st['saved']}건)"
-            log(f"{m} 백필 완료: {st['saved']}건 저장 (요청 {st.get('calls', 0)}회, 알림 없음)")
+            st["finished"] = _utcnow().isoformat() + "Z"
+            log(f"{m} 백필 {'완료' if st.get('state') != 'error' else '중단'}: {st.get('saved', 0)}건 저장 "
+                f"(요청 {st.get('calls', 0)}회, 알림 없음){' — ' + st['note'] if st.get('note') else ''}")
+        STATUS[m]["backfill"] = _bf_status(m)
     return res
 
 
-def run(names=None, force=False, now=None, budget=None):
-    """(1) 진행 중인 최초 백필을 이어서 (알림 없음) → (2) 주기가 된(또는 force) 수집기를 돌리고 새 이벤트를 저장·알림.
-    → {이름: 새로 저장된 건수} (백필은 'backfill_KR' · 'backfill_US')"""
+def run(names=None, force=False, now=None, budget=None, backfill_budget=None):
+    """(1) 진행 중인 최초 백필을 시장마다 독립 예산으로 이어서 (알림 없음) → (2) 주기가 된(또는 force) 수집기를 돌리고
+    새 이벤트를 저장·알림. → {이름: 새로 저장된 건수} (백필은 'backfill_KR' · 'backfill_US').
+    다른 곳에서 이미 돌고 있으면 기다리지 않고 {"busy": True}."""
+    if not _RUN_GUARD.acquire(blocking=False):
+        return {"busy": True}
+    try:
+        STATUS["tick"].update(last=_utcnow().isoformat() + "Z", count=STATUS["tick"]["count"] + 1, busy=True)
+        return _run(names, force, now, budget, backfill_budget)
+    finally:
+        STATUS["tick"]["busy"] = False
+        _RUN_GUARD.release()
+
+
+def _run(names, force, now, budget, backfill_budget):
     now = now or datetime.now(timezone.utc)
-    deadline = time.time() + (budget or TICK_BUDGET)
     res, tg = {}, None
     _check_backfill()
     if any(v is False for v in _backfilled.values()):
         tg = targets()
-        for m, n in _run_backfill(now, deadline, tg).items():
+        for m, n in _run_backfill(now, tg, backfill_budget).items():
             res[f"backfill_{m}"] = n
+    deadline = time.time() + (budget or TICK_BUDGET)
     for name, market, every, window, fn in COLLECTORS:
         if names and name not in names:
             continue
