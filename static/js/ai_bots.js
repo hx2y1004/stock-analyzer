@@ -123,6 +123,13 @@
 
   // ── 차트 ──────────────────────────────────────────────────────────────
   let chart = null, lines = [];
+  // 차트 시간(문자열 'YYYY-MM-DD' · 영업일 객체 · 초 단위 숫자) → 'YYYY-MM-DD'
+  const dayStr = (t) => {
+    if (typeof t === 'string') return t.slice(0, 10);
+    if (t && t.year) return `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
+    if (typeof t === 'number') return new Date(t * 1000).toISOString().slice(0, 10);
+    return '';
+  };
   async function loadChart(period) {
     document.querySelectorAll('.ab-period').forEach((b) => {
       const on = b.dataset.p === period;
@@ -137,9 +144,11 @@
         layout: { background: { color: 'transparent' }, textColor: '#8b949e', fontFamily: 'inherit' },
         grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(240,246,252,0.06)' } },
         rightPriceScale: { borderVisible: false },
-        timeScale: { borderVisible: false },
+        // X축: '20일' 대신 '11/20' (모의투자 자산 추이 차트와 같은 형식)
+        timeScale: { borderVisible: false, tickMarkFormatter: (t) => { const s = dayStr(t); return s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : ''; } },
         crosshair: { mode: 0 },
-        localization: { priceFormatter: (v) => (v == null || !isFinite(v)) ? '' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%` },
+        localization: { locale: 'ko-KR', timeFormatter: (t) => dayStr(t),
+          priceFormatter: (v) => (v == null || !isFinite(v)) ? '' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%` },
       });
       chart.subscribeCrosshairMove((p) => paintLegend(p));
     }
@@ -167,7 +176,8 @@
       let v = null;
       if (param && param.seriesData && param.seriesData.get(s)) v = param.seriesData.get(s).value;
       else if (meta.data.length) v = meta.data[meta.data.length - 1].return_pct;
-      return `<span class="ab-leg"><i style="background:${esc(meta.color)}" class="${meta.kind === 'benchmark' ? 'dash' : ''}"></i>${esc(meta.name)} <b>${v == null ? '—' : pct(v)}</b></span>`;
+      // 색은 --c 로 넘긴다: 점선(지수)은 border 로 그리므로 background 만 주면 회색(currentColor)이 됐다
+      return `<span class="ab-leg"><i style="--c:${esc(meta.color)}" class="${meta.kind === 'benchmark' ? 'dash' : ''}"></i>${esc(meta.name)} <b>${v == null ? '—' : pct(v)}</b></span>`;
     }).join('');
   }
 
