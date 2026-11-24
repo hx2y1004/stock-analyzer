@@ -343,6 +343,103 @@ def _analyze_fundamental(df, info):
     return {"details": details, "score": score}
 
 
+def _tech_gauge(cards, overheat_reasons, adx_v, adx_regime, pdi_v, mdi_v):
+    """기술 카드 6개 → 반원 게이지 값(0~100)과 라벨. 축 점수 평균이 기준."""
+    axes = [c.get("axis", 50.0) for c in cards]
+    value = round(sum(axes) / len(axes), 1) if axes else 50.0
+    if value >= 67:   label, tone = "매수 우위", "bull"
+    elif value >= 55: label, tone = "약한 매수 우위", "bull"
+    elif value > 45:  label, tone = "중립", "neu"
+    elif value > 33:  label, tone = "약한 매도 우위", "bear"
+    else:             label, tone = "매도 우위", "bear"
+    counts = {"bull": 0, "neu": 0, "bear": 0}
+    for c in cards:
+        counts[{"bullish": "bull", "bearish": "bear"}.get(c.get("color"), "neu")] += 1
+    adx_line = None
+    if adx_v is not None:
+        side = "상승" if (pdi_v or 0) > (mdi_v or 0) else "하락"
+        adx_line = (f"ADX {adx_v:.1f} · 추세장 ({side} 우위)" if adx_regime == "trend"
+                    else f"ADX {adx_v:.1f} · 횡보장 (추세 신호 신뢰도 낮음)" if adx_regime == "range"
+                    else f"ADX {adx_v:.1f} · 추세 약함")
+    return {"value": value, "label": label, "tone": tone, "counts": counts,
+            "overheat": bool(overheat_reasons), "overheat_reasons": list(overheat_reasons), "adx_line": adx_line}
+
+
+def build_price_plan(close, stop_loss, entry_price, entry_low, entry_high, target_low, target_high, target_price,
+                     month_low, month_high, ma20, ma50, swing_low, atr, trade_recommendation, trend):
+    """가격 구간 맵. 항상 손절 ≤ 지지 < 현재가 < 목표/저항 순서가 되도록 보정하고 거리 % · 손익비를 붙인다.
+
+    - 하락 추세/진입 비추천이면 위쪽 구간은 '반등 저항 구간(매물대)' (mode=resistance), 아니면 '목표가 구간' (mode=target)
+    - 예전에는 1개월 저점(진입 박스 하단)이 손절선보다 낮게 나와 순서가 꼬였다 → 지지선은 손절선 이상에서만 고른다
+    """
+    if not close or close <= 0:
+        return None
+    atr = atr if atr and atr > 0 else close * 0.02
+    eps = max(close * 0.001, 1e-9)
+
+    def r(v):
+        return round(float(v), 2)
+
+    # ① 손절: 현재가보다 아래여야 한다. 이미 이탈했으면 표시용 손절선을 다시 잡고 이탈 사실을 알린다
+    stop_broken = bool(stop_loss is not None and close <= stop_loss)
+    stop = stop_loss if (stop_loss is not None and stop_loss < close - eps) else close - atr * 1.0
+    stop = max(stop, close * 0.5)
+
+    # ② 지지: 손절선 이상 ~ 현재가 미만 후보 중 현재가에 가장 가까운 것
+    cands = []
+    for name, v in [("진입 구간", entry_high if trade_recommendation in ("strong", "neutral") else None),
+                    ("20일선", ma20), ("50일선", ma50), ("최근 5일 저점", swing_low), ("1개월 저점", month_low)]:
+        if v is not None and stop <= v < close - eps:
+            cands.append((v, name))
+    if cands:
+        sup, sup_name = max(cands)
+    else:
+        sup, sup_name = stop, "손절선"             # 지지 후보가 모두 손절선 아래 → 손절선이 곧 지지선
+    sup_low = max(stop, min(sup, entry_low)) if (entry_low is not None and sup_name == "진입 구간") else sup
+    sup_low = min(sup_low, sup)
+
+    # ③ 위쪽 구간
+    downtrend = trend in ("downtrend", "strong-downtrend")
+    mode = "resistance" if (trade_recommendation == "avoid" or downtrend) else "target"
+    if mode == "target":
+        hi = max(v for v in [target_high, target_price, target_low, close + atr * 2] if v is not None)
+        lo = target_low if (target_low is not None and target_low > close + eps) else max(close + atr * 0.5, hi - atr)
+        lo = min(lo, hi)
+        up_name = "목표가 구간"
+    else:
+        above = [(v, n) for v, n in [(ma20, "20일선"), (ma50, "50일선"), (month_high, "1개월 고점")]
+                 if v is not None and v > close + eps]
+        if above:
+            lo, res_name = min(above)
+        else:
+            lo, res_name = close + atr * 1.0, "변동폭(ATR) 1배"
+        hi = max(lo + atr * 0.5, lo * 1.01)
+        up_name = f"반등 저항 구간 ({res_name})"
+
+    def pct(v):
+        return round((v - close) / close * 100, 1)
+
+    risk_now = close - stop
+    reward_ref = lo                                   # 보수적으로 목표/저항 구간의 아래쪽 끝까지만
+    rr_now = round((reward_ref - close) / risk_now, 2) if risk_now > 0 else None
+    rr_entry = None
+    if entry_price and trade_recommendation in ("strong", "neutral") and entry_price > stop:
+        rr_entry = round((reward_ref - entry_price) / (entry_price - stop), 2)
+
+    return {
+        "mode": mode,                               # target / resistance
+        "current": r(close),
+        "stop":        {"price": r(stop), "pct": pct(stop), "broken": stop_broken,
+                        "original": r(stop_loss) if stop_loss is not None else None},
+        "support":     {"low": r(sup_low), "high": r(sup), "pct": pct(sup), "basis": sup_name},
+        "upper":       {"low": r(lo), "high": r(hi), "pct_low": pct(lo), "pct_high": pct(hi), "label": up_name},
+        "entry":       r(entry_price) if entry_price else None,
+        "rr_now":      rr_now,                      # 지금 사면: (목표/저항 하단 - 현재가) / (현재가 - 손절)
+        "rr_entry":    rr_entry,                    # 진입 추천가에 사면
+        "ordered":     bool(stop <= sup_low <= sup < close < lo <= hi),
+    }
+
+
 def analyze_signals(df, info, df_weekly=None, stock=None):
     _FMT.dec = 0 if (info or {}).get("currency") == "KRW" else 2
     latest = df.iloc[-1]
@@ -350,6 +447,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
     signals = []
     details = []
     score = 0
+    _snaps = []        # 기술 카드 6개 각각을 붙이기 직전의 누적 점수 → 축별 점수
 
     close = float(latest["Close"])
 
@@ -400,6 +498,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
     else:
         ma_state, ma_color, ma_desc = "데이터 부족", "neutral", "이동평균선 데이터가 충분하지 않습니다."
 
+    _snaps.append(score)
     details.append({
         "indicator": "이동평균선 (MA)", "short": "이동평균(MA)",
         "state": ma_state, "color": ma_color, "desc": ma_desc,
@@ -494,6 +593,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         bb_tip = None
         bb_desc = "볼린저밴드 데이터가 충분하지 않습니다."
 
+    _snaps.append(score)
     details.append({
         "indicator": "볼린저밴드 (BB)", "short": "볼린저밴드(BB)",
         "state": bb_state, "color": bb_color, "desc": bb_desc,
@@ -565,6 +665,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         ichi_metrics.append({"label": "구름대 대비", "value": f"{_pct(close, ref):+.1f}%" if ref else "구름 안"})
     if not any(np.isnan(v) for v in [tenkan, kijun]):
         ichi_metrics.append({"label": "전환/기준", "value": "전환 > 기준" if tenkan > kijun else "전환 < 기준" if tenkan < kijun else "같음"})
+    _snaps.append(score)
     details.append({
         "indicator": "일목균형표", "short": "일목균형표",
         "state": ichi_state, "color": ichi_color,
@@ -619,6 +720,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
     else:
         rsi_state, rsi_color, rsi_desc = "데이터 부족", "neutral", "RSI 데이터가 충분하지 않습니다."
 
+    _snaps.append(score)
     details.append({
         "indicator": "RSI (14)", "short": "RSI(14)",
         "state": rsi_state, "color": rsi_color, "desc": rsi_desc, "tip_key": rsi_tip,
@@ -690,6 +792,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         macd_desc = "MACD 데이터가 충분하지 않습니다."
         macd, macd_sig, macd_hist = float("nan"), float("nan"), float("nan")
 
+    _snaps.append(score)
     details.append({
         "indicator": "MACD", "short": "MACD",
         "state": macd_state, "color": macd_color, "desc": macd_desc,
@@ -747,6 +850,7 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         )
         if adx_regime == "trend" or obv_flow:
             signals.append({"type": flow_color if flow_color != "neutral" else "info", "text": f"수급·ADX: {flow_state}"})
+    _snaps.append(score)
     details.append({
         "indicator": "수급 · ADX", "short": "수급·ADX",
         "state": flow_state, "color": flow_color, "desc": flow_desc,
@@ -764,6 +868,15 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
             {"label": {"in": "OBV 유입", "out": "OBV 이탈"}.get(obv_flow, "OBV 중립"), "up": {"in": True, "out": False}.get(obv_flow)},
         ],
     })
+
+    # ── 6축 점수 (0~100, 50 = 중립): 카드별 가감점을 그 카드의 최대 가감폭으로 정규화 ──
+    _AXIS_MAX = [35, 10, 25, 10, 15, 10]       # MA(4×5+15) · BB(-5~+10) · 일목(±25) · RSI(±10) · MACD(±15) · 수급(±10)
+    _prev_s = 0
+    for _i, _cur in enumerate(_snaps[:6]):
+        _delta = _cur - _prev_s
+        _prev_s = _cur
+        details[_i]["axis"] = round(max(0.0, min(100.0, 50 + 50 * _delta / _AXIS_MAX[_i])), 1)
+    tech_gauge = _tech_gauge(details[:6], overheat_reasons, adx_v, adx_regime, pdi_v, mdi_v)
 
     # ── 펀더멘털 분석 추가 ────────────────────────────
     fund = _analyze_fundamental(df, info)
@@ -1030,6 +1143,12 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
     else:
         trend = "uptrend" if effective_score >= 20 else "downtrend" if effective_score <= -20 else "sideways"
 
+    price_plan = build_price_plan(
+        close=close, stop_loss=stop_loss, entry_price=entry_price, entry_low=entry_low, entry_high=entry_high,
+        target_low=target_low, target_high=target_high, target_price=target_price,
+        month_low=month_low, month_high=month_high, ma20=ma20, ma50=ma50, swing_low=_swing_low_5,
+        atr=atr_use, trade_recommendation=trade_recommendation, trend=trend)
+
     if combined_score >= 50:   verdict, verdict_color = "강한 매수", "strong-buy"
     elif combined_score >= 20: verdict, verdict_color = "매수",       "buy"
     elif combined_score >= -20:verdict, verdict_color = "중립 / 관망","neutral"
@@ -1086,4 +1205,6 @@ def analyze_signals(df, info, df_weekly=None, stock=None):
         "vol_spike_up":  vol_spike_up,
         "vol_spike_down": vol_spike_down,
         "macd_hist_expanding": hist_expanding,
+        "tech_gauge":    tech_gauge,          # 반원 게이지 (0~100) · 라벨 · 강세/중립/약세 수
+        "price_plan":    price_plan,          # 손절 ≤ 지지 < 현재가 < 목표/저항 · 거리 % · 손익비
     }
