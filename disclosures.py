@@ -54,6 +54,13 @@ BACKFILL_MAX_ERRORS = 20              # 같은 단계에서 연속 오류가 이
 DART_FATAL = {"010": "등록되지 않은 DART API 키", "011": "사용할 수 없는 DART API 키", "012": "접근할 수 없는 IP (DART)",
               "901": "DART API 키 기간 만료"}
 SEC_SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
+# 미국 유상증자 · 자사주 매입 (한국 DART 와 같은 4개 분류)
+SEC_OFFERING_ITEM = "3.02"            # 8-K Item 3.02 미등록 증권 발행(사모 유상증자) → 항목 번호만으로 판정
+SEC_BUYBACK_ITEMS = ("8.01", "7.01")  # 8-K 기타 사항 · Reg FD → 문서 앞부분에 자사주 매입 키워드가 있으면 buyback
+SEC_FORMS = ("4", "8-K", "424B5")     # 실시간 피드에서 보는 양식 (424B5 = 공모·ATM 신주 발행 설명서)
+DOC_HEAD_BYTES = 16384                # 문서는 앞부분 16KB 만 읽는다
+SEC_BACKFILL_DOCS_PER_CO = 6          # 백필: 회사마다 문서 확인(8-K 8.01/7.01 · 424B5) 최대 6건
+SEC_BACKFILL_DOCS = 400               # 백필: 문서 확인 전체 상한
 
 
 def init(deps):
@@ -451,20 +458,27 @@ def sec_user_agent():
     return f"StockAnalyzer {email}" if email else "StockAnalyzer (contact@example.com)"
 
 
-def sec_get(url, params=None, get=None):
-    """SEC 요청: User-Agent 헤더 + 요청 간 0.2초 이상. 403/429 면 10분 쉰다. 실패하면 None."""
+def sec_get(url, params=None, get=None, max_bytes=None):
+    """SEC 요청: User-Agent 헤더 + 요청 간 0.2초 이상. 403/429 면 10분 쉰다. 실패하면 None.
+    max_bytes 를 주면 스트림으로 앞부분만 읽고 끊는다 → r.head (문자열). 큰 설명서·8-K 본문을 다 받지 않는다."""
     import requests
     get = get or requests.get
     if time.time() < _sec["blocked_until"]:
         return None
+    hdr = {"User-Agent": sec_user_agent(), "Accept-Encoding": "gzip, deflate"}
     with _sec["lock"]:
         wait = SEC_GAP - (time.time() - _sec["last"])
         if wait > 0:
             time.sleep(wait)
         _sec["last_status"] = None
         try:
-            r = get(url, params=params, headers={"User-Agent": sec_user_agent(), "Accept-Encoding": "gzip, deflate"}, timeout=12)
+            if max_bytes:
+                r = get(url, params=params, headers=hdr, timeout=12, stream=True)
+            else:
+                r = get(url, params=params, headers=hdr, timeout=12)
             _sec["last_status"] = r.status_code
+            if max_bytes and r.status_code == 200:
+                r.head = _read_head(r, max_bytes)
         except Exception as e:
             log(f"SEC 요청 실패 {url}: {e}")
             return None
@@ -475,6 +489,25 @@ def sec_get(url, params=None, get=None):
         log(f"SEC {r.status_code} — 10분 쉼 (User-Agent·요청 간격 확인)")
         return None
     return r if r.status_code == 200 else None
+
+
+def _read_head(r, max_bytes):
+    """스트림 응답에서 앞 max_bytes 만 읽고 연결을 닫는다 → 문자열."""
+    buf = b""
+    try:
+        it = getattr(r, "iter_content", None)
+        if it is None:
+            return (r.text or "")[:max_bytes]
+        for chunk in it(chunk_size=8192):
+            buf += chunk or b""
+            if len(buf) >= max_bytes:
+                break
+    finally:
+        try:
+            r.close()
+        except Exception:
+            pass
+    return buf[:max_bytes].decode(getattr(r, "encoding", None) or "utf-8", "replace")
 
 
 def sec_ticker_map(get=None):
@@ -668,6 +701,147 @@ def _8k_event(items, cik, acc, t, nm, at):
             "source_url": f"{_filing_dir(cik, acc)}/{acc}-index.htm", "external_id": f"SEC:{acc}", "disclosed_at": at}
 
 
+_EQUITY_RE = re.compile(r"\b(common stock|common shares|ordinary shares|class [a-c] common|american depositary shares|"
+                        r"at[- ]the[- ]market)\b")
+_DEBT_RE = re.compile(r"\b(senior notes|subordinated notes|structured notes|medium[- ]term notes|debentures|notes due|"
+                      r"fixed[- ]rate notes|floating[- ]rate notes|market[- ]linked|certificates of deposit|"
+                      r"callable (contingent )?(interest|coupon) notes|buffered|trigger notes)\b")
+_EQUITY_OFFER_RE = re.compile(r"\b(offering|offer|issue|sell|selling|sale of)\b[^.]{0,120}?"
+                              r"\b(shares of (our )?(class [a-c] )?(common stock|ordinary shares)|common stock|ordinary shares|"
+                              r"american depositary shares)\b")
+_LINKED_RE = re.compile(r"\b(notes?|securities)\b[^.]{0,100}\blinked to\b|\bauto[- ]?callable\b")
+_ATM_RE = re.compile(r"\bat[- ]the[- ]market\b|\bsales agents?\b|\bequity distribution agreement\b")
+_BUYBACK_RE = re.compile(r"\b(share repurchase|stock repurchase|repurchase program|buyback program|share buyback|stock buyback|"
+                         r"repurchase up to)\b")
+_USD_RE = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)\s*(million|billion)?", re.I)
+
+
+def _plain(text):
+    """HTML → 소문자 평문 (태그 제거 · 엔티티 해제 · 공백 정리)."""
+    t = html.unescape(re.sub(r"<[^>]+>", " ", text or ""))
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def fmt_usd(v):
+    if v is None:
+        return None
+    if v >= 1e9:
+        return f"${v / 1e9:,.2f}".rstrip("0").rstrip(".") + "B"
+    if v >= 1e6:
+        return f"${v / 1e6:,.1f}".rstrip("0").rstrip(".") + "M"
+    return f"${v:,.0f}"
+
+
+def _usd_near(t, pos, span=300):
+    """t[pos] 주변에서 가장 가까운 달러 금액 → 숫자 (million/billion 반영)."""
+    best = None
+    for m in _USD_RE.finditer(t, max(0, pos - span), min(len(t), pos + span)):
+        try:
+            v = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        unit = (m.group(2) or "").lower()
+        v *= 1e9 if unit == "billion" else 1e6 if unit == "million" else 1
+        if v < 1e6:
+            continue                                   # 주당 가격 같은 작은 금액은 버림
+        d = abs(m.start() - pos)
+        if best is None or d < best[0]:
+            best = (d, v)
+    return best[1] if best else None
+
+
+def classify_424b5(text):
+    """424B5 설명서 앞부분 → 보통주 유상증자면 {"title", "summary"}, 채권·구조화 채권이면 None.
+    은행·증권사가 매일 내는 Senior Notes · Medium-Term Notes · 주가 연계(linked to) 채권은 유상증자가 아니다."""
+    t = _plain(text)
+    if not t:
+        return None
+    head = t[:5000]
+    eq, debt = len(_EQUITY_RE.findall(t)), len(_DEBT_RE.findall(t))
+    if eq == 0 or _LINKED_RE.search(head):
+        return None
+    offer = _EQUITY_OFFER_RE.search(head)
+    if debt and (debt >= eq or not offer):
+        return None                                    # 채권 위주 (기본 설명서의 '보통주' 언급만 있는 경우 포함)
+    atm = bool(_ATM_RE.search(t))
+    amt = None
+    m = re.search(r"aggregate offering price of up to", t)
+    if m:
+        amt = _usd_near(t, m.end(), 120)
+    shares = re.search(r"([\d,]{5,}) (?:shares of (?:our )?(?:class [a-c] )?(?:common stock|ordinary shares)|american depositary shares)", head)
+    parts = []
+    if amt:
+        parts.append(f"최대 {fmt_usd(amt)}")
+    if shares:
+        parts.append(f"{shares.group(1)}주")
+    what = "시장가(ATM) 신주 발행" if atm else "보통주 공모 신주 발행"
+    return {"title": "424B5 · ATM 유상증자 (시장가 신주 발행)" if atm else "424B5 · 공모 유상증자 (신주 발행)",
+            "summary": " · ".join(parts + [what]) + " — 주식 수 희석 주의"}
+
+
+def classify_buyback(text):
+    """8-K 앞부분 → 자사주 매입 발표면 {"summary"} | None."""
+    t = _plain(text)
+    m = _BUYBACK_RE.search(t)
+    if not m:
+        return None
+    amt = _usd_near(t, m.start())
+    return {"summary": f"자사주 매입 {fmt_usd(amt)} 발표" if amt else "자사주 매입 프로그램 발표"}
+
+
+def needs_8k_doc(items):
+    """문서 앞부분을 확인해야 하는 8-K: 3.02(이미 유상증자)가 아니고 8.01·7.01 이 있는 것."""
+    return SEC_OFFERING_ITEM not in items and any(i in items for i in SEC_BUYBACK_ITEMS)
+
+
+def sec_8k_event(items, cik, acc, t, nm, at, head=None):
+    """8-K 1건 → 이벤트 | None. 우선순위: Item 3.02 유상증자(희석 주의) > 8.01/7.01 자사주 매입(문서 확인) > 1.01·2.01·2.02."""
+    base = {"market": "US", "ticker": t, "name": nm, "source": "SEC", "source_url": f"{_filing_dir(cik, acc)}/{acc}-index.htm",
+            "external_id": f"SEC:{acc}", "disclosed_at": at}
+    others = lambda skip: ", ".join(i for i in items if i not in skip)
+    if SEC_OFFERING_ITEM in items:
+        o = others({SEC_OFFERING_ITEM})
+        return dict(base, category="offering", sentiment="negative", title="8-K 사모 유상증자·신주 발행 (Item 3.02)",
+                    summary="Item 3.02 미등록 주식 발행 — 주식 수 희석 주의" + (f" (함께: {o})" if o else ""))
+    if head is not None and needs_8k_doc(items):
+        bb = classify_buyback(head)
+        if bb:
+            it = next(i for i in items if i in SEC_BUYBACK_ITEMS)
+            o = others({it})
+            return dict(base, category="buyback", sentiment="positive", title=f"8-K 자사주 매입 발표 (Item {it})",
+                        summary=bb["summary"] + (f" (함께: {o})" if o else ""))
+    ev = _8k_event(items, cik, acc, t, nm, at)
+    return dict(base, **{k: ev[k] for k in ("category", "sentiment", "title", "summary")}) if ev else None
+
+
+def _424b5_event(head, cik, acc, t, nm, at):
+    c = classify_424b5(head)
+    if not c:
+        return None
+    return {"market": "US", "ticker": t, "name": nm, "source": "SEC", "category": "offering", "sentiment": "negative",
+            "title": c["title"], "summary": c["summary"], "source_url": f"{_filing_dir(cik, acc)}/{acc}-index.htm",
+            "external_id": f"SEC:{acc}", "disclosed_at": at}
+
+
+def _primary_doc_url(cik, acc, form, get=None, doc=None):
+    """본문 문서 주소. 제출 목록의 primaryDocument 가 있으면 그것, 없으면 index.json 에서 고른다 (+1 요청)."""
+    if doc and not doc.lower().endswith(".xml"):
+        return f"{_filing_dir(cik, acc)}/{doc.split('/')[-1]}"
+    r = sec_get(f"{_filing_dir(cik, acc)}/index.json", get=get)
+    if r is None:
+        return None
+    try:
+        items = ((r.json() or {}).get("directory") or {}).get("item") or []
+    except Exception:
+        return None
+    names = [str(i.get("name") or "") for i in items]
+    names = [n for n in names if n.lower().endswith((".htm", ".html", ".txt")) and "-index" not in n.lower()
+             and not re.match(r"(?i)^(r\d+\.htm|filingsummary)", n) and n.lower() != f"{acc}.txt"]
+    hint = form.lower().replace("-", "")
+    pick = [n for n in names if hint in n.lower().replace("-", "")] or [n for n in names if not re.match(r"(?i)ex|.*ex-?\d", n)] or names
+    return f"{_filing_dir(cik, acc)}/{pick[0]}" if pick else None
+
+
 def _sec_time(s, fallback_date=None):
     """'2026-11-20T21:05:12.000Z' → UTC naive. 없으면 제출일 자정(ET)."""
     try:
@@ -681,12 +855,12 @@ def _sec_time(s, fallback_date=None):
 
 
 def parse_submissions(js, since_date):
-    """data.sec.gov/submissions JSON → [{form, accession, date, at, doc, items}] (since_date 이후 Form 4 · 8-K 만)."""
+    """data.sec.gov/submissions JSON → [{form, accession, date, at, doc, items}] (since_date 이후 Form 4 · 8-K · 424B5 만)."""
     rec = ((js or {}).get("filings") or {}).get("recent") or {}
     forms = rec.get("form") or []
     out = []
     for i, f in enumerate(forms):
-        if f not in ("4", "4/A", "8-K", "8-K/A"):
+        if f not in ("4", "4/A", "8-K", "8-K/A", "424B5"):
             continue
         fd = (rec.get("filingDate") or [None] * len(forms))[i]
         if not fd or fd < since_date:
@@ -709,7 +883,7 @@ def _sec_backfill(cik2t, now, deadline, get, emit):
     st = _bf["US"]
     E = D["DisclosureEvent"]
     if "ciks" not in st:
-        st.update(ciks=sorted(cik2t), i=0, cur=None, calls=0, f4=0, tries=0,
+        st.update(ciks=sorted(cik2t), i=0, cur=None, calls=0, f4=0, docs=0, tries=0,
                   since=(now.astimezone(ET_TZ).date() - timedelta(days=BACKFILL_DAYS)).isoformat())
     st["total"] = len(st["ciks"])
     while st["i"] < len(st["ciks"]):
@@ -746,22 +920,47 @@ def _sec_backfill(cik2t, now, deadline, get, emit):
             except Exception as e:
                 log(f"SEC 제출 목록 파싱 실패 CIK {cik}: {e}")
                 rows = []
-            emit([ev for ev in (_8k_event(f["items"], cik, f["accession"], t, nm, f["at"])
-                                for f in rows if f["form"].startswith("8-K")) if ev])
-            q = sorted([(f["at"], f["accession"], f["doc"]) for f in rows if not f["form"].startswith("8-K")], reverse=True)
-            if q:
+            # 8-K 중 문서 확인이 필요 없는 것(3.02 유상증자 · 1.01/2.01/2.02)은 바로 저장
+            emit([ev for ev in (sec_8k_event(f["items"], cik, f["accession"], t, nm, f["at"])
+                                for f in rows if f["form"].startswith("8-K") and not needs_8k_doc(f["items"])) if ev])
+            docs = sorted([("424" if f["form"] == "424B5" else "8k", f["at"], f["accession"], f["doc"], f["items"]) for f in rows
+                           if f["form"] == "424B5" or (f["form"].startswith("8-K") and needs_8k_doc(f["items"]))],
+                          key=lambda x: x[1], reverse=True)
+            f4 = sorted([("f4", f["at"], f["accession"], f["doc"], []) for f in rows if f["form"] in ("4", "4/A")],
+                        key=lambda x: x[1], reverse=True)
+            accs = [x[2] for x in docs + f4]
+            have = set()
+            if accs:
                 have = {x[0] for x in D["db"].session.query(E.external_id)
-                        .filter(E.external_id.in_([f"SEC:{a}" for _, a, _ in q])).all()}
-                q = [x for x in q if f"SEC:{x[1]}" not in have][:SEC_BACKFILL_FORM4_PER_CO]
+                        .filter(E.external_id.in_([f"SEC:{a}" for a in accs])).all()}
+            q = [x for x in docs if f"SEC:{x[2]}" not in have][:SEC_BACKFILL_DOCS_PER_CO] + \
+                [x for x in f4 if f"SEC:{x[2]}" not in have][:SEC_BACKFILL_FORM4_PER_CO]
             st["cur"] = {"q": q, "k": 0}
         cur = st["cur"]
-        while cur["k"] < len(cur["q"]) and st["f4"] < SEC_BACKFILL_FORM4:      # 이 회사 Form 4 → 바로 저장
+        while cur["k"] < len(cur["q"]):                # 이 회사 문서 확인 · Form 4 → 찾는 대로 바로 저장
             if deadline and time.time() > deadline:
                 return
             if _sec_blocked():
                 st["note"] = "SEC 요청 제한(403/429) — 잠시 뒤 이어서"
                 return
-            at, acc, doc = cur["q"][cur["k"]]
+            kind, at, acc, doc, items = cur["q"][cur["k"]]
+            if (kind == "f4" and st["f4"] >= SEC_BACKFILL_FORM4) or (kind != "f4" and st["docs"] >= SEC_BACKFILL_DOCS):
+                cur["k"] += 1
+                continue
+            if kind != "f4":                           # 8-K(8.01/7.01) · 424B5: 문서 앞 16KB
+                url = _primary_doc_url(cik, acc, "424B5" if kind == "424" else "8-K", get=get, doc=doc)
+                r = sec_get(url, get=get, max_bytes=DOC_HEAD_BYTES) if url else None
+                st["calls"] += 1
+                if r is None and _sec_blocked():
+                    return                             # 같은 문서부터 다시
+                cur["k"] += 1
+                st["docs"] += 1
+                head = getattr(r, "head", None) if r is not None else None
+                ev = (_424b5_event(head, cik, acc, t, nm, at) if kind == "424" and head
+                      else sec_8k_event(items, cik, acc, t, nm, at, head) if kind == "8k" else None)
+                if ev:
+                    emit([ev])
+                continue
             raw = doc.split("/")[-1] if doc.lower().endswith(".xml") else None   # 'xslF345X05/form4.xml' → 원본 'form4.xml'
             url = f"{_filing_dir(cik, acc)}/{raw}" if raw else _form4_xml_url(cik, acc, get=get)
             r = sec_get(url, get=get) if url else None
@@ -807,13 +1006,13 @@ def collect_sec(tg=None, now=None, deadline=None, get=None, backfill=False, emit
         return out
     E = D["DisclosureEvent"]
     out, budget = [], SEC_FILINGS_PER_RUN
-    for form in ("4", "8-K"):
+    for form in SEC_FORMS:
         since = _sec["scan_at"].get(form)
         started = _utcnow()
         feed = _scan_feed(form, (since - timedelta(minutes=10)) if since else None, deadline, get=get)
         cand, seen_acc = [], set()
         for f in feed:
-            if f["form"] not in (("4", "4/A") if form == "4" else ("8-K", "8-K/A")):
+            if f["form"] not in {"4": ("4", "4/A"), "8-K": ("8-K", "8-K/A"), "424B5": ("424B5",)}[form]:
                 continue
             if form == "4" and f["role"] != "Issuer":
                 continue                              # Form 4 는 발행회사(Issuer) 항목만 (보고자 항목과 중복)
@@ -845,6 +1044,13 @@ def collect_sec(tg=None, now=None, deadline=None, get=None, backfill=False, emit
                 if p and p["buys"]:
                     ev = {"category": "insider_buy", "sentiment": "positive", "title": "Form 4 · 내부자 장내 매수",
                           "summary": form4_summary(p)}
+            elif form == "424B5":                      # 공모·ATM 유상증자: 설명서 앞 16KB (채권 발행은 거름)
+                budget -= 1
+                url = _primary_doc_url(f["cik"], f["accession"], "424B5", get=get)
+                r = sec_get(url, get=get, max_bytes=DOC_HEAD_BYTES) if url else None
+                if r is None:
+                    continue                          # 다음 회차에 다시
+                ev = _424b5_event(r.head, f["cik"], f["accession"], t, nm, f["updated"])
             else:
                 items = parse_8k_items(f["summary"])
                 if not items:
@@ -853,7 +1059,15 @@ def collect_sec(tg=None, now=None, deadline=None, get=None, backfill=False, emit
                     items = parse_8k_items(r.text) if r is not None else []
                     if r is None:
                         continue
-                ev = _8k_event(items, f["cik"], f["accession"], t, nm, f["updated"])
+                head = None
+                if needs_8k_doc(items):               # 8.01 · 7.01: 자사주 매입 발표인지 본문 앞 16KB 확인
+                    budget -= 1
+                    url = _primary_doc_url(f["cik"], f["accession"], "8-K", get=get)
+                    r = sec_get(url, get=get, max_bytes=DOC_HEAD_BYTES) if url else None
+                    if r is None and _sec_blocked():
+                        continue
+                    head = getattr(r, "head", None) if r is not None else None
+                ev = sec_8k_event(items, f["cik"], f["accession"], t, nm, f["updated"], head)
             _sec["seen"].add(f["accession"])
             if ev:
                 ev.update(market="US", ticker=t, name=nm or f["company"], source="SEC", source_url=index_url,
