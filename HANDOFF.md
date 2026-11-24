@@ -57,6 +57,19 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 체결 대기(PENDING) 신호: 개장 직후 정규장 시가로 즉시 체결 (PR #61)
+- `bot_engine.intraday_check` 가 PENDING 종목이 있을 때만 `pending_open_quotes(tickers, market)` 로 오늘 정규장 (시가, 고가, 저가, 현재가) 확보.
+  - KR: ① 네이버 실시간 `polling.finance.naver.com/api/realtime/domestic/stock/<코드>` 최상위 `openPrice` (KRX 정규장 값.
+    NXT 값은 `overMarketPriceInfo` 안에 따로 있어 쓰지 않음. 오늘 날짜 · `localTradedAt` 09:00 KST 이후 · `marketStatus` OPEN/CLOSE · 값 > 0 만)
+    ② 토스 1분봉 09:00 KST 이후 첫 봉 Open ③ 기존 Yahoo 5분봉.
+  - US: ① 토스 1분봉 09:30 ET 이후 첫 봉 Open + 현재가는 `get_prices_cached` ② Yahoo 5분봉.
+  - 1분봉은 `_first_regular_bar`: 개장 전(프리마켓) 봉 버림, 장 마감 후 봉도 고가·저가에서 제외, 받은 봉이 오늘 개장 전까지 닿지 않으면 None
+    (첫 봉이 시가라는 보장이 없음). 페이지 한도 `PENDING_MINUTE_PAGES = 4`.
+  - Yahoo 는 남은 종목(보유 ACTIVE + 시가 못 구한 PENDING)만 받는다. 로그 `intraday KR 대기 N종목 시가: 네이버 · 토스 · Yahoo · 미확보`.
+  - 끝내 못 구하면 PENDING 유지 → 15:45 / 06:30 장 마감 배치(`track_signals`)가 일봉 시가로 처리 (기존 그대로).
+- 2026-11-24 09:27 KST 실제 네이버 응답 확인: 00680K(미래에셋증권2우B) openPrice 7,100 · 005930 openPrice 193,200 (NXT openPrice 188,000 은 별도).
+  토스 1분봉은 허용 IP 제한으로 클라우드 세션에서 실제 호출을 확인하지 못함 (단위 테스트는 응답 형식을 흉내 낸 스텁).
+
 ### 보유 종목 공통 정렬 · 모의투자 평가금/현재가 토글 제거 (PR #60)
 - `static/js/hsort.js` (`SAHoldSort`, 홈·모의투자에서 본 스크립트 앞에 로드): 기준 5종 `value`(평가금액) · `ret`(수익률) · `pl`(평가손익) ·
   `cost`(매입금액 = 매입가 × 수량) · `name`(종목명 `localeCompare('ko')`) + 방향. 금액 기준은 모두 원화 환산(달러 × 현재 환율)으로 비교.
