@@ -3719,7 +3719,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v6"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v7"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 

@@ -6391,3 +6391,38 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .fj-wrap { display: flex; flex-direction: column; gap: 14px; }
 .fj-wrap > .fj-grid { margin-bottom: 0; }
 .fj-wrap > .company-overview-card { margin: 0; }
+
+/* ── 시맨틱 컬러 (PR #74): 외곽은 무채색, 숫자·배지만 색 ───────────────── */
+:root { --sem-up: #34d399; --sem-down: #f87171; --sem-mid: #60a5fa; }
+.sc-metric-row > span:last-child { font-family: inherit; font-variant-numeric: tabular-nums; }
+.sc-metric-row > span.good, .sc-metric-row > span:last-child.good, .sc-metric-row b.good { color: var(--sem-up); }
+.sc-metric-row > span.bad,  .sc-metric-row > span:last-child.bad,  .sc-metric-row b.bad  { color: var(--sem-down); }
+.sc-metric-row b { font-weight: 600; }
+.sc-metric-row small { font-family: inherit; }
+.sc-metrics { gap: 12px; }
+.sc-metric-section { border-radius: 12px; padding: 12px 14px; }
+.sc-section-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; border-bottom: 1px solid var(--border); }
+.sc-section-title small { flex: 1 1 auto; }
+.sc-badge { margin-left: auto; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sc-badge.sc-b-hi  { color: var(--sem-up);   background: rgba(52,211,153,.14); }
+.sc-badge.sc-b-mid { color: var(--sem-mid);  background: rgba(96,165,250,.14); }
+.sc-badge.sc-b-lo  { color: var(--sem-down); background: rgba(248,113,113,.14); }
+.sc-badge.sc-b-na  { color: var(--text2);    background: var(--bg3); }
+.fj-row.sc-b-hi  .fj-track i { background: var(--sem-up); }
+.fj-row.sc-b-mid .fj-track i { background: var(--sem-mid); }
+.fj-row.sc-b-lo  .fj-track i { background: var(--sem-down); }
+.fj-row.sc-b-hi  .fj-score, .fj-row.sc-b-hi  .fj-g { color: var(--sem-up); }
+.fj-row.sc-b-mid .fj-score, .fj-row.sc-b-mid .fj-g { color: var(--sem-mid); }
+.fj-row.sc-b-lo  .fj-score, .fj-row.sc-b-lo  .fj-g { color: var(--sem-down); }
+.fj-overall.sc-b-hi b { color: var(--sem-up); }
+.fj-overall.sc-b-mid b { color: var(--sem-mid); }
+.fj-overall.sc-b-lo b { color: var(--sem-down); }
+.fj-tr b.good { color: var(--sem-up); }
+.fj-tr b.bad  { color: var(--sem-down); }
+/* 기술적 분석 6카드 대표 수치 · 상태 점 */
+.tc-card[data-tone="bull"] .tc-main b { color: var(--sem-up); }
+.tc-card[data-tone="bear"] .tc-main b { color: var(--sem-down); }
+.tc-bull { --tone: var(--sem-up); }
+.tc-bear { --tone: var(--sem-down); }
+.tg-label.tg-bull { color: var(--sem-up); }
+.tg-label.tg-bear { color: var(--sem-down); }
