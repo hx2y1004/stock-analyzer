@@ -5475,17 +5475,45 @@ def _fetch_benchmark_history(symbol, lookback_days=400):
     try:
         days = max(lookback_days, 30) + 10
         df = yf.Ticker(symbol).history(period=f"{days}d", auto_adjust=False)
-        if df is None or df.empty:
+        by_date = {}
+        if df is not None and not df.empty:
+            for idx, row in df.iterrows():
+                c = safe_float(row.get("Close"))          # NaN(장 마감 뒤 빈 당일 봉) 은 버린다
+                if c and c > 0:
+                    by_date[idx.strftime("%Y-%m-%d")] = c
+        # 한국 지수는 Yahoo 일봉이 하루 이상 늦거나 당일 종가가 비는 일이 잦다
+        # (2026-11-25 새벽: ^KS11 이 11/23 까지만 있고 11/24 종가 5,006.03 이 없음) → 네이버 일별 종가로 덮어쓰고 이어 붙인다
+        if symbol in _NAVER_INDEX:
+            for d, c in _naver_index_daily(_NAVER_INDEX[symbol]).items():
+                by_date[d] = c
+        if not by_date:
             return cached["data"] if cached else []
-        data = [
-            {"date": idx.strftime("%Y-%m-%d"), "close": float(row["Close"])}
-            for idx, row in df.iterrows() if row.get("Close") is not None
-        ]
+        data = [{"date": d, "close": by_date[d]} for d in sorted(by_date)]
         _BENCHMARK_CACHE[symbol] = {"ts": now, "data": data}
         return data
     except Exception as e:
         app.logger.warning(f"[benchmark] {symbol} fetch failed: {e}")
         return cached["data"] if cached else []
+
+
+def _naver_index_daily(code, n=20):
+    """네이버 지수 일별 종가 {YYYY-MM-DD: close} (최근 n 거래일, 장중이면 오늘 현재가 포함). 실패하면 {}."""
+    try:
+        r = requests.get(f"https://m.stock.naver.com/api/index/{code}/price",
+                         params={"pageSize": n, "page": 1},
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if r.status_code != 200:
+            return {}
+        out = {}
+        for it in r.json() or []:
+            d = str(it.get("localTradedAt") or "")[:10]
+            c = safe_float(str(it.get("closePrice", "")).replace(",", ""))
+            if len(d) == 10 and c and c > 0:
+                out[d] = c
+        return out
+    except Exception as e:
+        app.logger.debug(f"[benchmark] naver {code}: {e}")
+        return {}
 
 
 def _ffill_benchmark(series, extra_dates):

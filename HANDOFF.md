@@ -57,6 +57,12 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### KOSPI 벤치마크 최신 종가 누락 (PR #80)
+- 증상: /ai-bots 누적 수익률 비교에서 KOSPI 선이 하루 이상 늦게 끝남 (2026-11-25 새벽 KST, 11/23 까지만 표시).
+- 원인: yfinance `^KS11` 일봉이 최신 거래일(11/24)을 아직 주지 않음. 홈 시황은 네이버를 써서 정상이었다.
+- 수정: `_fetch_benchmark_history` 가 `^KS11`·`^KQ11` 에 네이버 일별 종가(`/api/index/{KOSPI}/price`, 최근 20일)를 덮어쓰고 이어 붙인다 (`_naver_index_daily`).
+  Yahoo 의 NaN 종가는 버린다. /ai-bots 차트와 모의투자 자산 추이 차트 모두 같은 함수.
+
 ### 모의투자 보유 종목: 모바일도 같은 표를 접어서 (PR #79)
 - `renderPositions` 는 표(`.tpt`, `_tptRowHTML`) 하나만 그린다. 예전 모바일 카드(`.tr-pos-card`)와 카드 전용 `_exitBar`·`_exitBadge` 삭제.
 - ≤ 768px: 머리글 숨기고 행을 접는다 — 1줄 로고·종목명/티커 | 평가금액, 2줄 수량·매입→현재 | 손익·수익률,
