@@ -97,6 +97,7 @@
           ${sub2('청산', `${s.trades || 0}회`)}
         </div>
         <div class="ab-chips">${(CHIPS[b.key] || []).map((c) => `<span class="ab-chip">${esc(c)}</span>`).join('')}</div>
+        <div class="ab-card-mini">보유 ${s.open || 0} · MDD ${s.mdd_pct == null ? '—' : pct(s.mdd_pct)}</div>
       </button>`;
     }).join('');
     el.querySelectorAll('.ab-card').forEach((c) => c.addEventListener('click', () => openDetail(c.dataset.key, window.innerWidth < 1100)));
@@ -142,6 +143,9 @@
     if (typeof t === 'number') return new Date(t * 1000).toISOString().slice(0, 10);
     return '';
   };
+  const MOBILE = window.matchMedia('(max-width: 767px)');
+  const onMobileChange = () => lines.forEach((l) => l.s.applyOptions({ lastValueVisible: !MOBILE.matches }));
+  if (MOBILE.addEventListener) MOBILE.addEventListener('change', onMobileChange); else if (MOBILE.addListener) MOBILE.addListener(onMobileChange);
   async function loadChart(period) {
     document.querySelectorAll('.ab-period').forEach((b) => {
       const on = b.dataset.p === period;
@@ -168,7 +172,7 @@
     lines = d.series.map((s) => {
       const ser = chart.addLineSeries({
         color: s.color, lineWidth: 2, lineStyle: s.kind === 'benchmark' ? 2 : 0,
-        priceLineVisible: false, lastValueVisible: true,
+        priceLineVisible: false, lastValueVisible: !MOBILE.matches,
         pointMarkersVisible: s.data.length <= 2,
       });
       ser.setData(s.data.map((p) => ({ time: p.date, value: p.return_pct })));
@@ -217,6 +221,25 @@
     document.querySelectorAll('.ab-chipbtn').forEach((c) => { const on = c.dataset.key === key; c.classList.toggle('active', on); c.setAttribute('aria-pressed', on ? 'true' : 'false'); });
   }
 
+  // ── 모바일(≤767px) 세 탭 공통 2줄 리스트 카드: [로고 · 이름/티커 · 오른쪽 핵심 수치] / [보조 정보 · 액션] ──
+  const mItem = (t, n, sub, right, meta, act) => `<div class="ab-mi">
+      <div class="ab-mi-r1">${window.renderStockLogo ? renderStockLogo(t, n, 'sm') : ''}
+        <div class="ab-mi-name"><a href="/stock/${encodeURIComponent(t)}">${esc(n || t)}</a><span>${sub}</span></div>
+        <div class="ab-mi-right">${right}</div></div>
+      <div class="ab-mi-r2"><div class="ab-mi-meta">${meta}</div>${act ? `<div class="ab-mi-act">${act}</div>` : ''}</div></div>`;
+  const posItems = (list, b) => list.map((p) => mItem(p.ticker, p.name, `${esc(p.ticker)} · ${p.quantity}주 · ${p.holding_days ?? 0}일`,
+    `<b class="${dirCls(p.return_pct)}">${pct(p.return_pct)}</b><small>${krw(p.value_krw)}</small>`,
+    `${px(p.entry_price, p.currency)} → ${px(p.current_price, p.currency)} · 목표 ${pct(p.to_target_pct)} · 손절 ${pct(p.to_stop_pct)}`,
+    followLink(p.ticker, p.target_price, p.stop_price, p.currency, b.name, p.name, true))).join('');
+  const sigItems = (list, b) => list.map((x) => {
+    const cur = x.market === 'KR' ? 'KRW' : 'USD';
+    return mItem(x.ticker, x.name, `${esc(x.ticker)} · ${esc(mmdd(x.signal_date))}${x.account && x.account.status === 'SKIPPED' ? ' · 계좌 미체결' : ''}`,
+      x.status_reason ? reasonBadge(x) : badge(x.status, x.pnl_pct),
+      `${px(x.fill_price || x.entry_price, cur)} → ${x.exit_price ? px(x.exit_price, cur) : '—'} · <span class="${dirCls(x.pnl_pct)}">${pct(x.pnl_pct)}</span>`,
+      whyBtn(x) + (x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, cur, b.name, x.name, true) : ''));
+  }).join('');
+  const whyBtn = (x) => `<button type="button" class="ab-why" data-id="${x.id}" title="${x.has_ai ? 'AI 검증 근거' : '정량 근거'}${x.confidence != null ? ` · 신뢰도 ${x.confidence}` : ''}">근거${x.confidence != null ? ` <b>${esc(x.confidence)}</b>` : ''}</button>`;
+
   function posRows(list, b) {
     return list.map((p) => `<tr>
       <td>${logoId(p.ticker, p.name, ` · ${p.quantity}주`)}</td>
@@ -246,7 +269,7 @@
       <td class="ab-nowrap">${x.status_reason ? reasonBadge(x) : badge(x.status, x.pnl_pct)}</td>
       <td class="num">${px(x.fill_price || x.entry_price, cur)}<div class="ab-muted">→ ${x.exit_price ? px(x.exit_price, cur) : '—'}</div></td>
       <td class="num ${dirCls(x.pnl_pct)}">${pct(x.pnl_pct)}</td>
-      <td class="ab-acts-td"><div class="signal-actions"><button type="button" class="ab-why" data-id="${x.id}" title="${x.has_ai ? 'AI 검증 근거' : '정량 근거'}${x.confidence != null ? ` · 신뢰도 ${x.confidence}` : ''}">근거${x.confidence != null ? ` <b>${esc(x.confidence)}</b>` : ''}</button>
+      <td class="ab-acts-td"><div class="signal-actions">${whyBtn(x)}
         ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, cur, b.name, x.name, true) : ''}</div></td></tr>`;
     }).join('');
   }
@@ -297,7 +320,7 @@
       <div role="tabpanel" class="ab-panel" id="abPanel-pos" aria-labelledby="abTab-pos">
       ${b.positions.length ? `<div class="ab-scroll"><table class="ab-table ab-compact">
         <thead><tr><th>종목</th><th class="num">진입가</th><th class="num">수익률</th><th class="num">목표까지</th><th class="num">손절까지</th><th class="num">보유</th><th><span class="sr-only">모의 매수</span></th></tr></thead>
-        <tbody id="abPosBody"></tbody></table></div>`
+        <tbody id="abPosBody"></tbody></table></div><div class="ab-mlist" id="abPosList"></div>`
         : '<p class="ab-empty">지금 보유 중인 종목이 없습니다. 신호가 나오면 다음 장 시가에 자동으로 매수합니다.</p>'}
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-trades" aria-labelledby="abTab-trades">
@@ -315,7 +338,7 @@
       <div role="tabpanel" class="ab-panel" id="abPanel-sig" aria-labelledby="abTab-sig">
       ${b.signals.length ? `<div class="ab-scroll"><table class="ab-table ab-compact ab-log ab-sig">
         <thead><tr><th>신호일</th><th>종목</th><th>결과</th><th class="num">진입 → 청산</th><th class="num">수익률</th><th>근거 · 신뢰도</th></tr></thead>
-        <tbody id="abSigBody"></tbody></table></div>
+        <tbody id="abSigBody"></tbody></table></div><div class="ab-mlist ab-sig-m" id="abSigList"></div>
         ${(b.signals_total || 0) > b.signals.length ? `<div class="ab-panel-foot"><p class="ab-muted ab-sig-note">최근 ${b.signals.length}건만 표시합니다 (전체 ${b.signals_total}건).</p></div>` : ''}`
         : `<p class="ab-empty">아직 이 봇의 신호가 없습니다. 다음 장 마감 배치에서 조건에 맞는 종목이 있으면 신호가 생깁니다.</p>`}
       </div>
@@ -330,12 +353,20 @@
     };
     const sorted = (list, k, dateKey) => k === 'new' ? [...list].sort((p, q) => String(q[dateKey] || '').localeCompare(String(p[dateKey] || '')))
       : [...list].sort((p, q) => by[k](q) - by[k](p));
-    const paintPos = () => { const tb = $('#abPosBody', el); if (tb) tb.innerHTML = posRows(sorted(b.positions, $('#abSortPos', el).value), b); };
+    const paintPos = () => {
+      const tb = $('#abPosBody', el);
+      if (!tb) return;
+      const list = sorted(b.positions, $('#abSortPos', el).value);
+      tb.innerHTML = posRows(list, b);
+      $('#abPosList', el).innerHTML = posItems(list, b);
+    };
     const paintSig = () => {
       const tb = $('#abSigBody', el);
       if (!tb) return;
-      tb.innerHTML = sigRows(sorted(b.signals, $('#abSortSig', el).value, 'signal_date'), b);
-      tb.querySelectorAll('.ab-why, .ab-badge-info').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
+      const list = sorted(b.signals, $('#abSortSig', el).value, 'signal_date');
+      tb.innerHTML = sigRows(list, b);
+      $('#abSigList', el).innerHTML = sigItems(list, b);
+      el.querySelectorAll('#abPanel-sig .ab-why, #abPanel-sig .ab-badge-info').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
     };
     $('#abSortPos', el).addEventListener('change', paintPos);
     $('#abSortSig', el).addEventListener('change', paintSig);
@@ -454,6 +485,18 @@
             <td class="num" data-label="실현 손익">${sell ? `<span class="${dirCls(t.realized_pnl_krw)}">${t.realized_pnl_krw > 0 ? '+' : ''}${Math.round(t.realized_pnl_krw).toLocaleString('ko-KR')}원</span><div class="${dirCls(t.pnl_pct)}">${pct(t.pnl_pct)}</div>` : '<span class="ab-muted">—</span>'}</td>
             <td data-label="사유 / 근거">${reason}</td></tr>`;
         }).join('')}</tbody></table></div>
+      <div class="ab-mlist">${(T.sort === 'ret' ? [...T.items].sort((p, q) => (q.pnl_pct ?? -Infinity) - (p.pnl_pct ?? -Infinity)) : T.items).map((t) => {
+        const sell = t.side === 'sell';
+        const ex = EXIT[t.exit_status];
+        const act = sell
+          ? (ex ? `<span class="ab-badge ab-b-${t.exit_status === 'TRAILING_STOP' ? ((t.pnl_pct || 0) >= 0 ? 'win' : 'loss') : ex[1]}">${ex[0]}</span>` : '')
+          : (t.signal_id ? `<button type="button" class="ab-why" data-id="${t.signal_id}">근거</button>` : '');
+        const right = `<span class="ab-mi-row">${sell ? `<b class="${dirCls(t.pnl_pct)}">${pct(t.pnl_pct)}</b>` : ''}`
+          + `<span class="ab-side ${sell ? 'ab-side-sell' : 'ab-side-buy'}">${sell ? '매도' : '매수'}</span></span>`;
+        const meta = `${Number(t.quantity).toLocaleString('ko-KR')}주 × ${px(t.price, t.currency)} · ${krw(t.amount_krw)}`
+          + (sell ? ` · <span class="${dirCls(t.realized_pnl_krw)}">${t.realized_pnl_krw > 0 ? '+' : ''}${krw(t.realized_pnl_krw)}</span>` : '');
+        return mItem(t.ticker, t.name, `${esc(t.ticker)} · ${esc(fmtTime(t.time))}`, right, meta, act);
+      }).join('')}</div>
 `;
     if (foot) foot.innerHTML = `${d.has_more ? '<button type="button" class="ab-more" id="abMore">더보기</button>' : ''}
       <p class="ab-muted ab-trade-note">실현 손익은 매수·매도 수수료(각 0.15%)를 모두 뺀 원화 기준입니다. 미국 종목은 체결 당시 환율로 환산합니다.</p>`;
