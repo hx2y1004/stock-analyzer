@@ -269,6 +269,7 @@ function renderSectorMap(d) {
     c >= 2 ? 'hm-up3' : c >= 1 ? 'hm-up2' : c > 0.15 ? 'hm-up1'
     : c <= -2 ? 'hm-dn3' : c <= -1 ? 'hm-dn2' : c < -0.15 ? 'hm-dn1' : 'hm-flat';
   const rects = _squarify(groups.map(g => ({ g, v: g.market_cap })), 0, 0, W, H);
+  const MOB_HM = window.matchMedia('(max-width: 767px)').matches;
   // 좌표를 정수 픽셀로: 이웃 칸이 같은 경계값을 반올림하므로 빈틈·겹침 없이 맞닿고, 2px 테두리 두 개 = 모든 틈 4px
   const snapped = rects.map(r => {
     const x0 = Math.round(r.x), y0 = Math.round(r.y), x1 = Math.round(r.x + r.w), y1 = Math.round(r.y + r.h);
@@ -276,7 +277,9 @@ function renderSectorMap(d) {
   }).filter(r => r.w > 0 && r.h > 0);
   el.innerHTML = `<div class="hm-treemap" style="height:${H}px">${snapped.map(({ g, x, y, w, h }) => {
     const c = g.change_pct;
-    const big = w >= 150 && h >= 96, mid = w >= 74 && h >= 56, tiny = w < 40 || h < 30, narrow = !tiny && w < 84;
+    // 모바일(≤767px)은 좁은 칸에서 등락률이 테두리 밖으로 잘리므로 기준을 넓힌다 (라벨 숨김 → 누르면 구성 종목 창에 이름·등락률)
+    const tiny = MOB_HM ? (w < 56 || h < 36) : (w < 40 || h < 30);
+    const big = w >= 150 && h >= 96, mid = w >= 74 && h >= 56, narrow = !tiny && w < 84;
     const breadth = mid ? `<span class="hm-br">${g.advancing_count}↑ ${g.declining_count}↓</span>` : '';
     const nPrev = big ? Math.max(0, Math.min(3, Math.floor((h - 78) / 18))) : 0;   // 높이에 들어가는 만큼만
     const preview = nPrev ? g.members.slice(0, nPrev).map(m =>
@@ -288,6 +291,19 @@ function renderSectorMap(d) {
         <span class="hm-in">${tiny ? '' : `<span class="hm-name">${escapeHtmlMain(g.name)}</span><span class="hm-chg">${fmtPct(c)}</span>`}${breadth}${preview}</span>
       </button>`;
   }).join('')}</div>`;
+  if (MOB_HM) {
+    // 모바일: 그래도 이름·등락률이 칸 밖으로 넘치는 블록은 라벨을 숨긴다
+    el.querySelectorAll('.hm-abs:not(.hm-tiny)').forEach((t) => {
+      const chg = t.querySelector('.hm-chg');
+      if (!chg) return;
+      const tb = t.getBoundingClientRect(), cb = chg.getBoundingClientRect();
+      if (cb.bottom > tb.bottom - 2 || cb.right > tb.right - 2) {
+        t.classList.add('hm-tiny');
+        const inn = t.querySelector('.hm-in');
+        if (inn) inn.innerHTML = '';
+      }
+    });
+  }
 }
 
 let _smResize = null;
@@ -3547,3 +3563,23 @@ function searchAndAnalyze(ticker) {
   if (typeof analyze === 'function') analyze();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+
+// ── 홈 모바일(≤767px): 시장 현황 '전체 지표 보기' 토글 · 빠른 선택 칩 끝 흐림 ──
+(function initHomeMobile() {
+  const btn = document.getElementById('mdMoreBtn');
+  if (btn) btn.addEventListener('click', () => {
+    const card = btn.closest('.md-card');
+    const open = !card.classList.contains('md-all');
+    card.classList.toggle('md-all', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.textContent = open ? '접기 ▴' : '전체 지표 보기 ▾';
+  });
+  const qt = document.querySelector('.quick-tickers');
+  if (qt) {
+    const end = () => qt.classList.toggle('qt-end', qt.scrollLeft + qt.clientWidth >= qt.scrollWidth - 2);
+    qt.addEventListener('scroll', end, { passive: true });
+    window.addEventListener('resize', end);
+    end();
+  }
+})();

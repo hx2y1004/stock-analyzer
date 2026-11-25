@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=118" />
+  <link rel="stylesheet" href="/static/css/style.css?v=119" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -63,6 +63,7 @@
             <button type="button" data-m="US" aria-pressed="false">미국</button>
           </div>
           <span class="sc-asof" id="scAsof"></span>
+          <button type="button" class="sc-mfilter" aria-expanded="false">필터 <span aria-hidden="true">▾</span></button>
         </div>
         <div class="sc-presets" id="scPresets" role="group" aria-label="원클릭 프리셋"></div>
         <p class="sc-preset-desc" id="scPresetDesc">프리셋을 누르면 바로 걸러 드려요. 아래에서 조건을 직접 정할 수도 있습니다.</p>
@@ -147,6 +148,7 @@
             <button type="button" data-m="US" aria-pressed="false">미국 (SEC)</button>
           </div>
           <span class="sc-asof" id="dsCount"></span>
+          <button type="button" class="sc-mfilter" aria-expanded="false">필터 <span aria-hidden="true">▾</span></button>
         </div>
         <div class="tr-patterns" id="dsCats" role="group" aria-label="공시 유형">
           <button type="button" data-c="ALL" class="active" aria-pressed="true">전체</button>
@@ -191,6 +193,7 @@
   <!-- 비교 담기 플로팅 바 -->
   <div class="sc-basket hidden" id="scBasket" role="region" aria-label="비교할 종목">
     <div class="sc-basket-items" id="scBasketItems"></div>
+    <div class="sc-basket-m"><span class="sc-basket-count" id="scBasketCount"></span><button type="button" class="sc-basket-clear" id="scBasketClear">초기화</button></div>
     <button type="button" class="sc-basket-go" id="scBasketGo"></button>
   </div>
 
@@ -198,6 +201,6 @@
   <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=8"></script>
-  <script src="/static/js/screener.js?v=10"></script>
+  <script src="/static/js/screener.js?v=11"></script>
 </body>
 </html>

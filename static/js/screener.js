@@ -207,9 +207,11 @@
     else S.basket.push({ t, n });
     store.set('scBasket', S.basket); paintRowButtons(); renderBasket();
   }
+  const MOB = window.matchMedia('(max-width: 767px)');
   function renderBasket() {
     const el = $('#scBasket');
-    const show = S.tab !== 'compare' && S.basket.length > 0;      // 스크리너·추세 셋업 공용 비교 바구니
+    // PC: 스크리너·추세 셋업 공용 비교 바구니 · 모바일: 스크리너 탭에서만 (공시·추세 셋업에서는 화면을 가리지 않게 숨김)
+    const show = S.basket.length > 0 && (MOB.matches ? S.tab === 'screen' : S.tab !== 'compare');
     el.classList.toggle('hidden', !show);
     document.body.classList.toggle('has-basket', show);
     if (!show) return;
@@ -218,8 +220,22 @@
     $$('#scBasketItems button').forEach((b) => b.addEventListener('click', () => toggleBasket(b.dataset.t)));
     const go = $('#scBasketGo');
     go.disabled = S.basket.length < 2;
-    go.textContent = S.basket.length < 2 ? `${S.basket.length}개 선택됨 · 1개 더 담아 주세요` : `${S.basket.length}개 선택됨 · 나란히 비교하기 →`;
+    go.innerHTML = S.basket.length < 2
+      ? `<span class="sc-go-pc">${S.basket.length}개 선택됨 · 1개 더 담아 주세요</span><span class="sc-go-m">1개 더 담기</span>`
+      : `<span class="sc-go-pc">${S.basket.length}개 선택됨 · 나란히 비교하기 →</span><span class="sc-go-m">나란히 비교 →</span>`;
+    $('#scBasketCount').textContent = `${S.basket.length}개 선택됨`;
   }
+  if (MOB.addEventListener) MOB.addEventListener('change', renderBasket);
+  $('#scBasketClear').addEventListener('click', () => {
+    S.basket = []; store.set('scBasket', S.basket); paintRowButtons(); renderBasket();
+  });
+  // 모바일: 상단 프리셋·안내는 '필터 ▾' 로 접기 (PC 에서는 버튼이 보이지 않음)
+  $$('.sc-mfilter').forEach((b) => b.addEventListener('click', () => {
+    const card = b.closest('.card');
+    const open = !card.classList.contains('m-open');
+    card.classList.toggle('m-open', open);
+    b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }));
   $('#scBasketGo').addEventListener('click', () => {
     S.cmp = S.basket.map((x) => x.t);
     S.basket.forEach((x) => { names[x.t] = x.n; });
