@@ -1791,6 +1791,14 @@ function _vlFootball(stock) {
     </section>`;
 }
 
+// 큰 금액: 원화 조·억 / 달러 B·M
+function _bigMoney(v, krw) {
+  if (v == null || !isFinite(v)) return '—';
+  const a = Math.abs(v), sg = v < 0 ? '-' : '';
+  if (krw) return a >= 1e12 ? `${sg}${(a / 1e12).toFixed(1)}조원` : `${sg}${Math.round(a / 1e8).toLocaleString('ko-KR')}억원`;
+  return a >= 1e9 ? `${sg}$${(a / 1e9).toFixed(1)}B` : `${sg}$${(a / 1e6).toFixed(0)}M`;
+}
+
 function renderDcf(stock) {
   const card = document.getElementById('dcfCard');
   const tabBtn = document.getElementById('valuationTabBtn');
@@ -1837,7 +1845,7 @@ function renderDcf(stock) {
     sub = `최근 ${a.ebit_margin_years || 1}년 평균 ${a.ebit_margin_pct}% · 성장률만으로는 설명되지 않아 수익성 개선을 전제로 역산`;
   } else {
     head = '현재 주가는 이 모델의 재무 범위 밖';
-    sub = '매출 연 60% 성장이나 영업이익률 70% 를 가정해도 도달하지 않습니다. 재무제표에 아직 없는 기대를 반영 중입니다.';
+    sub = '매출 연 60% 성장이나 영업이익률 85% 를 가정해도 도달하지 않습니다. 재무제표에 아직 없는 기대를 반영 중입니다.';
   }
   const rel = { high: '신뢰도 높음', medium: '참고용', low: '해석 주의' }[d.reliability] || '참고용';
 
@@ -1866,6 +1874,7 @@ function renderDcf(stock) {
     ['적정 PBR', a.fair_pb + '배'], ['현재 PBR', a.pbr_now != null ? a.pbr_now + '배' : '—'], ['주당순자산', f(a.bvps)],
     ['베타 (조정)', `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}`], ['무위험이자율', `${a.risk_free_pct}%${a.rf_source === '미 10년 국채' ? ' (미 10년 국채)' : ' (기본 가정)'}`],
   ] : [
+    ['기준 매출', a.base_revenue != null ? `${_bigMoney(a.base_revenue, krw)} (${a.base_revenue_source || '연간'})` : '—'],
     ['WACC (할인율)', a.wacc_pct != null ? a.wacc_pct + '%' : '—'],
     ['자기자본비용', a.cost_equity_pct != null ? a.cost_equity_pct + '%' : '—'],
     ['베타 (조정)', a.beta != null ? `${a.beta}${a.beta_raw ? ` (원본 ${a.beta_raw})` : ''}` : '—'],
@@ -1874,13 +1883,16 @@ function renderDcf(stock) {
     ['애널리스트 내년 매출 전망', a.consensus_growth_pct != null ? a.consensus_growth_pct + '%' : '—'],
     ['최근 분기 매출 YoY', a.recent_growth_pct != null ? a.recent_growth_pct + '%' : '—'],
     ['과거 연평균 성장률', a.hist_cagr_pct != null ? a.hist_cagr_pct + '%' : '—'],
-    ['영업이익률', a.ebit_margin_pct != null ? `${a.ebit_margin_pct}% (${a.ebit_margin_years || 1}년 평균 · 최근 ${a.ebit_margin_latest_pct}%)` : '—'],
+    ['영업이익률 (출발 → 목표)', a.ebit_margin_pct != null ? `${a.ebit_margin_pct}% → ${a.target_margin_pct ?? a.ebit_margin_pct}% (${a.years}년에 걸쳐 수렴)` : '—'],
+    ['설비투자율 (출발 → 목표)', a.capex_pct != null ? `${a.capex_pct}% → ${a.capex_end_pct ?? a.capex_pct}% (감가상각 ${a.da_pct}%)` : '—'],
     ['운전자본 투자율', a.wc_invest_pct != null ? `매출 증가분의 ${a.wc_invest_pct}%` : '—'],
     ['영구성장률', a.terminal_g_pct != null ? a.terminal_g_pct + '%' : '—'],
     ['예측 기간', a.years ? a.years + '년' : '—'],
     ['법인세율', a.tax_rate_pct != null ? a.tax_rate_pct + '%' : '—'],
     ['터미널 비중', a.terminal_share_pct != null ? a.terminal_share_pct + '%' : '—'],
     ['비지배지분 차감', a.minority_interest ? f(a.minority_interest) : '없음'],
+    [a.net_debt != null && a.net_debt < 0 ? '순현금' : '순부채', a.net_debt != null ? _bigMoney(Math.abs(a.net_debt), krw) : '—'],
+    ['발행주식수', a.shares ? `${Math.round(a.shares).toLocaleString('ko-KR')}주` : '—'],
   ];
 
   document.getElementById('vlImplied').innerHTML = `
