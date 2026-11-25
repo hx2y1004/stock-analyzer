@@ -265,18 +265,16 @@
           `<button type="button" class="ab-chipbtn" data-key="${esc(x.key)}" style="--bot:${esc(x.color)}"><i aria-hidden="true"></i>${esc(SHORT[x.key] || x.name)}</button>`).join('')}</div>
       </div>
       <div class="ab-det-title"><h2 class="card-title">${esc(b.emoji)} ${esc(b.name)} <span class="ab-tag ${b.use_ai ? 'ai' : ''}">${b.use_ai ? 'AI 검증' : '정량만'}</span></h2></div>
-      <div class="ab-kpis2">
-        ${sub2('총자산', krw(a.total_krw))}
-        ${sub2('수익률', pct(a.return_pct), dirCls(a.return_pct))}
-        ${sub2('현금', krw(a.cash_krw))}
-        ${sub2('승률', s.win_rate == null ? '—' : s.win_rate + '%')}
-        ${sub2('손익비', s.payoff == null ? '—' : Number(s.payoff).toFixed(2))}
-        ${sub2('MDD', s.mdd_pct == null ? '—' : pct(s.mdd_pct), s.mdd_pct < 0 ? 'down' : '')}
+      <div class="ab-kline">
+        <span class="ab-kv"><span>현금</span><b>${krw(a.cash_krw)}</b></span>
+        <span class="ab-kv"><span>손익비</span><b>${s.payoff == null ? '—' : Number(s.payoff).toFixed(2)}</b></span>
+        <button type="button" class="ab-rules-btn" id="abRulesBtn" aria-expanded="false" aria-controls="abRules">전략 규칙
+          <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
-      <details class="ab-rules-d"><summary>전략 규칙</summary><div class="ab-rules">
+      <div class="ab-rules" id="abRules" hidden>
         <div><span>진입</span>${esc(b.summary.rule)}</div><div><span>청산</span>${esc(b.summary.exit)}</div>
         <div><span>한도</span>${esc(b.summary.limits)} · ${esc(b.summary.fee)}</div>
-        <div><span>성적</span>평균 수익 ${pct(s.avg_win_pct)} / 손실 ${pct(s.avg_loss_pct)} · 청산 ${s.trades || 0}회${s.skipped ? ` · 계좌 사정으로 건너뜀 ${s.skipped}` : ''}</div></div></details>
+        <div><span>성적</span>평균 수익 ${pct(s.avg_win_pct)} / 손실 ${pct(s.avg_loss_pct)} · 청산 ${s.trades || 0}회${s.skipped ? ` · 계좌 사정으로 건너뜀 ${s.skipped}` : ''}</div></div>
       <div class="ab-tabbar">
         <div class="ab-tabs" role="tablist" aria-label="봇 상세">
           <button type="button" role="tab" class="ab-tab" id="abTab-pos" data-tab="pos" aria-controls="abPanel-pos">보유 포지션 <span class="ab-count">${b.positions.length}</span></button>
@@ -287,6 +285,7 @@
         <div class="ab-sortslot" data-for="trades">${sortSel('abSortTr', [['new', '최신순'], ['ret', '수익률순']])}</div>
         <div class="ab-sortslot" data-for="sig">${sortSel('abSortSig', [['new', '최신순'], ['ret', '수익률순']])}</div>
       </div>
+      <div class="ab-panels" id="abPanels">
       <div role="tabpanel" class="ab-panel" id="abPanel-pos" aria-labelledby="abTab-pos">
       ${b.positions.length ? `<div class="ab-scroll"><table class="ab-table ab-compact">
         <thead><tr><th>종목</th><th class="num">진입가</th><th class="num">수익률</th><th class="num">목표까지</th><th class="num">손절까지</th><th class="num">보유</th><th><span class="sr-only">모의 매수</span></th></tr></thead>
@@ -307,9 +306,12 @@
         <tbody id="abSigBody"></tbody></table>
           ${(b.signals_total || 0) > b.signals.length ? `<p class="ab-muted" style="margin-top:6px">최근 ${b.signals.length}건만 표시합니다 (전체 ${b.signals_total}건).</p>` : ''}</div>`
         : `<p class="ab-empty">아직 이 봇의 신호가 없습니다. 다음 장 마감 배치에서 조건에 맞는 종목이 있으면 신호가 생깁니다.</p>`}
+      </div>
       </div>`;
     markSelected(key);
     el.querySelectorAll('.ab-chipbtn').forEach((c) => c.addEventListener('click', () => openDetail(c.dataset.key, false)));
+    const rb = $('#abRulesBtn', el);
+    rb.addEventListener('click', () => { const open = rb.getAttribute('aria-expanded') !== 'true'; rb.setAttribute('aria-expanded', open ? 'true' : 'false'); $('#abRules', el).hidden = !open; });
     // 정렬
     const by = {
       ret: (x) => (x.return_pct ?? x.pnl_pct ?? -Infinity), value: (x) => (x.value_krw ?? -Infinity), days: (x) => (x.holding_days ?? -Infinity),
@@ -338,6 +340,7 @@
         if (on && focus) x.focus();
       });
       el.querySelectorAll('.ab-sortslot').forEach((sl) => { sl.hidden = sl.dataset.for !== t; });
+      const pn = $('#abPanels', el); if (pn) pn.scrollTop = 0;
     };
     tabs.forEach((x, i) => {
       x.addEventListener('click', () => selectTab(x.dataset.tab));
