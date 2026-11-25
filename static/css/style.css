@@ -1,6 +1,20 @@
 /* ── 기본 리셋 ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── 전역 다크 슬림 스크롤바 (PR #87) ──
+   Chromium 121+ 는 표준 속성(scrollbar-width/color)이 하나라도 있으면 ::-webkit-scrollbar 를 무시하므로
+   표준 속성은 ::-webkit-scrollbar 를 모르는 브라우저(Firefox)에만 준다. 숨김(scrollbar-width:none)은 요소별 규칙이 이긴다. */
+:root { color-scheme: dark; }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.25) transparent; }
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.24); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.48); }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 :root {
   --bg: #0d1117;
   --bg2: #161b22;
@@ -289,12 +303,7 @@ body {
 #newsList {
   flex: 1;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
 }
-#newsList::-webkit-scrollbar { width: 4px; }
-#newsList::-webkit-scrollbar-track { background: transparent; }
-#newsList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 /* ── 수익률 트래커 ── */
 .return-tracker { display: flex; flex-direction: column; gap: 10px; }
@@ -1924,33 +1933,12 @@ body {
   max-height: 440px;          /* 데스크톱: TOP 3 (~110px×3) + 1개 (~75px) ≈ 4개 노출 */
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;  /* iOS 부드러운 스크롤 */
-  scrollbar-width: thin;       /* Firefox */
-  scrollbar-color: var(--border) transparent;
   padding-right: 4px;          /* 스크롤바 옆 여백 */
   /* 스크롤 영역 시각 힌트 (그라데이션 페이드 마스크) */
   mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 32px), transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 32px), transparent 100%);
 }
 
-/* WebKit (Chrome/Safari/Edge) 스크롤바 커스텀 */
-#trendsCards::-webkit-scrollbar,
-#portfolioCards::-webkit-scrollbar {
-  width: 6px;
-}
-#trendsCards::-webkit-scrollbar-track,
-#portfolioCards::-webkit-scrollbar-track {
-  background: transparent;
-}
-#trendsCards::-webkit-scrollbar-thumb,
-#portfolioCards::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-  transition: background 0.2s;
-}
-#trendsCards::-webkit-scrollbar-thumb:hover,
-#portfolioCards::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
-}
 
 /* 스크롤 영역이 짧을 때 (로딩 / 빈 상태)는 마스크 해제 */
 #trendsCards:has(.trend-scanning),
@@ -2563,13 +2551,6 @@ body {
   gap: 6px;
   max-height: 360px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-.events-card .events-list::-webkit-scrollbar { width: 4px; }
-.events-card .events-list::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
 }
 .event-row {
   display: flex;
@@ -6861,7 +6842,24 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .ab-duo > .ab-chart-card .ab-chart { flex: 1 1 auto; min-height: 262px; }   /* 남는 높이는 차트가 채움 (autoSize) */
   .ab-duo > .ab-detail { contain: size; overflow: hidden; }
   .ab-detail > .ab-det-head, .ab-detail > .ab-det-title, .ab-detail > .ab-kline, .ab-detail > #abRules, .ab-detail > .ab-tabbar { flex: none; }
-  .ab-detail > .ab-panels { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-right: -6px; padding-right: 6px; scrollbar-width: thin; }
+  .ab-detail > .ab-panels { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-right: -6px; padding-right: 6px; }
   .ab-detail > #abRules { max-height: 140px; overflow-y: auto; }
 }
 @media (max-width: 768px) { .ab-duo .ab-chart { height: 230px; } }
+
+/* ── /ai-bots 상세: 컨트롤·각주 고정, 표만 스크롤 (PR #87) ───────────────── */
+.ab-trade-top { display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.ab-trade-top .ab-filter { margin: 0; }
+.ab-trade-top .ab-trade-sum { margin: 0; white-space: nowrap; }
+.ab-panel-foot:empty { display: none; }
+.ab-panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; margin-top: 8px; }
+.ab-panel-foot .ab-more { order: 2; margin: 0; padding: 5px 14px; font-size: 12.5px; flex: none; }
+.ab-panel-foot .ab-trade-note, .ab-panel-foot .ab-sig-note { order: 1; margin: 0; flex: 1 1 260px; line-height: 1.5; }
+@media (min-width: 1100px) {
+  .ab-detail > .ab-panels { display: flex; flex-direction: column; overflow: hidden; margin-right: 0; padding-right: 0; }
+  .ab-panels > .ab-panel:not([hidden]) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .ab-panel > .ab-trade-top, .ab-panel > .ab-panel-foot, .ab-panel > .ab-empty { flex: none; }
+  .ab-panel > #abTrades { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  .ab-panel > .ab-scroll, #abTrades > .ab-scroll { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .ab-panel .ab-scroll thead th { position: sticky; top: 0; background: var(--bg2); z-index: 2; border-bottom: 0; box-shadow: inset 0 -1px 0 var(--border); }
+}

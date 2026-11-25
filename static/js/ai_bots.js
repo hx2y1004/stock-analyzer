@@ -293,18 +293,22 @@
         : '<p class="ab-empty">지금 보유 중인 종목이 없습니다. 신호가 나오면 다음 장 시가에 자동으로 매수합니다.</p>'}
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-trades" aria-labelledby="abTab-trades">
-        <div class="ah-period-tabs ab-filter" role="group" aria-label="매매 구분">
-          <button type="button" class="ah-period-btn ab-fbtn active" data-side="all" aria-pressed="true">전체</button>
-          <button type="button" class="ah-period-btn ab-fbtn" data-side="buy" aria-pressed="false">매수</button>
-          <button type="button" class="ah-period-btn ab-fbtn" data-side="sell" aria-pressed="false">매도</button>
+        <div class="ab-trade-top">
+          <div class="ah-period-tabs ab-filter" role="group" aria-label="매매 구분">
+            <button type="button" class="ah-period-btn ab-fbtn active" data-side="all" aria-pressed="true">전체</button>
+            <button type="button" class="ah-period-btn ab-fbtn" data-side="buy" aria-pressed="false">매수</button>
+            <button type="button" class="ah-period-btn ab-fbtn" data-side="sell" aria-pressed="false">매도</button>
+          </div>
+          <span class="ab-muted ab-trade-sum" id="abTradeSum" aria-live="polite"></span>
         </div>
         <div id="abTrades"><div class="ab-muted">불러오는 중...</div></div>
+        <div class="ab-panel-foot" id="abTradeFoot"></div>
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-sig" aria-labelledby="abTab-sig">
       ${b.signals.length ? `<div class="ab-scroll"><table class="ab-table ab-compact ab-log">
         <thead><tr><th>신호일</th><th>종목</th><th>결과</th><th class="num">진입 → 청산</th><th class="num">수익률</th><th class="num">신뢰도</th><th>근거</th></tr></thead>
-        <tbody id="abSigBody"></tbody></table>
-          ${(b.signals_total || 0) > b.signals.length ? `<p class="ab-muted" style="margin-top:6px">최근 ${b.signals.length}건만 표시합니다 (전체 ${b.signals_total}건).</p>` : ''}</div>`
+        <tbody id="abSigBody"></tbody></table></div>
+        ${(b.signals_total || 0) > b.signals.length ? `<div class="ab-panel-foot"><p class="ab-muted ab-sig-note">최근 ${b.signals.length}건만 표시합니다 (전체 ${b.signals_total}건).</p></div>` : ''}`
         : `<p class="ab-empty">아직 이 봇의 신호가 없습니다. 다음 장 마감 배치에서 조건에 맞는 종목이 있으면 신호가 생깁니다.</p>`}
       </div>
       </div>`;
@@ -410,6 +414,10 @@
     const box = $('#abTrades');
     if (!box) return;
     const label = { all: '', buy: '매수 ', sell: '매도 ' }[T.side];
+    const sum = $('#abTradeSum'), foot = $('#abTradeFoot');
+    const prevTop = T.page > 1 ? (box.querySelector('.ab-scroll') || {}).scrollTop || 0 : 0;   // 더보기: 표 스크롤 위치 유지
+    if (sum) sum.textContent = d.counts.all ? `전체 ${d.counts.all}건 · 매수 ${d.counts.buy} · 매도 ${d.counts.sell}` : '';
+    if (foot) foot.innerHTML = '';
     if (!T.items.length) {
       box.innerHTML = d.counts.all
         ? `<p class="ab-empty">${label}체결 내역이 없습니다.</p>`
@@ -417,7 +425,6 @@
       return;
     }
     box.innerHTML = `
-      <p class="ab-muted ab-trade-sum">전체 ${d.counts.all}건 · 매수 ${d.counts.buy} · 매도 ${d.counts.sell}</p>
       <div class="ab-scroll"><table class="ab-table ab-compact ab-trades">
         <thead><tr><th>체결 일시</th><th>구분</th><th>종목</th><th class="num">수량</th><th class="num">체결 단가</th>
           <th class="num">거래 금액</th><th class="num">수수료</th><th class="num">실현 손익</th><th>사유 / 근거</th></tr></thead>
@@ -439,9 +446,11 @@
             <td class="num" data-label="실현 손익">${sell ? `<span class="${dirCls(t.realized_pnl_krw)}">${t.realized_pnl_krw > 0 ? '+' : ''}${Math.round(t.realized_pnl_krw).toLocaleString('ko-KR')}원</span><div class="${dirCls(t.pnl_pct)}">${pct(t.pnl_pct)}</div>` : '<span class="ab-muted">—</span>'}</td>
             <td data-label="사유 / 근거">${reason}</td></tr>`;
         }).join('')}</tbody></table></div>
-      ${d.has_more ? '<button type="button" class="ab-more" id="abMore">더보기</button>' : ''}
+`;
+    if (foot) foot.innerHTML = `${d.has_more ? '<button type="button" class="ab-more" id="abMore">더보기</button>' : ''}
       <p class="ab-muted ab-trade-note">실현 손익은 매수·매도 수수료(각 0.15%)를 모두 뺀 원화 기준입니다. 미국 종목은 체결 당시 환율로 환산합니다.</p>`;
     box.querySelectorAll('.ab-why').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
+    if (prevTop) { const sc = box.querySelector('.ab-scroll'); if (sc) sc.scrollTop = prevTop; }
     const more = $('#abMore');
     if (more) more.onclick = () => { more.disabled = true; more.textContent = '불러오는 중...'; T.page += 1; loadTrades(T); };
   }
