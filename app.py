@@ -6981,6 +6981,8 @@ import sector_map as _sector_map_for_disc
 disclosures.init({
     "app": app, "db": db, "DisclosureEvent": DisclosureEvent, "Holding": Holding, "PaperHolding": PaperHolding,
     "WatchlistItem": WatchlistItem, "universe": _sector_map_for_disc.universe, "notify": notifier.dispatch_disclosures,
+    "kr_prices": lambda: {m_["ticker"]: m_["price"] for g_ in ((_sector_map_for_disc.get("KR") or {}).get("groups") or [])
+                          for m_ in (g_.get("members") or []) if m_.get("price")},   # 내부자 매수 소액 필터용 (네트워크 없음)
 })
 with app.app_context():
     disclosures.migrate_8k_contract()          # 예전 8-K Item 1.01(material_8k) → 수주·계약(contract)

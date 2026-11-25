@@ -57,6 +57,20 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 한국 내부자 매수(OpenDART 임원·주요주주 소유보고) · D 14일 자동 백필 (PR #88)
+- `disclosures.py`
+  - 목록(`list.json`)에서 보고서명에 `임원·주요주주특정증권등소유상황보고서`(가운뎃점 없는 표기 포함)가 있고 추적 종목이면 후보.
+    `DART_ELESTOCK`(`elestock.json?corp_code=`)에서 같은 `rcept_no` 행의 `sp_stock_lmp_irds_cnt` > 0 (순매수)만 `insider_buy`/positive.
+  - 소액 제외: 증감 주수 × 현재가 < 3,000만 원. 현재가는 섹터맵 스냅샷(`D["kr_prices"]`, app.py 에서 주입, 네트워크 없음), 모르면 100주 미만 제외.
+  - 제목 `{직위} {보고자} 지분 매수`(정정이면 ` (정정)`), 요약 `{직위} {보고자} +N주 (추정 약 X, 지분 Y%)`. 직위는 isu_exctv_ofcps → isu_main_shrholdr → `임원·주요주주`.
+  - elestock 은 처리 1번(run·tick)에 회사당 1회(cache). 상한: 정기 15회(남은 후보는 `_dart_ins_pending` 으로 다음 run, 아직 안 보이는 접수번호는 2번 재시도)
+    · 백필 40회/tick(`_bf["KR"]["ins"]` 대기열, 다 비워야 done).
+  - `DART_BACKFILL_TYPES = ("B","I","D")`, D 는 60쪽. `start_backfill(types=)`. `_check_backfill`: 한국 공시는 있는데 최근 14일 KR insider_buy 0건이면
+    `D` 만 14일 백필 (프로세스당 1번, 알림 없음, external_id 로 중복 없음). `fmt_krw` 1억 미만은 `5,000만원`.
+- `notifier.py` 라벨 `DART 내부자 매수`.
+- 확인 못 한 것: 이 환경에서 opendart.fss.or.kr 접속이 막혀 실제 응답을 보지 못함. 엔드포인트·`corp_code`·`sp_stock_lmp_*` 이름은 dart-fss 0.5.0 소스로 확인,
+  `rcept_no`·`repror`·`isu_exctv_ofcps`·`isu_main_shrholdr` 는 요청서 기준(모킹 테스트만). 운영 로그 `KR 최근 14일 백필 시작 (최근 14일 내부자 매수 0건 …)` 와 발굴 '공시·수주' 탭 확인 필요.
+
 ### 전역 다크 슬림 스크롤바 · /ai-bots 표만 스크롤 (PR #87)
 - `style.css` 맨 위: `:root{color-scheme:dark}`, `::-webkit-scrollbar` 6px · 투명 트랙 · rgba(148,163,184,.24) 둥근 썸(hover .48) · 화살표 버튼·코너 제거.
   Firefox 용 표준 속성(`scrollbar-width:thin; scrollbar-color`)은 `@supports not selector(::-webkit-scrollbar)` 안에만 —
