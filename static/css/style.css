@@ -7056,9 +7056,15 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .positions-list .tpt .tpt-note-line:empty { display: none; }
 }
 
-/* ── /ai-bots 모바일: 상세 리스트만 최대 440px 안에서 스크롤 (PR #95) ── */
+/* ── /ai-bots 모바일: 상세 리스트 5개 + 더보기 (PR #96, PR #95 의 내부 스크롤 대체 — 페이지 단일 스크롤) ── */
+.ab-mmore { display: none; }
 @media (max-width: 767px) {
-  .ab-detail .ab-tabbar, .ab-detail .ab-trade-top, .ab-detail .ab-panel-foot { flex-shrink: 0; }
-  .ab-mlist { max-height: 440px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-  .ab-mlist.has-more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); }
+  .ab-mlist.m-cut:not(.m-all) > .ab-mi:nth-child(n+6) { display: none; }
+  .ab-mlist.m-cut:not(.m-all) > .ab-mi:nth-child(5) { border-bottom: 0; }
+  .ab-mmore { display: block; width: 100%; height: 40px; margin-top: 8px; border-radius: 10px; border: 1px solid var(--border); background: transparent;
+    color: var(--text); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .ab-mmore:hover { background: var(--bg3); }
+  .ab-mmore:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* 매매 이력: 접혀 있을 때는 서버 '더보기'(다음 20건)를 숨김 — 펼친 뒤에 보임 */
+  #abPanel-trades:has(.ab-mlist.m-cut:not(.m-all)) #abMore { display: none; }
 }

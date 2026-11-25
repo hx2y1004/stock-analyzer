@@ -240,11 +240,41 @@
   }).join('');
   const whyBtn = (x) => `<button type="button" class="ab-why" data-id="${x.id}" title="${x.has_ai ? 'AI 검증 근거' : '정량 근거'}${x.confidence != null ? ` · 신뢰도 ${x.confidence}` : ''}">근거${x.confidence != null ? ` <b>${esc(x.confidence)}</b>` : ''}</button>`;
 
-  // 모바일 리스트(최대 440px, 안에서 스크롤): 아래로 더 있으면 하단 흐림
-  const fadeList = (l) => { if (l) l.classList.toggle('has-more', l.scrollHeight - l.scrollTop - l.clientHeight > 2); };
-  const fadeAll = (root) => (root || document).querySelectorAll('.ab-mlist').forEach(fadeList);
-  document.addEventListener('scroll', (e) => { if (e.target.classList && e.target.classList.contains('ab-mlist')) fadeList(e.target); }, true);
-  window.addEventListener('resize', () => fadeAll());
+  // 모바일 리스트: 내부 스크롤 없이(페이지 단일 스크롤) 5개만 보이고 '더보기 (N건 남음) ▾' ↔ '접기 ▴'
+  // total = 전체 건수(매매 이력은 서버 전체 건수). open = 펼친 상태로 그릴지(매매 이력 서버 더보기 뒤에만 유지)
+  const M_LIMIT = 5;
+  function mMore(list, total, open) {
+    if (!list) return;
+    const n = list.querySelectorAll('.ab-mi').length;
+    total = Math.max(total ?? n, n);
+    let btn = list.nextElementSibling;
+    if (!btn || !btn.classList.contains('ab-mmore')) btn = null;
+    const cut = total > M_LIMIT;
+    list.classList.toggle('m-cut', cut);
+    list.classList.toggle('m-all', cut && !!open);
+    if (!cut) { if (btn) btn.remove(); return; }
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ab-mmore';
+      list.after(btn);
+      btn.addEventListener('click', () => {
+        const o = !list.classList.contains('m-all');
+        list.classList.toggle('m-all', o);
+        if (list.onMore) list.onMore(o);
+        if (list._mPaint) list._mPaint();
+        if (!o) list.closest('.ab-panel').scrollIntoView({ block: 'nearest' });
+      });
+    }
+    const paint = () => {
+      const o = list.classList.contains('m-all');
+      btn.textContent = o ? '접기 ▴' : `더보기 (${total - M_LIMIT}건 남음) ▾`;
+      btn.setAttribute('aria-expanded', o ? 'true' : 'false');
+    };
+    paint();
+    list._mPaint = paint;
+  }
+  const mReset = (root) => root.querySelectorAll('.ab-mlist.m-all').forEach((l) => { l.classList.remove('m-all'); if (l.onMore) l.onMore(false); if (l._mPaint) l._mPaint(); });
 
   function posRows(list, b) {
     return list.map((p) => `<tr>
@@ -366,7 +396,7 @@
       const list = sorted(b.positions, $('#abSortPos', el).value);
       tb.innerHTML = posRows(list, b);
       $('#abPosList', el).innerHTML = posItems(list, b);
-      $('#abPosList', el).scrollTop = 0; fadeList($('#abPosList', el));
+      mMore($('#abPosList', el), list.length);
     };
     const paintSig = () => {
       const tb = $('#abSigBody', el);
@@ -374,7 +404,7 @@
       const list = sorted(b.signals, $('#abSortSig', el).value, 'signal_date');
       tb.innerHTML = sigRows(list, b);
       $('#abSigList', el).innerHTML = sigItems(list, b);
-      $('#abSigList', el).scrollTop = 0; fadeList($('#abSigList', el));
+      mMore($('#abSigList', el), list.length);
       el.querySelectorAll('#abPanel-sig .ab-why, #abPanel-sig .ab-badge-info').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
     };
     $('#abSortPos', el).addEventListener('change', paintPos);
@@ -392,7 +422,7 @@
         if (on && focus) x.focus();
       });
       el.querySelectorAll('.ab-sortslot').forEach((sl) => { sl.hidden = sl.dataset.for !== t; });
-      fadeAll(el);
+      mReset(el);                                       // 탭을 바꾸면 펼침 상태 초기화
       const pn = $('#abPanels', el); if (pn) pn.scrollTop = 0;
     };
     tabs.forEach((x, i) => {
@@ -413,7 +443,7 @@
     }));
     const trSorts = [$('#abSortTr', el), $('#abSortTrM', el)];
     trSorts.forEach((sel) => sel.addEventListener('change', (e) => {
-      T.sort = e.target.value;
+      T.sort = e.target.value; T.mAll = false;          // 정렬을 바꾸면 5개로
       trSorts.forEach((o) => { if (o !== e.target) o.value = T.sort; });
       loadTrades(T, true);
     }));
@@ -470,7 +500,6 @@
     const label = { all: '', buy: '매수 ', sell: '매도 ' }[T.side];
     const sum = $('#abTradeSum'), foot = $('#abTradeFoot');
     const prevTop = T.page > 1 ? (box.querySelector('.ab-scroll') || {}).scrollTop || 0 : 0;   // 더보기: 표 스크롤 위치 유지
-    const prevTopM = T.page > 1 ? (box.querySelector('.ab-mlist') || {}).scrollTop || 0 : 0;   // 모바일 리스트도
     if (sum) sum.textContent = d.counts.all ? `전체 ${d.counts.all}건 · 매수 ${d.counts.buy} · 매도 ${d.counts.sell}` : '';
     if (foot) foot.innerHTML = '';
     if (!T.items.length) {
@@ -519,7 +548,8 @@
     box.querySelectorAll('.ab-why').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
     if (prevTop) { const sc = box.querySelector('.ab-scroll'); if (sc) sc.scrollTop = prevTop; }
     const ml = box.querySelector('.ab-mlist');
-    if (ml) { ml.scrollTop = prevTopM; fadeList(ml); }
+    if (T.page === 1) T.mAll = false;                   // 필터·정렬 변경(1쪽부터 다시) → 5개로
+    if (ml) { ml.onMore = (o) => { T.mAll = o; }; mMore(ml, d.counts[T.side] ?? d.counts.all, T.mAll); }
     const more = $('#abMore');
     if (more) more.onclick = () => { more.disabled = true; more.textContent = '불러오는 중...'; T.page += 1; loadTrades(T); };
   }
