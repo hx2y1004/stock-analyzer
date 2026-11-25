@@ -63,7 +63,7 @@ from flask_login import LoginManager, login_required, current_user
 
 from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
-from analysis.valuation import compute_dcf
+from analysis.valuation import compute_dcf, ttm_from_quarters
 from analysis import macro as macro_mod
 from models import AppliedStockSplit, DropHoldState, DisclosureEvent
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
@@ -3795,7 +3795,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v10"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v11"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
@@ -4906,6 +4906,8 @@ def analyze():
                 current_price, stock_data.get("currency", "USD"),
                 risk_free_rate=_get_risk_free_rate(stock_data.get("currency")),
                 consensus_growth=_get_consensus_rev_growth(ticker, stock),
+                # 최근 4개 분기 확정 실적(위에서 모은 분기 매출·영업이익)이 다 있으면 TTM 으로 출발
+                ttm=ttm_from_quarters(revenue_quarters, oi_quarters),
             )
         except Exception as e:
             app.logger.warning(f"[dcf] {ticker}: {e}")
