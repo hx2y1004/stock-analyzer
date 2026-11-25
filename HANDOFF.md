@@ -57,6 +57,15 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 전역 다크 슬림 스크롤바 · /ai-bots 표만 스크롤 (PR #87)
+- `style.css` 맨 위: `:root{color-scheme:dark}`, `::-webkit-scrollbar` 6px · 투명 트랙 · rgba(148,163,184,.24) 둥근 썸(hover .48) · 화살표 버튼·코너 제거.
+  Firefox 용 표준 속성(`scrollbar-width:thin; scrollbar-color`)은 `@supports not selector(::-webkit-scrollbar)` 안에만 —
+  Chromium 121+ 는 표준 속성이 하나라도 있으면 ::-webkit-scrollbar 를 무시하기 때문. 같은 이유로 #newsList·#trendsCards·#portfolioCards·
+  .events-list·.ab-panels 의 개별 스크롤바 지정을 지웠다(숨김용 `scrollbar-width:none` 은 유지). 새 요소에 표준 스크롤바 속성을 넣지 말 것.
+- /ai-bots 상세(≥1100px): 탭 바 · `전체|매수|매도` 필터(왼쪽)+`전체 N건 · 매수 · 매도`(오른쪽, `#abTradeSum`) 한 줄 · 하단 각주·더보기(`.ab-panel-foot`)는
+  고정, `.ab-scroll`(표만)이 `flex:1; min-height:0; overflow:auto` 로 스크롤, `thead th` sticky(bg2). 더보기 후 스크롤 위치 유지.
+  <1100px 은 세로 제한 없이 가로 스크롤만. 캐시: ai_bots.js v14, style.css v114, sa-v81.
+
 ### /ai-bots 2단 높이 맞춤 (PR #86)
 - ≥1100px: `.ab-duo` `align-items: stretch`, 두 카드 `flex column; height 100%`. 행 높이는 왼쪽 차트 카드가 정함(최소 460px) —
   오른쪽 상세는 `contain: size` 라 높이에 기여하지 않고 늘어나기만 함. 목록 영역 `.ab-panels` 만 `flex:1; min-height:0; overflow-y:auto`.
