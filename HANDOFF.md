@@ -57,6 +57,17 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 모바일 UI 2단계: 홈 · 발굴 · 모의투자 (PR #93)
+- 원칙: 새 규칙은 style.css 끝 `@media (max-width: 767px)` 블록. PC 1340·1920px 좌표 90개 중 차이는 새 모바일 전용 버튼(PC 에선 숨김) 4건뿐.
+- 홈: 빠른 선택 칩 1줄 스크롤 + 오른쪽 흐림(끝까지 밀면 `.qt-end` 로 해제). 시장 현황 `.md-head-main` 은 [제목·한국/미국 토글] / 상태 문구(11.5px),
+  지표는 `#mdIndices` 앞 4개만 + `#mdMoreBtn`(전체 지표 보기 ▾ ↔ 접기, `.md-card-main.md-all`). 섹터맵은 모바일에서 w<56·h<36 이면 라벨 숨김 +
+  그려진 뒤 등락률이 칸 밖이면 숨김(`renderSectorMap` 의 `MOB_HM`), 누르면 기존 구성 종목 창에 이름·등락률. 포트폴리오 버튼 grid 1fr 균등.
+- 발굴: 비교 바는 모바일에서 스크리너 탭에서만(PC 는 기존대로 비교 탭 외 전부), 1줄 50px(`N개 선택됨` · 초기화 · `나란히 비교 →`, safe-area).
+  스크리너·공시 상단은 `.sc-row`(시장 + `필터 ▾` `.sc-mfilter`)만, 펼치면 `.card.m-open`. 프리셋이 켜져 있으면 필터 버튼에 파란 점(:has).
+  서브 탭 nowrap · 가로 스크롤.
+- 모의투자: 내 자산 카드 549→362px(헤더 1줄 · 닉네임은 아이콘만(aria-label) · 갱신 시각은 화면에서만 숨김 · 세부 칸 1줄 라벨/값). 자산 변화 추이 시작 630→443px.
+- 캐시: main.js v101, screener.js v11, style.css v119, sa-v86.
+
 ### 모바일 정리: 종목 상세 점프 바 삭제 · AI 봇 탭 바 정렬 (PR #92)
 - PR #91 의 `#sdJump` HTML·CSS·JS(`initSdJump`, `_sdJumpSync`, `--sd-hdr`, scroll-margin-top) 전부 삭제 — main.js 는 PR #91 이전과 같은 내용(v100).
   구분선 숨김 · 메타 gap 4px · 상단 패딩 컴팩트는 유지(종목 헤더 아래 간격은 기본 16px 로).
