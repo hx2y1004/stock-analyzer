@@ -240,6 +240,12 @@
   }).join('');
   const whyBtn = (x) => `<button type="button" class="ab-why" data-id="${x.id}" title="${x.has_ai ? 'AI 검증 근거' : '정량 근거'}${x.confidence != null ? ` · 신뢰도 ${x.confidence}` : ''}">근거${x.confidence != null ? ` <b>${esc(x.confidence)}</b>` : ''}</button>`;
 
+  // 모바일 리스트(최대 440px, 안에서 스크롤): 아래로 더 있으면 하단 흐림
+  const fadeList = (l) => { if (l) l.classList.toggle('has-more', l.scrollHeight - l.scrollTop - l.clientHeight > 2); };
+  const fadeAll = (root) => (root || document).querySelectorAll('.ab-mlist').forEach(fadeList);
+  document.addEventListener('scroll', (e) => { if (e.target.classList && e.target.classList.contains('ab-mlist')) fadeList(e.target); }, true);
+  window.addEventListener('resize', () => fadeAll());
+
   function posRows(list, b) {
     return list.map((p) => `<tr>
       <td>${logoId(p.ticker, p.name, ` · ${p.quantity}주`)}</td>
@@ -360,6 +366,7 @@
       const list = sorted(b.positions, $('#abSortPos', el).value);
       tb.innerHTML = posRows(list, b);
       $('#abPosList', el).innerHTML = posItems(list, b);
+      $('#abPosList', el).scrollTop = 0; fadeList($('#abPosList', el));
     };
     const paintSig = () => {
       const tb = $('#abSigBody', el);
@@ -367,6 +374,7 @@
       const list = sorted(b.signals, $('#abSortSig', el).value, 'signal_date');
       tb.innerHTML = sigRows(list, b);
       $('#abSigList', el).innerHTML = sigItems(list, b);
+      $('#abSigList', el).scrollTop = 0; fadeList($('#abSigList', el));
       el.querySelectorAll('#abPanel-sig .ab-why, #abPanel-sig .ab-badge-info').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
     };
     $('#abSortPos', el).addEventListener('change', paintPos);
@@ -384,6 +392,7 @@
         if (on && focus) x.focus();
       });
       el.querySelectorAll('.ab-sortslot').forEach((sl) => { sl.hidden = sl.dataset.for !== t; });
+      fadeAll(el);
       const pn = $('#abPanels', el); if (pn) pn.scrollTop = 0;
     };
     tabs.forEach((x, i) => {
@@ -461,6 +470,7 @@
     const label = { all: '', buy: '매수 ', sell: '매도 ' }[T.side];
     const sum = $('#abTradeSum'), foot = $('#abTradeFoot');
     const prevTop = T.page > 1 ? (box.querySelector('.ab-scroll') || {}).scrollTop || 0 : 0;   // 더보기: 표 스크롤 위치 유지
+    const prevTopM = T.page > 1 ? (box.querySelector('.ab-mlist') || {}).scrollTop || 0 : 0;   // 모바일 리스트도
     if (sum) sum.textContent = d.counts.all ? `전체 ${d.counts.all}건 · 매수 ${d.counts.buy} · 매도 ${d.counts.sell}` : '';
     if (foot) foot.innerHTML = '';
     if (!T.items.length) {
@@ -508,6 +518,8 @@
       <p class="ab-muted ab-trade-note">실현 손익은 매수·매도 수수료(각 0.15%)를 모두 뺀 원화 기준입니다. 미국 종목은 체결 당시 환율로 환산합니다.</p>`;
     box.querySelectorAll('.ab-why').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
     if (prevTop) { const sc = box.querySelector('.ab-scroll'); if (sc) sc.scrollTop = prevTop; }
+    const ml = box.querySelector('.ab-mlist');
+    if (ml) { ml.scrollTop = prevTopM; fadeList(ml); }
     const more = $('#abMore');
     if (more) more.onclick = () => { more.disabled = true; more.textContent = '불러오는 중...'; T.page += 1; loadTrades(T); };
   }

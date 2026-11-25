@@ -7055,3 +7055,10 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .positions-list .tpt .tpt-acts .trade-action-btn { height: 36px; border-radius: 10px; margin: 0; }
   .positions-list .tpt .tpt-note-line:empty { display: none; }
 }
+
+/* ── /ai-bots 모바일: 상세 리스트만 최대 440px 안에서 스크롤 (PR #95) ── */
+@media (max-width: 767px) {
+  .ab-detail .ab-tabbar, .ab-detail .ab-trade-top, .ab-detail .ab-panel-foot { flex-shrink: 0; }
+  .ab-mlist { max-height: 440px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .ab-mlist.has-more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent); }
+}
