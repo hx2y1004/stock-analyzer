@@ -57,6 +57,20 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 미국 자사주 매입 수집: SEC EFTS · 128KB · 14일 자동 백필 (PR #84)
+- 증상: 미국 buyback 이 계속 0건. 원인 ① 8-K 앞 16KB 가 iXBRL 헤더(25~60KB)에서 끝나 본문에 못 닿음 ② 발표는 대개 EX-99.1 보도자료·Item 2.02 에 있음 ③ 키워드가 좁음.
+- `disclosures.py`
+  - `DOC_HEAD_BYTES` 128KB. `_BUYBACK_RE` 확장(repurchase of … common stock · repurchase shares · repurchase authorization · share/stock retirement).
+    `classify_buyback` 은 키워드 ±200자 안에 발표 문맥(authoriz·approv·announc·expand·increas·new·additional·program·up to·retire·cancel…)이 있고
+    부정 문맥(suspend·terminat·paus·discontinu·did not repurchase…)이 없을 때만.
+  - EFTS(`https://efts.sec.gov/LATEST/search-index`, `sec_get` 그대로: User-Agent · 0.2초 · 403/429 10분): `efts_candidates` → 8-K, 최근 N일(미국 동부 날짜), 100건×최대 3쪽,
+    추적 유니버스 CIK 만, 같은 adsh 는 1건(EX-99.x 우선). `collect_sec_buybacks` → 문서 앞 128KB 확인, 실행당 20건(백필 30건) 상한.
+  - 키 `SEC:{adsh}:bb` (`_bb_xid`). 8-K 본문 판정 자사주도 같은 키 → 같은 공시 중복 없음. 예전 `SEC:{adsh}`+buyback 행이 있으면 건너뜀.
+    실적 8-K(`SEC:{adsh}`, 8-K 분류)로만 저장된 공시는 자사주 건을 따로 추가.
+  - 정기: `collect_sec` 끝에서 EFTS 최근 48시간(요청 1~3회). 백필: `_check_efts_backfill` 최근 14일 미국 buyback 0건이면 프로세스당 1번,
+    `_run_efts_backfill` 이 여러 tick 에 걸쳐 이어서 (알림 없음, run 결과 `backfill_US_buyback`).
+- 확인 못 한 것: 이 환경에서 efts.sec.gov 접속이 막혀 실제 EFTS 응답(필드 이름 adsh·ciks·file_type·file_date·_id)을 보지 못함 — 모킹 테스트로만. 운영 로그에서 `US 자사주 EFTS 백필 완료: N건` 확인 필요.
+
 ### DCF 왜곡 수정: TTM 출발 · 마진/설비투자 수렴 · 베타 상한 (PR #83)
 - 증상: SK하이닉스 DCF 11,639원(-98.9%). 3년 평균 마진(적자 연도 포함 20%)은 낮게, 증설기 CapEx 29%·β 1.98(WACC 15.7%)는 그대로 10년·터미널까지.
 - `analysis/valuation.py`

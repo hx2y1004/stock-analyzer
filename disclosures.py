@@ -59,7 +59,16 @@ SEC_CONTRACT_ITEM = "1.01"            # 8-K Item 1.01 중요 계약 체결 → '
 SEC_OFFERING_ITEM = "3.02"            # 8-K Item 3.02 미등록 증권 발행(사모 유상증자) → 항목 번호만으로 판정
 SEC_BUYBACK_ITEMS = ("8.01", "7.01")  # 8-K 기타 사항 · Reg FD → 문서 앞부분에 자사주 매입 키워드가 있으면 buyback
 SEC_FORMS = ("4", "8-K", "424B5")     # 실시간 피드에서 보는 양식 (424B5 = 공모·ATM 신주 발행 설명서)
-DOC_HEAD_BYTES = 16384                # 문서는 앞부분 16KB 만 읽는다
+DOC_HEAD_BYTES = 131072               # 문서는 앞부분 128KB 만 읽는다 (iXBRL 8-K 는 <ix:header>·표지만 25~60KB 라 16KB 로는 본문에 못 닿았다)
+# EDGAR 전문 검색(EFTS): 8-K 본문과 첨부 보도자료(EX-99.1)를 함께 색인 → 미국 자사주 매입 발표를 직접 찾는다
+SEC_EFTS = "https://efts.sec.gov/LATEST/search-index"
+EFTS_QUERY = ('"share repurchase" OR "stock repurchase" OR "repurchase program" OR "buyback program" '
+              'OR "repurchase authorization" OR "repurchase of common stock"')
+EFTS_PAGES = 3                        # 100건씩 최대 3쪽 (300건)
+EFTS_DAYS = 2                         # 정기 수집: 최근 48시간
+EFTS_BACKFILL_DAYS = 14               # 최근 14일에 미국 자사주가 0건이면 1번 소급
+EFTS_DOCS_PER_RUN = 20                # 정기 수집에서 문서(보도자료) 확인 상한
+EFTS_BACKFILL_DOCS_PER_RUN = 30       # 백필 한 번(tick)에 문서 확인 상한 — 남은 후보는 다음 tick 에 이어서
 SEC_BACKFILL_DOCS_PER_CO = 6          # 백필: 회사마다 문서 확인(8-K 8.01/7.01 · 424B5) 최대 6건
 SEC_BACKFILL_DOCS = 400               # 백필: 문서 확인 전체 상한
 
@@ -743,7 +752,14 @@ _EQUITY_OFFER_RE = re.compile(r"\b(offering|offer|issue|sell|selling|sale of)\b[
 _LINKED_RE = re.compile(r"\b(notes?|securities)\b[^.]{0,100}\blinked to\b|\bauto[- ]?callable\b")
 _ATM_RE = re.compile(r"\bat[- ]the[- ]market\b|\bsales agents?\b|\bequity distribution agreement\b")
 _BUYBACK_RE = re.compile(r"\b(share repurchase|stock repurchase|repurchase program|buyback program|share buyback|stock buyback|"
-                         r"repurchase up to)\b")
+                         r"repurchase up to|repurchase of [^.;]{0,80}?common (?:stock|shares)|"
+                         r"repurchase (?:its |our )?shares|repurchase authori[sz]ation|share retirement|stock retirement)\b")
+# 발표 문맥: 승인·발표·확대·신규·추가·'최대 $' · 소각 등. 이게 근처에 없으면 상투적 언급(위험 요인·과거 실적표)으로 본다
+_BUYBACK_CTX_RE = re.compile(r"\b(authoriz\w*|approv\w*|announc\w*|expand\w*|increas\w*|new|additional|program|up to|"
+                             r"retire\w*|cancel\w*|launch\w*|adopt\w*)\b")
+# 오탐: 매입 중단·종료·'매입하지 않았다'·미래 예측 면책 문구
+_BUYBACK_NEG_RE = re.compile(r"\b(suspend\w*|terminat\w*|paus\w*|discontinu\w*|no (?:shares|stock) (?:were |was )?repurchased|"
+                             r"did not repurchase|has not repurchased)\b")
 _USD_RE = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)\s*(million|billion)?", re.I)
 
 
@@ -811,13 +827,16 @@ def classify_424b5(text):
 
 
 def classify_buyback(text):
-    """8-K 앞부분 → 자사주 매입 발표면 {"summary"} | None."""
+    """8-K·보도자료 앞부분 → 자사주 매입 '발표'면 {"summary", "amount"} | None.
+    키워드 주변(±200자)에 승인·발표·확대·신규·최대 같은 발표 문맥이 있고, 중단·종료 같은 부정 문맥이 없을 때만."""
     t = _plain(text)
-    m = _BUYBACK_RE.search(t)
-    if not m:
-        return None
-    amt = _usd_near(t, m.start())
-    return {"summary": f"자사주 매입 {fmt_usd(amt)} 발표" if amt else "자사주 매입 프로그램 발표"}
+    for m in _BUYBACK_RE.finditer(t):
+        win = t[max(0, m.start() - 200): m.end() + 200]
+        if not _BUYBACK_CTX_RE.search(win) or _BUYBACK_NEG_RE.search(win):
+            continue
+        amt = _usd_near(t, m.start())
+        return {"summary": f"자사주 매입 {fmt_usd(amt)} 발표" if amt else "자사주 매입 프로그램 발표", "amount": amt}
+    return None
 
 
 def needs_8k_doc(items):
@@ -840,7 +859,7 @@ def sec_8k_event(items, cik, acc, t, nm, at, head=None):
             it = next(i for i in items if i in SEC_BUYBACK_ITEMS)
             o = others({it})
             return dict(base, category="buyback", sentiment="positive", title=f"8-K 자사주 매입 발표 (Item {it})",
-                        summary=bb["summary"] + (f" (함께: {o})" if o else ""))
+                        summary=bb["summary"] + (f" (함께: {o})" if o else ""), external_id=_bb_xid(acc))
     ev = _8k_event(items, cik, acc, t, nm, at)
     return dict(base, **{k: ev[k] for k in ("category", "sentiment", "title", "summary")}) if ev else None
 
@@ -900,6 +919,125 @@ def parse_submissions(js, since_date):
                     "at": _sec_time((rec.get("acceptanceDateTime") or [None] * len(forms))[i], fd),
                     "doc": (rec.get("primaryDocument") or [""] * len(forms))[i] or "",
                     "items": [x.strip() for x in str((rec.get("items") or [""] * len(forms))[i] or "").split(",") if x.strip()]})
+    return out
+
+
+def _efts_hits(js):
+    """EFTS 응답 → [{adsh, ciks(int), file, file_type, form, file_date, name}]. 필드가 비면 _id("adsh:파일명")에서 복구."""
+    out = []
+    for h in ((js or {}).get("hits") or {}).get("hits") or []:
+        src = h.get("_source") or {}
+        _id = str(h.get("_id") or "")
+        adsh = src.get("adsh") or (_id.split(":", 1)[0] if ":" in _id else None)
+        fname = _id.split(":", 1)[1] if ":" in _id else None
+        ciks = []
+        for c in src.get("ciks") or []:
+            try:
+                ciks.append(int(str(c)))
+            except ValueError:
+                pass
+        if not adsh or not ciks:
+            continue
+        out.append({"adsh": adsh, "ciks": ciks, "file": fname, "file_type": str(src.get("file_type") or "").upper(),
+                    "form": src.get("form") or (src.get("root_forms") or [""])[0], "file_date": src.get("file_date"),
+                    "name": (src.get("display_names") or [None])[0]})
+    return out
+
+
+def _bb_xid(adsh):
+    """EFTS 로 찾은 자사주 매입의 고유 키. 같은 8-K 가 실적 발표(2.02 → 8-K 분류)로 이미 저장돼 있어도 자사주 건은 따로 남긴다."""
+    return f"SEC:{adsh}:bb"
+
+
+def efts_candidates(cik2t, now, days, get=None, deadline=None):
+    """EFTS 로 최근 days 일 8-K 중 자사주 매입 키워드가 있는 공시 → 추적 유니버스 종목만, 공시(adsh)당 1건.
+    같은 공시에서 8-K 본문과 EX-99.1 이 둘 다 걸리면 보도자료(EX-99.x)를 우선한다. → [후보] (최대 EFTS_PAGES 요청)"""
+    end = now.astimezone(ET_TZ).date()
+    start = end - timedelta(days=max(days - 1, 0))
+    by = {}
+    for p in range(EFTS_PAGES):
+        if deadline and time.time() > deadline:
+            break
+        r = sec_get(SEC_EFTS, params={"q": EFTS_QUERY, "forms": "8-K", "dateRange": "custom",
+                                      "startdt": start.isoformat(), "enddt": end.isoformat(), "from": p * 100}, get=get)
+        if r is None:
+            break
+        try:
+            js = r.json()
+        except ValueError:
+            break
+        hits = _efts_hits(js)
+        for h in hits:
+            cik = next((c for c in h["ciks"] if c in cik2t), None)
+            if cik is None:
+                continue                                   # 추적 유니버스 밖
+            cur = by.get(h["adsh"])
+            ex = h["file_type"].startswith("EX-99")
+            if cur is None or (ex and not cur["file_type"].startswith("EX-99")):
+                by[h["adsh"]] = dict(h, cik=cik)
+        if len(((js or {}).get("hits") or {}).get("hits") or []) < 100:
+            break
+    return sorted(by.values(), key=lambda c: (c.get("file_date") or ""), reverse=True)
+
+
+def efts_event(c, head, cik2t):
+    """EFTS 후보 + 문서 앞부분 → 자사주 매입 이벤트 | None."""
+    bb = classify_buyback(head or "")
+    if not bb:
+        return None
+    t, nm = cik2t[c["cik"]]
+    ex = c["file_type"].startswith("EX-99")
+    try:
+        d = datetime.fromisoformat(str(c.get("file_date"))[:10]).replace(hour=16, tzinfo=ET_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+    except ValueError:
+        d = _utcnow()
+    return {"market": "US", "ticker": t, "name": nm or c.get("name") or t, "source": "SEC", "category": "buyback",
+            "sentiment": "positive", "title": "8-K 자사주 매입 발표" + (" (보도자료)" if ex else ""),
+            "summary": bb["summary"], "source_url": f"{_filing_dir(c['cik'], c['adsh'])}/{c['adsh']}-index.htm",
+            "external_id": _bb_xid(c["adsh"]), "disclosed_at": d}
+
+
+def _efts_known(adshs):
+    """이미 자사주로 저장된 공시(EFTS 키 또는 예전 8-K 본문 판정 'SEC:adsh' + buyback)."""
+    E = D["DisclosureEvent"]
+    if not adshs:
+        return set()
+    rows = D["db"].session.query(E.external_id, E.category).filter(
+        E.external_id.in_([_bb_xid(a) for a in adshs] + [f"SEC:{a}" for a in adshs])).all()
+    known = set()
+    for xid, cat in rows:
+        a = xid[4:].split(":")[0]
+        if xid.endswith(":bb") or cat == "buyback":
+            known.add(a)
+    return known
+
+
+def collect_sec_buybacks(cik2t, now, days=EFTS_DAYS, get=None, deadline=None, doc_budget=EFTS_DOCS_PER_RUN, cands=None):
+    """EFTS 후보 → 문서(보도자료 우선) 앞 128KB 확인 → 자사주 매입 이벤트 목록.
+    cands 를 주면 검색 없이 그 목록을 처리한다(백필 이어서). 문서 확인은 doc_budget 건까지, 처리한 후보는 목록에서 뺀다."""
+    if cands is None:
+        cands = efts_candidates(cik2t, now, days, get=get, deadline=deadline)
+    known = _efts_known([c["adsh"] for c in cands])
+    out = []
+    while cands and doc_budget > 0:
+        if deadline and time.time() > deadline:
+            break
+        c = cands.pop(0)
+        if c["adsh"] in known:
+            continue
+        url = (f"{_filing_dir(c['cik'], c['adsh'])}/{c['file']}" if c.get("file")
+               else _primary_doc_url(c["cik"], c["adsh"], "8-K", get=get))
+        doc_budget -= 1
+        r = sec_get(url, get=get, max_bytes=DOC_HEAD_BYTES) if url else None
+        if r is None:
+            if _sec_blocked():
+                cands.insert(0, c)                      # 막혔으면 다음에 다시
+                break
+            continue
+        ev = efts_event(c, getattr(r, "head", None), cik2t)
+        if ev:
+            out.append(ev)
+            known.add(c["adsh"])
     return out
 
 
@@ -1102,10 +1240,17 @@ def collect_sec(tg=None, now=None, deadline=None, get=None, backfill=False, emit
             _sec["seen"].add(f["accession"])
             if ev:
                 ev.update(market="US", ticker=t, name=nm or f["company"], source="SEC", source_url=index_url,
-                          external_id=f"SEC:{f['accession']}", disclosed_at=f["updated"])
+                          external_id=_bb_xid(f['accession']) if ev.get("category") == "buyback" else f"SEC:{f['accession']}",
+                          disclosed_at=f["updated"])
                 out.append(ev)
         if not deadline or time.time() <= deadline:
             _sec["scan_at"][form] = started
+    # 자사주 매입: 실시간 피드의 8-K 본문만으로는 대부분 놓친다(발표가 EX-99.1 보도자료·Item 2.02 에 있음) → EFTS 최근 48시간
+    if not (deadline and time.time() > deadline):
+        try:
+            out.extend(collect_sec_buybacks(cik2t, now or datetime.now(timezone.utc), days=EFTS_DAYS, get=get, deadline=deadline))
+        except Exception as e:
+            log(f"EFTS 자사주 수집 실패: {e}")
     if len(_sec["seen"]) > 20000:
         _sec["seen"].clear()
     return out
@@ -1134,6 +1279,59 @@ _backfilled = {"KR": None, "US": None}
 _bf = {"KR": {}, "US": {}}                         # 진행 상태 (여러 tick 에 걸쳐 이어서)
 BACKFILL_COLLECTOR = {"KR": collect_dart, "US": collect_sec}
 _RUN_GUARD = threading.Lock()                      # 스케줄러 tick 과 수동 수집이 겹치지 않게
+
+
+# EFTS 자사주 백필 상태: None = 아직 DB 확인 전 · {"cands": [...], "saved": n} = 진행 중 · True = 끝남(또는 필요 없음)
+_efts_bf = {"state": None}
+
+
+def _check_efts_backfill(now):
+    """최근 14일 미국 자사주(buyback) 가 0건이면 EFTS 14일 소급을 예약한다 (프로세스마다 1번)."""
+    if _efts_bf["state"] is not None:
+        return
+    E = D["DisclosureEvent"]
+    try:
+        since = (now.astimezone(timezone.utc).replace(tzinfo=None) - timedelta(days=EFTS_BACKFILL_DAYS))
+        none_recent = E.query.filter(E.market == "US", E.category == "buyback", E.disclosed_at >= since).first() is None
+    except Exception as e:
+        D["db"].session.rollback()
+        log(f"EFTS 백필 확인 실패: {e}")
+        return
+    if none_recent:
+        _efts_bf["state"] = {"cands": None, "saved": 0, "started": _utcnow().isoformat() + "Z"}
+        log(f"US 자사주 최근 {EFTS_BACKFILL_DAYS}일 0건 → EFTS {EFTS_BACKFILL_DAYS}일 백필 시작")
+    else:
+        _efts_bf["state"] = True
+
+
+def _run_efts_backfill(now, tg, budget=None, get=None):
+    """진행 중인 EFTS 백필을 이어서 (알림 없음). → 이번에 저장한 건수"""
+    st = _efts_bf["state"]
+    if not isinstance(st, dict):
+        return 0
+    deadline = time.time() + (budget or BACKFILL_MARKET_BUDGET)
+    try:
+        tmap = sec_ticker_map(get=get)
+        if not tmap:
+            return 0                                   # 다음 tick 에 다시
+        cik2t = {}
+        for t, nm in tg["US"].items():
+            c = tmap.get(t.upper().replace(".", "-"))
+            if c:
+                cik2t.setdefault(c, (t, nm))
+        if st["cands"] is None:
+            st["cands"] = efts_candidates(cik2t, now, EFTS_BACKFILL_DAYS, get=get, deadline=deadline)
+        evs = collect_sec_buybacks(cik2t, now, get=get, deadline=deadline, doc_budget=EFTS_BACKFILL_DOCS_PER_RUN, cands=st["cands"])
+        n = len(save_events(evs))                      # 과거 공시라 알림 없음
+    except Exception as e:
+        D["db"].session.rollback()
+        log(f"EFTS 백필 오류: {str(e)[:80]}")
+        return 0
+    st["saved"] += n
+    if not st["cands"]:
+        log(f"US 자사주 EFTS 백필 완료: {st['saved']}건 저장 (알림 없음)")
+        _efts_bf["state"] = True
+    return n
 
 
 # 나중에 추가된 분류: 시장 전체에 공시가 있어도 이 분류가 하나도 없으면 14일 소급 백필 (미국 유상증자·자사주는 PR #68 에 추가)
@@ -1239,6 +1437,10 @@ def _run(names, force, now, budget, backfill_budget):
         tg = targets()
         for m, n in _run_backfill(now, tg, backfill_budget).items():
             res[f"backfill_{m}"] = n
+    _check_efts_backfill(now)
+    if isinstance(_efts_bf["state"], dict):
+        tg = tg or targets()
+        res["backfill_US_buyback"] = _run_efts_backfill(now, tg, backfill_budget)
     deadline = time.time() + (budget or TICK_BUDGET)
     for name, market, every, window, fn in COLLECTORS:
         if names and name not in names:
