@@ -2085,7 +2085,6 @@ function switchDetailTab(tab) {
   if (valPanel) valPanel.classList.toggle('hidden', tab !== 'valuation');
   const stPanel = document.getElementById('strategyPanel');
   if (stPanel) stPanel.classList.toggle('hidden', tab !== 'strategy');
-  if (window._sdJumpSync) window._sdJumpSync();
 }
 
 function _buildCards(details) {
@@ -3548,65 +3547,3 @@ function searchAndAnalyze(ticker) {
   if (typeof analyze === 'function') analyze();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-
-
-// ── 종목 상세 모바일(≤767px): 상단 고정 빠른 점프 바 ─────────────────────────────
-// 차트·요약은 그 카드로 스크롤, 기술·투자판단·밸류·전략은 아래 분석 탭을 켠 뒤 탭 카드 맨 위로.
-// 스크롤 위치·열린 탭에 맞춰 현재 항목을 표시한다. PC(≥768px)에서는 CSS 로 숨겨 아무 영향 없음.
-(function initSdJump() {
-  const bar = document.getElementById('sdJump');
-  if (!bar) return;
-  const btns = [...bar.querySelectorAll('button[data-jump]')];
-  const TABS = ['technical', 'fundamental', 'valuation', 'strategy'];
-  const target = (k) => document.querySelector(k === 'chart' ? '.chart-card' : k === 'summary' ? '.verdict-card' : '.analysis-full-card');
-  const setHdr = () => {
-    const h = document.querySelector('.header');
-    document.documentElement.style.setProperty('--sd-hdr', (h ? h.offsetHeight : 49) + 'px');
-  };
-  setHdr();
-  window.addEventListener('resize', setHdr);
-  let lock = null, lockT = 0;
-  const mark = (k) => btns.forEach((b) => {
-    const on = b.dataset.jump === k;
-    if (b.classList.contains('active') === on) return;
-    b.classList.toggle('active', on);
-    if (on) { b.setAttribute('aria-current', 'true'); const l = b.offsetLeft - 12; bar.scrollTo({ left: Math.max(0, l), behavior: 'smooth' }); }
-    else b.removeAttribute('aria-current');
-  });
-  const sync = () => {
-    const vb = document.getElementById('valuationTabBtn');
-    const vj = bar.querySelector('[data-jump="valuation"]');
-    if (vb && vj) vj.hidden = vb.classList.contains('hidden') || vb.hidden;
-    if (getComputedStyle(bar).display === 'none') return;
-    if (lock) return mark(lock);
-    const res = document.getElementById('result');
-    if (!res || res.classList.contains('hidden') || !res.offsetHeight) return mark('chart');   // 결과가 그려지기 전
-    const off = bar.getBoundingClientRect().bottom + 24;
-    const tabsTop = target('technical') && target('technical').getBoundingClientRect().top;
-    const sumTop = target('summary') && target('summary').getBoundingClientRect().top;
-    const cur = (document.querySelector('.analysis-tab.active') || {}).dataset;
-    if (tabsTop != null && tabsTop <= off) mark((cur && cur.tab) || 'technical');
-    else if (sumTop != null && sumTop <= off) mark('summary');
-    else mark('chart');
-  };
-  window._sdJumpSync = () => requestAnimationFrame(sync);          // 탭 전환·화면 갱신 뒤 레이아웃이 끝난 다음에
-  const res = document.getElementById('result');
-  if (res && window.MutationObserver) new MutationObserver(() => requestAnimationFrame(sync)).observe(res, { attributes: true, attributeFilter: ['class'] });
-  let raf = 0;
-  window.addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; sync(); }); }, { passive: true });
-  bar.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-jump]');
-    if (!b) return;
-    const k = b.dataset.jump;
-    if (TABS.includes(k) && typeof switchDetailTab === 'function') switchDetailTab(k);
-    const el = target(k);
-    if (!el) return;
-    lock = k; clearTimeout(lockT);
-    mark(k);
-    setHdr();
-    const y = el.getBoundingClientRect().top + window.scrollY - (bar.getBoundingClientRect().bottom - bar.getBoundingClientRect().top) - (document.querySelector('.header') || { offsetHeight: 49 }).offsetHeight - 8;
-    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
-    lockT = setTimeout(() => { lock = null; sync(); }, 900);
-  });
-  sync();
-})();

@@ -331,6 +331,7 @@
             <button type="button" class="ah-period-btn ab-fbtn" data-side="sell" aria-pressed="false">매도</button>
           </div>
           <span class="ab-muted ab-trade-sum" id="abTradeSum" aria-live="polite"></span>
+          <div class="ab-sort-m">${sortSel('abSortTrM', [['new', '최신순'], ['ret', '수익률순']])}</div>
         </div>
         <div id="abTrades"><div class="ab-muted">불러오는 중...</div></div>
         <div class="ab-panel-foot" id="abTradeFoot"></div>
@@ -401,7 +402,12 @@
       Object.assign(T, { side: f.dataset.side, page: 1, items: [] });
       loadTrades(T);
     }));
-    $('#abSortTr', el).addEventListener('change', (e) => { T.sort = e.target.value; loadTrades(T, true); });
+    const trSorts = [$('#abSortTr', el), $('#abSortTrM', el)];
+    trSorts.forEach((sel) => sel.addEventListener('change', (e) => {
+      T.sort = e.target.value;
+      trSorts.forEach((o) => { if (o !== e.target) o.value = T.sort; });
+      loadTrades(T, true);
+    }));
     loadTrades(T);
     // 세로로만 이동 (scrollIntoView 는 가로로도 밀어 표 왼쪽이 잘렸다)
     if (scroll) window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY - 70), left: 0, behavior: 'smooth' });

@@ -6895,20 +6895,8 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .ab-why-status b { font-size: 12px; color: var(--text2); font-weight: 600; }
 
 /* ══ 모바일 UI 1단계 (PR #91) — 모두 ≤767px 에서만. PC(≥768px) 는 그대로 ══════════════════ */
-.sd-jump { display: none; }
 .ab-card-mini, .ab-mlist { display: none; }
 @media (max-width: 767px) {
-  /* ── 종목 상세: 상단 고정 빠른 점프 바 ── */
-  .sd-jump { display: flex; gap: 4px; position: -webkit-sticky; position: sticky; top: var(--sd-hdr, calc(49px + env(safe-area-inset-top, 0px))); z-index: 20;
-    margin: 0 calc(-1 * var(--page-pad)) var(--card-gap); padding: 6px var(--page-pad); overflow-x: auto; scrollbar-width: none;
-    background: rgba(13, 17, 23, 0.92); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
-  .sd-jump::-webkit-scrollbar { display: none; }
-  .sd-jump button { flex: none; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid transparent; background: transparent;
-    color: var(--text2); font-size: 13px; font-weight: 600; font-family: inherit; white-space: nowrap; cursor: pointer; }
-  .sd-jump button[hidden] { display: none; }
-  .sd-jump button.active { color: var(--text); background: var(--bg3); border-color: var(--border); }
-  .sd-jump button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .result .chart-card, .result .verdict-card, .result .analysis-full-card { scroll-margin-top: calc(var(--sd-hdr, 49px) + 52px); }
   /* 차트 컨트롤: 구분선 대신 그룹 사이 간격 (줄 끝에 '|' 만 남는 현상 제거) */
   .chart-toolbar .ct-sep { display: none; }
   .chart-toolbar .ct-scroll { column-gap: 14px; }
@@ -6919,7 +6907,7 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   body.stock-mode .search-box { padding: 8px 10px; }
   body.stock-mode .search-row { flex-wrap: nowrap; }
   body.stock-mode .search-back { flex-basis: auto; height: 40px; padding: 0 6px 0 0; font-size: 13px; }
-  .result > .stock-header { padding: 14px 16px; margin-bottom: 10px; }
+  .result > .stock-header { padding: 14px 16px; }
   #marketContextCard, #eventsCard { padding: 14px 16px; }
   #marketContextCard .card-title, #eventsCard .card-title { margin-bottom: 8px; }
 
@@ -6955,4 +6943,18 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .ab-mi-act .ab-why b { font-weight: 700; color: var(--text); margin-left: 2px; }
   .ab-mi .ab-badge { white-space: nowrap; }
   .ab-mi-row { display: inline-flex; align-items: center; gap: 6px; }
+}
+
+/* ── /ai-bots 모바일 탭 바 정리 (PR #92) ── */
+.ab-sort-m { display: none; }
+@media (max-width: 767px) {
+  /* 탭 밑줄이 탭 바 오른쪽 끝까지: 탭 줄 자체가 100% 폭 + 밑줄, 정렬은 그 아래 줄 오른쪽 */
+  .ab-tabbar { border-bottom: 0; row-gap: 8px; }
+  .ab-tabbar .ab-tabs { flex: 1 1 100%; width: 100%; max-width: none; box-shadow: inset 0 -1px 0 var(--border); }
+  .ab-tabbar .ab-sortslot { margin-left: auto; }
+  /* 매매 이력: 정렬은 필터 칩 줄 오른쪽으로 (탭 바 아래 줄은 비움) */
+  .ab-tabbar .ab-sortslot[data-for="trades"] { display: none; }
+  .ab-trade-top { flex-wrap: nowrap; justify-content: space-between; }
+  .ab-trade-top .ab-trade-sum { display: none; }
+  .ab-sort-m { display: block; flex: none; }
 }

@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 모바일 정리: 종목 상세 점프 바 삭제 · AI 봇 탭 바 정렬 (PR #92)
+- PR #91 의 `#sdJump` HTML·CSS·JS(`initSdJump`, `_sdJumpSync`, `--sd-hdr`, scroll-margin-top) 전부 삭제 — main.js 는 PR #91 이전과 같은 내용(v100).
+  구분선 숨김 · 메타 gap 4px · 상단 패딩 컴팩트는 유지(종목 헤더 아래 간격은 기본 16px 로).
+- /ai-bots ≤767px: 탭 줄(`.ab-tabs`)이 탭 바 100% 폭 + 밑줄(inset shadow), 탭 바 자체 border 없음, 보유·신호 정렬은 그 아래 줄 오른쪽.
+  매매 이력은 필터 칩 줄 오른쪽에 모바일 전용 정렬 `#abSortTrM`(탭 바의 `#abSortTr` 와 값 동기화), 탭 바 쪽 정렬과 `전체 N건` 요약은 모바일에서 숨김.
+- 캐시: main.js v100, ai_bots.js v18, style.css v118, sa-v85.
+
 ### 모바일 UI 1단계: 종목 상세 점프 바 · AI 봇 2×2 · 세 탭 2줄 카드 (PR #91)
 - 원칙: 새 규칙은 모두 `@media (max-width: 767px)` (style.css 맨 끝 블록). PC 1340·1920px 주요 요소 좌표 48개가 수정 전과 동일.
 - 종목 상세
