@@ -57,6 +57,20 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 모바일 UI 1단계: 종목 상세 점프 바 · AI 봇 2×2 · 세 탭 2줄 카드 (PR #91)
+- 원칙: 새 규칙은 모두 `@media (max-width: 767px)` (style.css 맨 끝 블록). PC 1340·1920px 주요 요소 좌표 48개가 수정 전과 동일.
+- 종목 상세
+  - `#sdJump`(index.html, 종목 헤더 아래): sticky · top `--sd-hdr`(헤더 실제 높이, JS 가 safe-area 포함해 설정) · z-index 20.
+    차트·요약 → `.chart-card`·`.verdict-card`, 기술·투자판단·밸류·전략 → `switchDetailTab()` 후 `.analysis-full-card` 로 스크롤(바 높이만큼 보정).
+    스크롤·탭 전환에 맞춰 활성 표시(`window._sdJumpSync`, switchDetailTab 끝에서 호출), 밸류 탭 버튼이 숨으면 점프 항목도 숨김.
+  - `.ct-sep` 숨기고 그룹 간격 14px · `.stock-meta` inline-flex gap 4px · 검색 128→78px, 종목 헤더·시장 컨텍스트·이벤트 패딩 14px.
+- AI 봇
+  - 카드 2×2(gap 8px): 이름 · 수익률 · 평가금액 · `.ab-card-mini`(보유 N · MDD) 만, 보조 칸·칩·배지 숨김. 카드 영역 917→250px.
+  - 차트 오른쪽 현재값 배지: `matchMedia('(max-width: 767px)')` 이면 `lastValueVisible:false` (폭이 바뀌면 applyOptions).
+  - 세 탭 공통 `mItem()` → `.ab-mlist` 2줄 카드(로고·이름/티커·우측 수치 / 보조 정보·액션). ≤767px 에서 표(`.ab-scroll`) 숨김.
+    매매 이력 카드 372→80~91px.
+- 캐시: main.js v99, ai_bots.js v17, style.css v117, sa-v84.
+
 ### /ai-bots 신호 사후 검증 6열 압축 · 취소 사유 ⓘ (PR #90)
 - 열: 신호일(MM.DD, title 전체 날짜) · 종목(이름 최대 130px 말줄임) · 결과 · 진입→청산 · 수익률 · 근거·신뢰도. 신뢰도 열은 없애고 버튼 라벨 `근거 76`(점수 없으면 `근거`).
 - 사유가 있는 결과(주로 취소)는 배지 1줄 `취소 ⓘ`(`.ab-badge-info` 버튼, title = 사유 전체, 누르면 근거 모달) · 근거 모달 맨 위 `.ab-why-status` 에 사유.
