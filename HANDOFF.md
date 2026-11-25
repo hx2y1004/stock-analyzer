@@ -69,7 +69,7 @@
   - 차트 오른쪽 현재값 배지: `matchMedia('(max-width: 767px)')` 이면 `lastValueVisible:false` (폭이 바뀌면 applyOptions).
   - 세 탭 공통 `mItem()` → `.ab-mlist` 2줄 카드(로고·이름/티커·우측 수치 / 보조 정보·액션). ≤767px 에서 표(`.ab-scroll`) 숨김.
     매매 이력 카드 372→80~91px.
-- 캐시: main.js v100, ai_bots.js v17, style.css v117, sa-v84.
+- 캐시: main.js v99, ai_bots.js v17, style.css v117, sa-v84.
 
 ### /ai-bots 신호 사후 검증 6열 압축 · 취소 사유 ⓘ (PR #90)
 - 열: 신호일(MM.DD, title 전체 날짜) · 종목(이름 최대 130px 말줄임) · 결과 · 진입→청산 · 수익률 · 근거·신뢰도. 신뢰도 열은 없애고 버튼 라벨 `근거 76`(점수 없으면 `근거`).
