@@ -7457,11 +7457,24 @@ def _bot_summary(st, p):
     return {"rule": rule, "exit": exit_, "limits": lim, "fee": f"매수·매도 수수료 각 {p.get('fee_pct', 0.15)}%"}
 
 
+_BOT_ACCT_CACHE = {}                 # user_id -> (시각, 계좌 dict). 개요·상세·차트 마지막 점이 같은 평가를 쓰도록
+_BOT_ACCT_TTL = 60
+_BOT_ACCT_LOCK = threading.Lock()
+
+
 def _bot_account(u, fx=None):
+    now = time.time()
+    with _BOT_ACCT_LOCK:
+        hit = _BOT_ACCT_CACHE.get(u.id)
+    if hit and now - hit[0] < _BOT_ACCT_TTL:
+        return dict(hit[1])
     tot, cash, pos = bot_trader.equity(u, fx=fx)
     init = u.initial_capital or bot_trader.INITIAL
-    return {"total_krw": round(tot), "cash_krw": round(cash), "positions_krw": round(pos),
-            "initial_krw": round(init), "return_pct": round((tot / init - 1) * 100, 2) if init else 0}
+    acc = {"total_krw": round(tot), "cash_krw": round(cash), "positions_krw": round(pos),
+           "initial_krw": round(init), "return_pct": round((tot / init - 1) * 100, 2) if init else 0}
+    with _BOT_ACCT_LOCK:
+        _BOT_ACCT_CACHE[u.id] = (now, acc)
+    return dict(acc)
 
 
 @app.route("/ai-bots")
@@ -7532,7 +7545,7 @@ def ai_bots_chart():
         pts = {(u.created_at.date() if u.created_at else first): init}
         for snp in AssetSnapshot.query.filter_by(user_id=u.id).order_by(AssetSnapshot.date).all():
             pts[snp.date] = snp.total_assets_krw
-        pts[today] = bot_trader.equity(u, fx=fx)[0]          # 마지막 점은 실시간 평가
+        pts[today] = _bot_account(u, fx)["total_krw"]       # 마지막 점: 카드·상세와 같은 60초 스냅샷
         ordered = sorted(pts.items())
         base = next((v for d_, v in reversed(ordered) if d_ <= start), ordered[0][1])
         data = [{"date": d_.isoformat(), "return_pct": round((v / base - 1) * 100, 3)}

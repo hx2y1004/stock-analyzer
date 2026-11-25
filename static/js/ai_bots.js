@@ -8,7 +8,7 @@
   function krw(n) {
     if (n == null) return '—';
     const a = Math.abs(n), sign = n < 0 ? '-' : '';
-    if (a >= 1e8) return sign + (a / 1e8).toFixed(a % 1e8 === 0 ? 0 : 2) + '억원';
+    if (a >= 1e8) return sign + (a / 1e8).toFixed(2) + '억원';
     if (a >= 1e4) return sign + Math.round(a / 1e4).toLocaleString('ko-KR') + '만원';
     return sign + Math.round(a).toLocaleString('ko-KR') + '원';
   }
@@ -29,59 +29,77 @@
   let OV = null;
 
   // ── 개요 ──────────────────────────────────────────────────────────────
+  // 봇 계좌 수치(수익률·평가금액)는 이 OV 하나만 쓴다 → 상단 카드와 상세 패널이 항상 같은 값 (서버도 60초 공용 스냅샷)
   async function loadOverview() {
     const r = await fetch('/api/ai-bots/overview');
     OV = await r.json();
-    renderSchedule();
+    renderStatus();
+    renderLog();
     renderCards();
     renderCompare();
   }
 
-  function fmtWhen(iso, tzLabel) {
+  function fmtWhen(iso) {
     const d = new Date(iso);
-    const s = d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
-    return `${s} <span class="ab-muted">(내 시각, ${tzLabel})</span>`;
+    return d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
   }
 
-  function renderSchedule() {
+  function renderStatus() {
     const nb = OV.next_batch || {};
-    const runs = OV.recent_runs || [];
-    const last = runs.length
-      ? runs.map((x) => `${x.market} ${esc(x.as_of)}: ${x.skipped ? '휴장/장중 — 추적만' : `${x.tickers}종목 분석 · 신호 ${x.signals}건 · AI ${x.ai_calls ?? 0}회`}`).join(' / ')
-      : '아직 실행된 배치가 없습니다.';
-    $('#abSchedule').innerHTML = `
-      <div class="ab-sched-item"><span class="ab-sched-k">다음 배치 🇰🇷</span><span>${nb.KR ? fmtWhen(nb.KR, '장 마감 15:45 KST') : '—'}</span></div>
-      <div class="ab-sched-item"><span class="ab-sched-k">다음 배치 🇺🇸</span><span>${nb.US ? fmtWhen(nb.US, '장 마감 16:30 뉴욕') : '—'}</span></div>
-      <div class="ab-sched-item"><span class="ab-sched-k">최근 실행</span><span>${last}</span></div>
-      <div class="ab-sched-item"><span class="ab-sched-k">진행 방식</span><span>장 마감 후 신호 → 다음 장 시가 체결 → 장중 5분마다 손절·익절 확인 · AI 평가 하루 최대 ${OV.ai_budget_limit}회 · 한국 종목 실적일 필터는 데이터가 없어 생략</span></div>`;
+    $('#abNext').innerHTML = `다음 배치 <span title="장 마감 15:45 KST">🇰🇷 ${nb.KR ? esc(fmtWhen(nb.KR)) : '—'}</span><span class="ab-dot">·</span>`
+      + `<span title="장 마감 16:30 뉴욕 (내 시각으로 표시)">🇺🇸 ${nb.US ? esc(fmtWhen(nb.US)) : '—'}</span>`;
   }
 
-  function statLine(k, v) { return `<div class="ab-stat"><span>${k}</span><strong>${v}</strong></div>`; }
+  // 'ⓘ 실행 로그 · 규칙' 패널: 최근 실행 4줄 + 진행 방식 + 봇별 전체 규칙
+  function renderLog() {
+    const runs = OV.recent_runs || [];
+    $('#abLog').innerHTML = `
+      <div class="ab-log-grid">
+        <section><h3 class="ab-h3">최근 실행</h3>
+          ${runs.length ? `<ul class="ab-log-list">${runs.map((x) => `<li><b>${esc(x.market)}</b> ${esc(x.as_of)} · ${x.skipped ? '휴장/장중 — 추적만' : `${x.tickers}종목 분석 · 신호 ${x.signals}건 · AI ${x.ai_calls ?? 0}회`}</li>`).join('')}</ul>`
+            : '<p class="ab-muted">아직 실행된 배치가 없습니다.</p>'}</section>
+        <section><h3 class="ab-h3">진행 방식</h3>
+          <p class="ab-log-p">장 마감 후 신호 → 다음 장 시가 체결 → 장중 5분마다 손절·익절 확인 · AI 평가 하루 최대 ${OV.ai_budget_limit}회 · 한국 종목 실적일 필터는 데이터가 없어 생략 · 수수료 매수·매도 각 0.15%</p></section>
+      </div>
+      <h3 class="ab-h3">봇별 규칙</h3>
+      <div class="ab-log-rules">${OV.bots.map((b) => `
+        <div class="ab-log-rule"><b>${esc(b.emoji)} ${esc(b.name)}</b>
+          <div><span>진입</span>${esc(b.summary.rule)}</div><div><span>청산</span>${esc(b.summary.exit)}</div>
+          <div><span>한도</span>${esc(b.summary.limits)}</div></div>`).join('')}</div>`;
+  }
+
+  // 전략 성격 키워드 칩 (긴 규칙 문장은 'ⓘ 실행 로그 · 규칙'과 상세 패널에서)
+  const CHIPS = {
+    aggressive_momentum: ['추세 돌파', '고변동'], balanced_swing: ['중기 스윙', '손익비'],
+    conservative_value: ['저평가', '저변동'], baseline_quant: ['순수 정량', 'AI 미적용'],
+  };
+  const SHORT = { aggressive_momentum: '공격형', balanced_swing: '균형형', conservative_value: '안정형', baseline_quant: '기준선' };
+  const sub2 = (k, v, cls = '') => `<div class="ab-sb"><span>${k}</span><b class="${cls}">${v}</b></div>`;
 
   function renderCards() {
     const el = $('#abCards');
     el.innerHTML = OV.bots.map((b) => {
       const a = b.account || {}, s = b.stats || {};
-      const empty = !s.trades && !s.open;
       return `
-      <button type="button" class="card ab-card" data-key="${esc(b.key)}" style="--bot:${esc(b.color)}" aria-label="${esc(b.name)} 상세 보기">
+      <button type="button" class="ab-card" data-key="${esc(b.key)}" style="--bot:${esc(b.color)}" aria-pressed="false" aria-label="${esc(b.name)} 상세 보기">
         <div class="ab-card-top">
-          <span class="ab-swatch" aria-hidden="true"></span>
-          <span class="ab-card-name">${esc(b.emoji)} ${esc(b.name)}</span>
-          <span class="ab-tag">${b.use_ai ? 'AI 검증' : '정량만'}</span>
+          <span class="ab-card-name"><span class="ab-swatch" aria-hidden="true"></span>${esc(b.emoji)} ${esc(b.name)}</span>
+          <span class="ab-tag ${b.use_ai ? 'ai' : ''}">${b.use_ai ? 'AI 검증' : '정량만'}</span>
         </div>
-        <div class="ab-card-ret ${dirCls(a.return_pct)}">${pct(a.return_pct)}</div>
-        <div class="ab-card-eq">${krw(a.total_krw)} <span class="ab-muted">/ 시작 ${krw(a.initial_krw)}</span></div>
-        <div class="ab-stats">
-          ${statLine('승률', s.win_rate == null ? '—' : s.win_rate + '%')}
-          ${statLine('손익비', s.payoff == null ? '—' : s.payoff.toFixed(2))}
-          ${statLine('MDD', s.mdd_pct == null ? '—' : pct(s.mdd_pct))}
-          ${statLine('거래', `${s.trades || 0}회 · 보유 ${s.open || 0}`)}
+        <div class="ab-card-mid">
+          <span class="ab-card-ret ${dirCls(a.return_pct)}">${pct(a.return_pct)}</span>
+          <span class="ab-card-eq">${krw(a.total_krw)}</span>
         </div>
-        <p class="ab-card-rule">${empty ? '아직 거래가 없습니다. ' : ''}${esc(b.summary.rule)}</p>
+        <div class="ab-sbs">
+          ${sub2('승률', s.win_rate == null ? '—' : s.win_rate + '%')}
+          ${sub2('MDD', s.mdd_pct == null ? '—' : pct(s.mdd_pct), s.mdd_pct < 0 ? 'down' : '')}
+          ${sub2('보유', `${s.open || 0}종목`)}
+          ${sub2('청산', `${s.trades || 0}회`)}
+        </div>
+        <div class="ab-chips">${(CHIPS[b.key] || []).map((c) => `<span class="ab-chip">${esc(c)}</span>`).join('')}</div>
       </button>`;
     }).join('');
-    el.querySelectorAll('.ab-card').forEach((c) => c.addEventListener('click', () => openDetail(c.dataset.key, true)));
+    el.querySelectorAll('.ab-card').forEach((c) => c.addEventListener('click', () => openDetail(c.dataset.key, window.innerWidth < 1100)));
   }
 
   function renderCompare() {
@@ -99,26 +117,20 @@
       if (!f) return ['', ''];
       const va = f(a), vb = f(b);
       if (va == null || vb == null || va === vb) return ['', ''];
-      return va > vb ? [' ab-better', ''] : ['', ' ab-better'];
+      return va > vb ? ['ab-better', ''] : ['', 'ab-better'];
     };
     const enough = (c.ai.trades || 0) + (c.baseline.trades || 0) >= 1;
     el.innerHTML = `
-      <h2 class="card-title" id="abCmpTitle">AI 검증 효과 — 같은 규칙, AI 필터만 다름</h2>
-      <div class="ab-cmp-grid" role="table" aria-label="AI 검증 효과 비교">
-        <div class="ab-cmp-row ab-cmp-head" role="row">
-          <span role="columnheader"></span>
-          <span role="columnheader">${esc(c.ai.emoji)} ${esc(c.ai.name)} <em>AI 검증</em></span>
-          <span role="columnheader">${esc(c.baseline.emoji)} ${esc(c.baseline.name)} <em>AI 미사용</em></span>
-        </div>
+      <div class="ab-cmp-head2"><h2 class="card-title" id="abCmpTitle">AI 검증 효과</h2><span class="ab-muted">같은 정량 규칙, AI 필터만 다름</span></div>
+      <div class="ab-cmp-strip" role="table" aria-label="AI 검증 효과 비교">
+        <div class="ab-cmp-col ab-cmp-lab" role="row"><span role="columnheader"></span>
+          <span role="cell">${esc(c.ai.emoji)} ${esc(c.ai.name)} <em>AI</em></span><span role="cell">${esc(c.baseline.emoji)} ${esc(c.baseline.name)} <em>정량</em></span></div>
         ${rows.map(([k, f, raw]) => { const [ba, bb] = better(raw, c.ai, c.baseline); return `
-        <div class="ab-cmp-row" role="row">
-          <span role="rowheader">${k}</span>
-          <span role="cell" class="${ba.trim()}">${f(c.ai)}</span>
-          <span role="cell" class="${bb.trim()}">${f(c.baseline)}</span>
-        </div>`; }).join('')}
+        <div class="ab-cmp-col" role="row"><span role="columnheader">${k}</span>
+          <span role="cell" class="${ba}">${f(c.ai)}</span><span role="cell" class="${bb}">${f(c.baseline)}</span></div>`; }).join('')}
       </div>
       <p class="ab-note">${enough ? '더 좋은 쪽을 굵게 표시합니다. 거래가 적을 때는 차이가 우연일 수 있습니다.'
-        : '아직 청산된 거래가 없어 비교할 수 없습니다. 두 봇은 같은 정량 조건으로 후보를 고르고, 균형형만 AI가 한 번 더 걸러냅니다. 거래가 쌓이면 AI 필터가 수익률·승률·낙폭을 실제로 개선하는지 여기서 확인할 수 있습니다.'}</p>`;
+        : '아직 청산된 거래가 없어 비교할 수 없습니다. 거래가 쌓이면 AI 필터가 수익률·승률·낙폭을 실제로 개선하는지 여기서 확인할 수 있습니다.'}</p>`;
   }
 
   // ── 차트 ──────────────────────────────────────────────────────────────
@@ -156,7 +168,7 @@
     lines = d.series.map((s) => {
       const ser = chart.addLineSeries({
         color: s.color, lineWidth: 2, lineStyle: s.kind === 'benchmark' ? 2 : 0,
-        priceLineVisible: false, lastValueVisible: false,
+        priceLineVisible: false, lastValueVisible: true,
         pointMarkersVisible: s.data.length <= 2,
       });
       ser.setData(s.data.map((p) => ({ time: p.date, value: p.return_pct })));
@@ -189,90 +201,132 @@
       det.className = 'ab-table-view';
       $('#abChartNote').after(det);
     }
-    det.innerHTML = `<summary>표로 보기</summary><div class="ab-scroll"><table class="ab-table"><thead><tr><th>구분</th><th>시작일</th><th>마지막 날짜</th><th>수익률</th></tr></thead><tbody>
-      ${d.series.map((s) => { const a = s.data[0], z = s.data[s.data.length - 1]; return `<tr><td>${esc(s.name)}</td><td>${a ? esc(a.date) : '—'}</td><td>${z ? esc(z.date) : '—'}</td><td class="${dirCls(z && z.return_pct)}">${z ? pct(z.return_pct) : '—'}</td></tr>`; }).join('')}
+    det.innerHTML = `<summary>표로 보기</summary><div class="ab-scroll"><table class="ab-table ab-compact"><thead><tr><th>구분</th><th>시작일</th><th>마지막 날짜</th><th class="num">수익률</th></tr></thead><tbody>
+      ${d.series.map((s) => { const a = s.data[0], z = s.data[s.data.length - 1]; return `<tr><td>${esc(s.name)}</td><td>${a ? esc(a.date) : '—'}</td><td>${z ? esc(z.date) : '—'}</td><td class="num ${dirCls(z && z.return_pct)}">${z ? pct(z.return_pct) : '—'}</td></tr>`; }).join('')}
     </tbody></table></div>`;
   }
 
   // ── 봇 상세 ───────────────────────────────────────────────────────────
+  const logoId = (t, n, extra = '') => `<div class="lg-id">${window.renderStockLogo ? renderStockLogo(t, n, 'sm') : ''}<div class="lg-id-text">`
+    + `<a href="/stock/${encodeURIComponent(t)}">${esc(n || t)}</a><span class="ab-tk">${esc(t)}${extra}</span></div></div>`;
+  const sortSel = (id, opts) => `<label class="ab-sort"><span class="sr-only">정렬</span><select id="${id}">${opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>`;
+  let CUR = null;                                   // 지금 열린 봇 key (빠른 전환 시 늦게 온 응답 무시)
+
+  function markSelected(key) {
+    document.querySelectorAll('.ab-card').forEach((c) => { const on = c.dataset.key === key; c.classList.toggle('selected', on); c.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    document.querySelectorAll('.ab-chipbtn').forEach((c) => { const on = c.dataset.key === key; c.classList.toggle('active', on); c.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  }
+
+  function posRows(list, b) {
+    return list.map((p) => `<tr>
+      <td>${logoId(p.ticker, p.name, ` · ${p.quantity}주`)}</td>
+      <td class="num">${px(p.entry_price, p.currency)}<div class="ab-muted">현재 ${px(p.current_price, p.currency)}</div></td>
+      <td class="num ${dirCls(p.return_pct)}"><b>${pct(p.return_pct)}</b><div class="ab-muted">${krw(p.value_krw)}</div></td>
+      <td class="num">${pct(p.to_target_pct)}<div class="ab-muted">${px(p.target_price, p.currency)}</div></td>
+      <td class="num">${pct(p.to_stop_pct)}<div class="ab-muted">${px(p.stop_price, p.currency)}</div></td>
+      <td class="num">${p.holding_days ?? 0}일</td>
+      <td>${followLink(p.ticker, p.target_price, p.stop_price, p.currency, b.name, p.name)}</td></tr>`).join('');
+  }
+
+  function sigRows(list, b) {
+    return list.map((x) => {
+      const cur = x.market === 'KR' ? 'KRW' : 'USD';
+      return `<tr>
+      <td class="ab-nowrap">${esc(x.signal_date)}</td>
+      <td>${logoId(x.ticker, x.name, x.account && x.account.status === 'SKIPPED' ? ` · <span title="${esc(x.account.skip_reason)}">계좌 미체결</span>` : '')}</td>
+      <td>${badge(x.status, x.pnl_pct)}${x.status_reason ? `<div class="ab-muted ab-reason">${esc(x.status_reason)}</div>` : ''}</td>
+      <td class="num">${px(x.fill_price || x.entry_price, cur)}<div class="ab-muted">→ ${x.exit_price ? px(x.exit_price, cur) : '—'}</div></td>
+      <td class="num ${dirCls(x.pnl_pct)}">${pct(x.pnl_pct)}</td>
+      <td class="num">${x.confidence ?? '—'}</td>
+      <td class="ab-acts"><button type="button" class="ab-why" data-id="${x.id}">${x.has_ai ? 'AI 근거' : '근거'}</button>
+        ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, cur, b.name, x.name) : ''}</td></tr>`;
+    }).join('');
+  }
+
   async function openDetail(key, scroll) {
     const el = $('#abDetail');
-    el.classList.remove('hidden');
-    el.innerHTML = '<div class="ab-muted">불러오는 중...</div>';
-    document.querySelectorAll('.ab-card').forEach((c) => c.classList.toggle('selected', c.dataset.key === key));
+    CUR = key;
+    markSelected(key);
     if (history.replaceState) history.replaceState(null, '', '#' + key);
+    if (!el.querySelector('.ab-det-head')) el.innerHTML = '<div class="ab-muted">불러오는 중...</div>';
+    else el.classList.add('is-loading');
     const r = await fetch('/api/ai-bots/' + encodeURIComponent(key));
+    if (CUR !== key) return;
+    el.classList.remove('is-loading');
     if (!r.ok) { el.innerHTML = '<div class="ab-muted">봇을 찾지 못했습니다.</div>'; return; }
     const b = await r.json();
-    const s = b.stats, a = b.account || {};
+    if (CUR !== key) return;
+    const ov = (OV && OV.bots.find((x) => x.key === key)) || {};
+    const a = ov.account || b.account || {}, s = ov.stats || b.stats || {};   // 계좌 수치는 상단 카드와 같은 OV
     el.style.setProperty('--bot', b.color);
     el.innerHTML = `
       <div class="ab-det-head">
-        <h2 class="card-title"><span class="ab-swatch" aria-hidden="true"></span>${esc(b.emoji)} ${esc(b.name)} <span class="ab-tag">${b.use_ai ? 'AI 검증' : '정량만'}</span></h2>
-        <button type="button" class="sub-cancel ab-det-close" aria-label="상세 닫기">닫기</button>
+        <div class="ab-botchips" role="group" aria-label="봇 선택">${(OV ? OV.bots : []).map((x) =>
+          `<button type="button" class="ab-chipbtn" data-key="${esc(x.key)}" style="--bot:${esc(x.color)}"><i aria-hidden="true"></i>${esc(SHORT[x.key] || x.name)}</button>`).join('')}</div>
       </div>
-      <div class="ab-rules">
-        <div><span>진입</span>${esc(b.summary.rule)}</div>
-        <div><span>청산</span>${esc(b.summary.exit)}</div>
+      <div class="ab-det-title"><h2 class="card-title">${esc(b.emoji)} ${esc(b.name)} <span class="ab-tag ${b.use_ai ? 'ai' : ''}">${b.use_ai ? 'AI 검증' : '정량만'}</span></h2></div>
+      <div class="ab-kpis2">
+        ${sub2('총자산', krw(a.total_krw))}
+        ${sub2('수익률', pct(a.return_pct), dirCls(a.return_pct))}
+        ${sub2('현금', krw(a.cash_krw))}
+        ${sub2('승률', s.win_rate == null ? '—' : s.win_rate + '%')}
+        ${sub2('손익비', s.payoff == null ? '—' : Number(s.payoff).toFixed(2))}
+        ${sub2('MDD', s.mdd_pct == null ? '—' : pct(s.mdd_pct), s.mdd_pct < 0 ? 'down' : '')}
+      </div>
+      <details class="ab-rules-d"><summary>전략 규칙</summary><div class="ab-rules">
+        <div><span>진입</span>${esc(b.summary.rule)}</div><div><span>청산</span>${esc(b.summary.exit)}</div>
         <div><span>한도</span>${esc(b.summary.limits)} · ${esc(b.summary.fee)}</div>
-      </div>
-      <div class="ab-kpis">
-        ${statLine('총자산', krw(a.total_krw))}
-        ${statLine('수익률', `<span class="${dirCls(a.return_pct)}">${pct(a.return_pct)}</span>`)}
-        ${statLine('현금', krw(a.cash_krw))}
-        ${statLine('승률', s.win_rate == null ? '—' : s.win_rate + '%')}
-        ${statLine('평균 수익 / 손실', `${pct(s.avg_win_pct)} / ${pct(s.avg_loss_pct)}`)}
-        ${statLine('손익비', s.payoff == null ? '—' : s.payoff.toFixed(2))}
-        ${statLine('MDD', s.mdd_pct == null ? '—' : pct(s.mdd_pct))}
-        ${statLine('청산 거래', `${s.trades}회${s.skipped ? ` · 계좌 사정으로 건너뜀 ${s.skipped}` : ''}`)}
-      </div>
-      <div class="ab-tabs" role="tablist" aria-label="봇 상세">
-        <button type="button" role="tab" class="ab-tab" id="abTab-pos" data-tab="pos" aria-controls="abPanel-pos">보유 포지션 <span class="ab-count">${b.positions.length}</span></button>
-        <button type="button" role="tab" class="ab-tab" id="abTab-trades" data-tab="trades" aria-controls="abPanel-trades">매매 이력 <span class="ab-count" id="abTradeCount">${b.trades_total ?? 0}</span></button>
-        <button type="button" role="tab" class="ab-tab" id="abTab-sig" data-tab="sig" aria-controls="abPanel-sig">신호 사후 검증 <span class="ab-count">${b.signals_total ?? b.signals.length}</span></button>
+        <div><span>성적</span>평균 수익 ${pct(s.avg_win_pct)} / 손실 ${pct(s.avg_loss_pct)} · 청산 ${s.trades || 0}회${s.skipped ? ` · 계좌 사정으로 건너뜀 ${s.skipped}` : ''}</div></div></details>
+      <div class="ab-tabbar">
+        <div class="ab-tabs" role="tablist" aria-label="봇 상세">
+          <button type="button" role="tab" class="ab-tab" id="abTab-pos" data-tab="pos" aria-controls="abPanel-pos">보유 포지션 <span class="ab-count">${b.positions.length}</span></button>
+          <button type="button" role="tab" class="ab-tab" id="abTab-trades" data-tab="trades" aria-controls="abPanel-trades">매매 이력 <span class="ab-count" id="abTradeCount">${b.trades_total ?? 0}</span></button>
+          <button type="button" role="tab" class="ab-tab" id="abTab-sig" data-tab="sig" aria-controls="abPanel-sig">신호 사후 검증 <span class="ab-count">${b.signals_total ?? b.signals.length}</span></button>
+        </div>
+        <div class="ab-sortslot" data-for="pos">${sortSel('abSortPos', [['ret', '수익률순'], ['value', '평가금액순'], ['days', '보유일순']])}</div>
+        <div class="ab-sortslot" data-for="trades">${sortSel('abSortTr', [['new', '최신순'], ['ret', '수익률순']])}</div>
+        <div class="ab-sortslot" data-for="sig">${sortSel('abSortSig', [['new', '최신순'], ['ret', '수익률순']])}</div>
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-pos" aria-labelledby="abTab-pos">
-      ${b.positions.length ? `<div class="ab-scroll"><table class="ab-table">
-        <thead><tr><th>종목</th><th>진입가</th><th>현재가</th><th>수익률</th><th>목표까지</th><th>손절까지</th><th>보유</th><th><span class="sr-only">모의 매수</span></th></tr></thead>
-        <tbody>${b.positions.map((p) => `<tr>
-          <td><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(p.ticker, p.name, 'sm') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(p.ticker)}">${esc(p.name || p.ticker)}</a> <span class="ab-muted">${esc(p.ticker)} · ${p.quantity}주</span></div></div></td>
-          <td>${px(p.entry_price, p.currency)}</td><td>${px(p.current_price, p.currency)}</td>
-          <td class="${dirCls(p.return_pct)}">${pct(p.return_pct)}</td>
-          <td>${pct(p.to_target_pct)} <span class="ab-muted">${px(p.target_price, p.currency)}</span></td>
-          <td>${pct(p.to_stop_pct)} <span class="ab-muted">${px(p.stop_price, p.currency)}</span></td>
-          <td>${p.holding_days ?? 0}일</td>
-          <td>${followLink(p.ticker, p.target_price, p.stop_price, p.currency, b.name, p.name)}</td></tr>`).join('')}</tbody></table></div>`
+      ${b.positions.length ? `<div class="ab-scroll"><table class="ab-table ab-compact">
+        <thead><tr><th>종목</th><th class="num">진입가</th><th class="num">수익률</th><th class="num">목표까지</th><th class="num">손절까지</th><th class="num">보유</th><th><span class="sr-only">모의 매수</span></th></tr></thead>
+        <tbody id="abPosBody"></tbody></table></div>`
         : '<p class="ab-empty">지금 보유 중인 종목이 없습니다. 신호가 나오면 다음 장 시가에 자동으로 매수합니다.</p>'}
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-trades" aria-labelledby="abTab-trades">
-        <div class="ab-filter" role="group" aria-label="매매 구분">
-          <button type="button" class="ab-fbtn active" data-side="all" aria-pressed="true">전체</button>
-          <button type="button" class="ab-fbtn" data-side="buy" aria-pressed="false">매수</button>
-          <button type="button" class="ab-fbtn" data-side="sell" aria-pressed="false">매도</button>
+        <div class="ah-period-tabs ab-filter" role="group" aria-label="매매 구분">
+          <button type="button" class="ah-period-btn ab-fbtn active" data-side="all" aria-pressed="true">전체</button>
+          <button type="button" class="ah-period-btn ab-fbtn" data-side="buy" aria-pressed="false">매수</button>
+          <button type="button" class="ah-period-btn ab-fbtn" data-side="sell" aria-pressed="false">매도</button>
         </div>
         <div id="abTrades"><div class="ab-muted">불러오는 중...</div></div>
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-sig" aria-labelledby="abTab-sig">
-      ${b.signals.length ? `<div class="ab-scroll"><table class="ab-table ab-log">
-        <thead><tr><th>신호일</th><th>종목</th><th>결과</th><th>진입 → 청산</th><th>수익률</th><th>신뢰도</th><th>근거</th></tr></thead>
-        <tbody>${b.signals.map((x) => `<tr>
-          <td>${esc(x.signal_date)}</td>
-          <td><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(x.ticker, x.name, 'sm') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(x.ticker)}">${esc(x.name || x.ticker)}</a>${x.account && x.account.status === 'SKIPPED' ? ` <span class="ab-muted" title="${esc(x.account.skip_reason)}">계좌 미체결</span>` : ''}</div></div></td>
-          <td>${badge(x.status, x.pnl_pct)}${x.status_reason ? `<div class="ab-muted ab-reason">${esc(x.status_reason)}</div>` : ''}
-            ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, x.market === 'KR' ? 'KRW' : 'USD', b.name, x.name) : ''}</td>
-          <td>${px(x.fill_price || x.entry_price, x.market === 'KR' ? 'KRW' : 'USD')} → ${x.exit_price ? px(x.exit_price, x.market === 'KR' ? 'KRW' : 'USD') : '—'}</td>
-          <td class="${dirCls(x.pnl_pct)}">${pct(x.pnl_pct)}</td>
-          <td>${x.confidence ?? '—'}</td>
-          <td><button type="button" class="ab-why" data-id="${x.id}">${x.has_ai ? 'AI 근거' : '근거'}</button></td></tr>`).join('')}</tbody></table>
+      ${b.signals.length ? `<div class="ab-scroll"><table class="ab-table ab-compact ab-log">
+        <thead><tr><th>신호일</th><th>종목</th><th>결과</th><th class="num">진입 → 청산</th><th class="num">수익률</th><th class="num">신뢰도</th><th>근거</th></tr></thead>
+        <tbody id="abSigBody"></tbody></table>
           ${(b.signals_total || 0) > b.signals.length ? `<p class="ab-muted" style="margin-top:6px">최근 ${b.signals.length}건만 표시합니다 (전체 ${b.signals_total}건).</p>` : ''}</div>`
         : `<p class="ab-empty">아직 이 봇의 신호가 없습니다. 다음 장 마감 배치에서 조건에 맞는 종목이 있으면 신호가 생깁니다.</p>`}
-      </div>
-      <p class="ab-disclaimer">${esc(b.disclaimer)}</p>`;
-    $('.ab-det-close', el).onclick = () => { el.classList.add('hidden'); document.querySelectorAll('.ab-card').forEach((c) => c.classList.remove('selected')); history.replaceState && history.replaceState(null, '', location.pathname); };
-    el.querySelectorAll('.ab-why').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
-    // 탭 (선택은 브라우저에 기억)
-    let tab = 'pos';
-    try { tab = localStorage.getItem('abTab') || 'pos'; } catch (e) {}
+      </div>`;
+    markSelected(key);
+    el.querySelectorAll('.ab-chipbtn').forEach((c) => c.addEventListener('click', () => openDetail(c.dataset.key, false)));
+    // 정렬
+    const by = {
+      ret: (x) => (x.return_pct ?? x.pnl_pct ?? -Infinity), value: (x) => (x.value_krw ?? -Infinity), days: (x) => (x.holding_days ?? -Infinity),
+    };
+    const sorted = (list, k, dateKey) => k === 'new' ? [...list].sort((p, q) => String(q[dateKey] || '').localeCompare(String(p[dateKey] || '')))
+      : [...list].sort((p, q) => by[k](q) - by[k](p));
+    const paintPos = () => { const tb = $('#abPosBody', el); if (tb) tb.innerHTML = posRows(sorted(b.positions, $('#abSortPos', el).value), b); };
+    const paintSig = () => {
+      const tb = $('#abSigBody', el);
+      if (!tb) return;
+      tb.innerHTML = sigRows(sorted(b.signals, $('#abSortSig', el).value, 'signal_date'), b);
+      tb.querySelectorAll('.ab-why').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
+    };
+    $('#abSortPos', el).addEventListener('change', paintPos);
+    $('#abSortSig', el).addEventListener('change', paintSig);
+    paintPos(); paintSig();
+    // 탭: 기본은 보유 포지션, 보유가 0건이면 매매 이력
     const tabs = [...el.querySelectorAll('.ab-tab')];
     const selectTab = (t, focus) => {
       tabs.forEach((x) => {
@@ -283,7 +337,7 @@
         $('#abPanel-' + x.dataset.tab, el).hidden = !on;
         if (on && focus) x.focus();
       });
-      try { localStorage.setItem('abTab', t); } catch (e) {}
+      el.querySelectorAll('.ab-sortslot').forEach((sl) => { sl.hidden = sl.dataset.for !== t; });
     };
     tabs.forEach((x, i) => {
       x.addEventListener('click', () => selectTab(x.dataset.tab));
@@ -293,17 +347,18 @@
         selectTab(n.dataset.tab, true);
       });
     });
-    selectTab(tabs.some((x) => x.dataset.tab === tab) ? tab : 'pos');
+    selectTab(b.positions.length ? 'pos' : 'trades');
     // 매매 이력
-    const T = { key, side: 'all', page: 1, items: [] };
+    const T = { key, side: 'all', page: 1, items: [], sort: 'new' };
     el.querySelectorAll('.ab-fbtn').forEach((f) => f.addEventListener('click', () => {
       el.querySelectorAll('.ab-fbtn').forEach((g) => { const on = g === f; g.classList.toggle('active', on); g.setAttribute('aria-pressed', on ? 'true' : 'false'); });
       Object.assign(T, { side: f.dataset.side, page: 1, items: [] });
       loadTrades(T);
     }));
+    $('#abSortTr', el).addEventListener('change', (e) => { T.sort = e.target.value; loadTrades(T, true); });
     loadTrades(T);
-    // 세로로만 이동한다. scrollIntoView 는 페이지가 조금이라도 넓으면 가로로도 밀어 표 왼쪽(종목·로고)이 잘려 보였다
-    if (scroll) window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY), left: 0, behavior: 'smooth' });
+    // 세로로만 이동 (scrollIntoView 는 가로로도 밀어 표 왼쪽이 잘렸다)
+    if (scroll) window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY - 70), left: 0, behavior: 'smooth' });
   }
 
   // ── 매매 이력 ─────────────────────────────────────────────────────────
@@ -313,9 +368,10 @@
   };
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
 
-  async function loadTrades(T) {
+  async function loadTrades(T, resortOnly) {
     const box = $('#abTrades');
     if (!box) return;
+    if (resortOnly && T.last) { paintTrades(T, T.last); return; }
     const req = (T.req = (T.req || 0) + 1);          // 필터를 빠르게 바꿔도 마지막 요청 결과만 그린다
     if (T.page === 1) {
       if (box.querySelector('.ab-trades, .ab-empty:not(.ab-loading)')) {
@@ -343,6 +399,13 @@
     const cnt = $('#abTradeCount');
     if (cnt) cnt.textContent = d.counts.all;
     T.items = T.items.concat(d.items);
+    T.last = d;
+    paintTrades(T, d);
+  }
+
+  function paintTrades(T, d) {
+    const box = $('#abTrades');
+    if (!box) return;
     const label = { all: '', buy: '매수 ', sell: '매도 ' }[T.side];
     if (!T.items.length) {
       box.innerHTML = d.counts.all
@@ -352,10 +415,10 @@
     }
     box.innerHTML = `
       <p class="ab-muted ab-trade-sum">전체 ${d.counts.all}건 · 매수 ${d.counts.buy} · 매도 ${d.counts.sell}</p>
-      <div class="ab-scroll"><table class="ab-table ab-trades">
+      <div class="ab-scroll"><table class="ab-table ab-compact ab-trades">
         <thead><tr><th>체결 일시</th><th>구분</th><th>종목</th><th class="num">수량</th><th class="num">체결 단가</th>
           <th class="num">거래 금액</th><th class="num">수수료</th><th class="num">실현 손익</th><th>사유 / 근거</th></tr></thead>
-        <tbody>${T.items.map((t) => {
+        <tbody>${(T.sort === 'ret' ? [...T.items].sort((p, q) => (q.pnl_pct ?? -Infinity) - (p.pnl_pct ?? -Infinity)) : T.items).map((t) => {
           const sell = t.side === 'sell';
           const ex = EXIT[t.exit_status];
           const reason = sell
@@ -365,7 +428,7 @@
           return `<tr>
             <td data-label="체결 일시">${esc(fmtTime(t.time))}</td>
             <td data-label="구분"><span class="ab-side ${sell ? 'ab-side-sell' : 'ab-side-buy'}">${sell ? '매도' : '매수'}</span></td>
-            <td data-label="종목"><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(t.ticker, t.name, 'sm') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(t.ticker)}">${esc(t.name || t.ticker)}</a> <span class="ab-muted">${esc(t.ticker)}</span></div></div></td>
+            <td data-label="종목">${logoId(t.ticker, t.name)}</td>
             <td class="num" data-label="수량">${Number(t.quantity).toLocaleString('ko-KR')}주</td>
             <td class="num" data-label="체결 단가">${px(t.price, t.currency)}${t.currency === 'USD' && t.exchange_rate ? `<div class="ab-muted">환율 ${Math.round(t.exchange_rate).toLocaleString('ko-KR')}</div>` : ''}</td>
             <td class="num" data-label="거래 금액">${Math.round(t.amount_krw).toLocaleString('ko-KR')}원</td>
@@ -379,6 +442,8 @@
     const more = $('#abMore');
     if (more) more.onclick = () => { more.disabled = true; more.textContent = '불러오는 중...'; T.page += 1; loadTrades(T); };
   }
+
+  function statLine(k, v) { return `<div class="ab-stat"><span>${k}</span><strong>${v}</strong></div>`; }
 
   // ── 근거 모달 ─────────────────────────────────────────────────────────
   const modal = $('#abModal');
@@ -394,7 +459,7 @@ function followLink(ticker, target, stop, currency, botName, name) {
   if (target > 0) q.set('target', r(target));
   if (stop > 0) q.set('stop', r(stop));
   q.set('memo', `[${botName} 신호]`);
-  return `<a class="ab-follow" href="/trading?${q.toString()}" aria-label="${esc(name || ticker)} 따라 사기 (모의 매수)">따라 사기</a>`;
+  return `<a class="ab-follow" href="/trading?${q.toString()}" aria-label="${esc(name || ticker)} 따라 사기 (모의 매수)"><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8M15 7h6v6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>따라 사기</a>`;
 }
 
 // 진입 근거 모달: 내부 키 → 한국어 라벨. bot_engine.fundamentals_for() 의 missing 은 지금
@@ -444,9 +509,17 @@ async function openWhy(id) {
 
   // ── 시작 ──────────────────────────────────────────────────────────────
   document.querySelectorAll('.ab-period').forEach((b) => b.addEventListener('click', () => loadChart(b.dataset.p)));
+  // 'ⓘ 실행 로그 · 규칙' 토글
+  const logBtn = $('#abLogBtn'), logBox = $('#abLog');
+  logBtn.addEventListener('click', () => {
+    const open = logBox.hidden;
+    logBox.hidden = !open;
+    logBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
   loadOverview().then(() => {
     const k = decodeURIComponent(location.hash.slice(1));
-    if (k && OV.bots.some((b) => b.key === k)) openDetail(k, true);
+    const key = (k && OV.bots.some((b) => b.key === k)) ? k : (OV.bots[0] && OV.bots[0].key);
+    if (key) openDetail(key, false);
   }).catch(() => { $('#abCards').innerHTML = '<div class="card ab-skel">불러오지 못했습니다. 새로고침해 주세요.</div>'; });
   loadChart('ALL').catch(() => { $('#abChartNote').textContent = '차트를 불러오지 못했습니다.'; });
 })();
