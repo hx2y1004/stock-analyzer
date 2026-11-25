@@ -45,8 +45,14 @@ SEC_ITEMS = {"1.01": ("중요 계약 체결", "positive"), "2.01": ("인수·자
              "2.02": ("실적 발표", "neutral")}
 # 최초 백필: 시장별 DB 가 0건인 프로세스 첫 tick 에 최근 14일을 알림 없이 채운다 (여러 tick 에 나눠, tick 마다 TICK_BUDGET 안에서)
 BACKFILL_DAYS = 14
-DART_BACKFILL_TYPES = ("B", "I")      # 주요사항보고(자기주식 취득·유상증자) · 거래소공시(공급계약·주식소각)
-DART_BACKFILL_PAGES = 30              # 유형마다 최대 30쪽(100건씩) → 최대 60회
+DART_BACKFILL_TYPES = ("B", "I", "D")  # 주요사항보고(자기주식 취득·유상증자) · 거래소공시(공급계약·주식소각) · 지분공시(임원·주요주주 소유)
+DART_BACKFILL_PAGES = 30              # 유형마다 최대 30쪽(100건씩)
+DART_BACKFILL_PAGES_BY_TYPE = {"D": 60}   # 지분공시는 하루 수백 건이라 14일치를 보려면 쪽이 더 필요
+DART_ELESTOCK_PER_RUN = 15            # 임원·주요주주 소유보고(elestock.json) 호출 상한: 정기 수집 한 번에
+DART_ELESTOCK_BACKFILL_PER_RUN = 40   # 백필 한 tick 에 (남은 후보는 다음 tick 에 이어서)
+INSIDER_MIN_KRW = 30_000_000          # 추정 매수 금액(증감 주수 × 현재가)이 이보다 작으면 노이즈로 제외
+INSIDER_MIN_SHARES = 100              # 현재가를 모를 때는 증감 주수 기준
+INSIDER_PENDING_MAX = 300             # 정기 수집 대기열 상한 (API 오류가 길어져도 무한히 쌓이지 않게)
 DART_BACKFILL_DOCS = 30               # 공급계약 원문(계약금액·매출 대비 %) 조회 상한
 SEC_BACKFILL_FORM4 = 600              # Form 4 XML 조회 상한 (전체)
 SEC_BACKFILL_FORM4_PER_CO = 10        # 회사마다 최신 Form 4 최대 10건
@@ -229,6 +235,7 @@ def to_dict(r):
 # ══ 한국: OpenDART ═══════════════════════════════════════════════════════════════
 DART_LIST = "https://opendart.fss.or.kr/api/list.json"
 DART_DOC = "https://opendart.fss.or.kr/api/document.xml"
+DART_ELESTOCK = "https://opendart.fss.or.kr/api/elestock.json"
 _dart_seen = {"day": None, "ids": set()}         # 오늘 이미 훑은 접수번호 (대상 아닌 공시 포함) → 다음 조회에서 거기서 멈춤
 
 
@@ -259,6 +266,8 @@ def classify_dart(report_nm):
 def fmt_krw(v):
     if v is None:
         return None
+    if v < 0:
+        return "-" + fmt_krw(-v)
     if v >= 1e12:                                   # 1조 2,345억원
         jo, eok = int(v // 1e12), int(round((v % 1e12) / 1e8))
         if eok >= 10000:
@@ -266,6 +275,8 @@ def fmt_krw(v):
         return f"{jo:,}조원" if eok == 0 else f"{jo:,}조 {eok:,}억원"
     if v >= 1e8:
         return f"{v / 1e8:,.0f}억원"
+    if v >= 1e4:                                    # 4,500만원
+        return f"{v / 1e4:,.0f}만원"
     return f"{v:,.0f}원"
 
 
@@ -310,6 +321,132 @@ def _dart_contract_detail(key, rcept_no, get):
         return {}
 
 
+# ── 한국 내부자 매수: 임원·주요주주특정증권등소유상황보고서 → elestock.json 증감 수 ──
+_INSIDER_REPORTS = ("임원·주요주주특정증권등소유상황보고서", "임원주요주주특정증권등소유상황보고서")
+_dart_ins_pending = []          # 정기 수집에서 호출 상한에 걸려 다음 run 으로 넘긴 후보 [{"it", "hit", "tries"}]
+
+
+def is_insider_report(report_nm):
+    n = _norm_report(report_nm)
+    return any(k in n for k in _INSIDER_REPORTS)
+
+
+def _int(v):
+    """'1,234' · '-500' · '+30' → int, '-'·빈 값 → None."""
+    t = re.sub(r"[,\s]", "", str(v if v is not None else ""))
+    if not re.fullmatch(r"[+-]?\d+(?:\.\d+)?", t):
+        return None
+    return int(float(t))
+
+
+def _clean(v):
+    t = str(v or "").strip()
+    return "" if t in ("-", "없음", "해당없음", "해당사항없음") else t
+
+
+def _kst_at(it, day):
+    """목록 항목의 접수일 → disclosed_at (UTC naive). 오늘이면 지금 시각, 과거면 그날 09:00 KST."""
+    try:
+        d0 = datetime.strptime(str(it.get("rcept_dt") or ""), "%Y%m%d").date()
+    except ValueError:
+        d0 = day
+    return _utcnow() if d0 == day else datetime(d0.year, d0.month, d0.day, 9, tzinfo=KST).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def insider_event(it, hit, row, price, day):
+    """목록 1건 + elestock 행 → insider_buy 이벤트 | None.
+    특정증권등 소유 증감 수(sp_stock_lmp_irds_cnt) 가 양수(순매수)이고, 추정 금액(증감 주수 × 현재가)이 3,000만 원 이상
+    (현재가를 모르면 100주 이상)일 때만."""
+    irds = _int(row.get("sp_stock_lmp_irds_cnt"))
+    if not irds or irds <= 0:
+        return None
+    est = irds * price if price else None
+    if est is not None and est < INSIDER_MIN_KRW:
+        return None
+    if est is None and irds < INSIDER_MIN_SHARES:
+        return None
+    t, nm = hit
+    pos = _clean(row.get("isu_exctv_ofcps")) or _clean(row.get("isu_main_shrholdr")) or "임원·주요주주"
+    who = _clean(row.get("repror")) or _clean(it.get("flr_nm"))
+    head = f"{pos} {who}".strip()
+    fix = "정정" in _norm_report(it.get("report_nm"))[:8]
+    rate = _clean(row.get("sp_stock_lmp_rate"))
+    extra = [f"추정 약 {fmt_krw(est)}" if est is not None else "", f"지분 {rate}%" if rate else ""]
+    extra = ", ".join(x for x in extra if x)
+    rno = str(it.get("rcept_no"))
+    return {"market": "KR", "ticker": t, "name": it.get("corp_name") or nm, "source": "DART", "category": "insider_buy",
+            "sentiment": "positive", "title": f"{head} 지분 매수" + (" (정정)" if fix else ""),
+            "summary": f"{head} +{irds:,}주" + (f" ({extra})" if extra else ""),
+            "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rno}",
+            "external_id": f"DART:{rno}", "disclosed_at": _kst_at(it, day)}
+
+
+def _elestock_rows(key, corp_code, get):
+    """elestock.json → 행 목록 | None(오류). 013(데이터 없음)은 빈 목록."""
+    try:
+        j = get(DART_ELESTOCK, params={"crtfc_key": key, "corp_code": corp_code}, timeout=10).json()
+    except Exception as e:
+        log(f"DART elestock 실패 {corp_code}: {type(e).__name__}")
+        return None
+    st = str(j.get("status") or "")
+    if st == "000":
+        return j.get("list") or []
+    if st == "013":
+        return []
+    log(f"DART elestock 응답 {st} {j.get('message') or ''}".strip())
+    return None
+
+
+def _kr_prices():
+    """섹터맵 스냅샷(이미 메모리·DB 에 있는 값)의 한국 종목 현재가 {ticker: price}. 없으면 빈 dict (네트워크 호출 없음)."""
+    fn = D.get("kr_prices")
+    if not fn:
+        return {}
+    try:
+        return fn() or {}
+    except Exception as e:
+        log(f"현재가 읽기 실패: {e}")
+        return {}
+
+
+def process_insider(key, get, queue, budget, day, deadline=None, cache=None, prices=None, retry=False):
+    """대기열(queue, 앞에서부터) 의 임원·주요주주 보고서 후보를 처리 → (이벤트 목록, elestock 호출 수).
+    같은 corp_code 는 이번 처리에서 한 번만 부른다(cache). 호출 상한(budget)·시간이 다 되면 남은 후보는 queue 에 그대로 둔다.
+    retry=True(정기 수집)면 elestock 에 아직 이 접수번호가 안 보일 때 다음 run 에 2번까지 다시 본다."""
+    cache = {} if cache is None else cache
+    out, calls, keep = [], 0, []
+    price_map = prices
+    while queue:
+        c = queue.pop(0)
+        it = c["it"]
+        cc = str(it.get("corp_code") or "").strip()
+        if not cc:
+            continue
+        if cc not in cache:
+            if calls >= budget or (deadline and time.time() > deadline):
+                keep.append(c)
+                continue
+            cache[cc] = _elestock_rows(key, cc, get)
+            calls += 1
+        rows = cache[cc]
+        if rows is None:                               # API 오류 → 다음에 다시
+            keep.append(c)
+            continue
+        rno = str(it.get("rcept_no"))
+        row = next((r for r in rows if str(r.get("rcept_no")) == rno), None)
+        if row is None:
+            if retry and c.get("tries", 0) < 2:
+                keep.append({**c, "tries": c.get("tries", 0) + 1})
+            continue
+        if price_map is None:
+            price_map = _kr_prices()
+        ev = insider_event(it, c["hit"], row, price_map.get(c["hit"][0]), day)
+        if ev:
+            out.append(ev)
+    queue.extend(keep)
+    return out, calls
+
+
 def _dart_code_map(tg):
     code2t = {}
     for t, nm in tg["KR"].items():
@@ -333,11 +470,7 @@ def _dart_event(it, hit, key, get, day, want_doc):
         parts = [f"계약금액 {fmt_krw(det['amount'])}" if det.get("amount") else "",
                  f"최근 매출 대비 {det['ratio']:g}%" if det.get("ratio") is not None else ""]
         summary = " · ".join(p for p in parts if p) or summary
-    try:
-        d0 = datetime.strptime(str(it.get("rcept_dt") or ""), "%Y%m%d").date()
-    except ValueError:
-        d0 = day
-    at = _utcnow() if d0 == day else datetime(d0.year, d0.month, d0.day, 9, tzinfo=KST).astimezone(timezone.utc).replace(tzinfo=None)
+    at = _kst_at(it, day)
     return {"market": "KR", "ticker": t, "name": it.get("corp_name") or nm, "source": "DART", "category": cat,
             "sentiment": senti, "title": label, "summary": summary,
             "source_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rno}",
@@ -354,21 +487,44 @@ def _bf_fail(m, msg, fatal=False):
     log(f"{m} 백필 {'중단' if st.get('state') == 'error' else '재시도 예정'}: {msg}")
 
 
+def _bf_pages(ty):
+    return DART_BACKFILL_PAGES_BY_TYPE.get(ty, DART_BACKFILL_PAGES)
+
+
+def _bf_types(st):
+    return tuple(st.get("types") or DART_BACKFILL_TYPES)
+
+
 def _dart_backfill(key, tg, now, deadline, get, emit):
-    """최근 14일 (bgn_de = 오늘 - 14일 ~ end_de = 오늘). 공시유형 B·I 로 나눠 유형마다 최대 30쪽.
-    한 쪽을 받을 때마다 찾은 공시를 바로 저장(emit)한다. 시간 예산이 끝나면 위치를 _bf["KR"] 에 남기고 다음 tick 에 이어서."""
+    """최근 14일 (bgn_de = 오늘 - 14일 ~ end_de = 오늘). 공시유형(기본 B·I·D, _bf["KR"]["types"] 로 지정 가능)마다 최대 30쪽(D 60쪽).
+    한 쪽을 받을 때마다 찾은 공시를 바로 저장(emit)한다. 임원·주요주주 보고서는 대기열(st["ins"])에 넣고 tick 마다
+    elestock 40회까지 확인. 시간 예산이 끝나면 위치를 _bf["KR"] 에 남기고 다음 tick 에 이어서."""
     st = _bf["KR"]
     day = now.astimezone(KST).date()
+    types = _bf_types(st)
     st.setdefault("bgn", (day - timedelta(days=BACKFILL_DAYS)).strftime("%Y%m%d"))
     st.setdefault("end", day.strftime("%Y%m%d"))
     st.setdefault("ti", 0); st.setdefault("page", 1); st.setdefault("docs", 0); st.setdefault("calls", 0)
-    st.setdefault("pages_done", 0)
-    st["total"] = len(DART_BACKFILL_TYPES) * DART_BACKFILL_PAGES
+    st.setdefault("pages_done", 0); st.setdefault("ins", []); st.setdefault("ins_calls", 0)
+    st.setdefault("total", sum(_bf_pages(t) for t in types))
     code2t = _dart_code_map(tg)
-    while st["ti"] < len(DART_BACKFILL_TYPES):
+    ins = {"left": DART_ELESTOCK_BACKFILL_PER_RUN, "cache": {}, "prices": None}
+
+    def drain():
+        if not st["ins"] or ins["left"] <= 0:
+            return
+        if ins["prices"] is None:
+            ins["prices"] = _kr_prices()
+        evs, n = process_insider(key, get, st["ins"], ins["left"], day, deadline=deadline, cache=ins["cache"], prices=ins["prices"])
+        ins["left"] -= n
+        st["ins_calls"] += n
+        emit(evs)
+
+    drain()                                            # 지난 tick 에서 남은 내부자 후보부터
+    while st["ti"] < len(types):
         if deadline and time.time() > deadline:
             return                                     # 다음 tick 에 이어서
-        ty = DART_BACKFILL_TYPES[st["ti"]]
+        ty = types[st["ti"]]
         try:
             r = get(DART_LIST, params={"crtfc_key": key, "bgn_de": st["bgn"], "end_de": st["end"], "pblntf_ty": ty,
                                        "page_no": st["page"], "page_count": 100}, timeout=10)
@@ -391,6 +547,9 @@ def _dart_backfill(key, tg, now, deadline, get, emit):
             hit = code2t.get(str(it.get("stock_code") or "").strip().upper())
             if not hit:
                 continue
+            if is_insider_report(it.get("report_nm")):
+                st["ins"].append({"it": it, "hit": hit})
+                continue
             cls = classify_dart(it.get("report_nm"))
             want_doc = bool(cls) and cls[:2] == ("contract", "positive") and st["docs"] < DART_BACKFILL_DOCS
             st["docs"] += int(want_doc)
@@ -398,18 +557,22 @@ def _dart_backfill(key, tg, now, deadline, get, emit):
             if ev:
                 evs.append(ev)
         emit(evs)                                      # 이 쪽에서 찾은 건 지금 바로 DB 에
+        drain()
         st["pages_done"] += 1
-        if not items or len(items) < 100 or st["page"] >= DART_BACKFILL_PAGES:
-            st["total"] -= DART_BACKFILL_PAGES - st["page"]       # 이 유형은 끝 → 남은 쪽 수를 전체에서 뺀다
+        if not items or len(items) < 100 or st["page"] >= _bf_pages(ty):
+            st["total"] -= _bf_pages(ty) - st["page"]             # 이 유형은 끝 → 남은 쪽 수를 전체에서 뺀다
             st["ti"] += 1; st["page"] = 1
         else:
             st["page"] += 1
             time.sleep(0.1)
+    drain()
+    if st["ins"]:
+        return                                         # 내부자 후보가 남음 → 다음 tick 에 elestock 이어서
     st["done"] = True
 
 
 def collect_dart(tg=None, now=None, deadline=None, get=None, backfill=False, emit=None):
-    """오늘(한국 날짜) 공시목록 → 대상 종목의 공급계약·자사주·유상증자 이벤트 목록.
+    """오늘(한국 날짜) 공시목록 → 대상 종목의 공급계약·자사주·유상증자 · 임원·주요주주 순매수(insider_buy) 이벤트 목록.
     backfill=True 면 최근 14일 (진행 상태는 _bf["KR"], 끝나면 _bf["KR"]["done"] = True)."""
     key = os.environ.get("DART_API_KEY", "").strip()
     if not key:
@@ -452,6 +615,9 @@ def collect_dart(tg=None, now=None, deadline=None, get=None, backfill=False, emi
             hit = code2t.get(str(it.get("stock_code") or "").strip().upper())
             if not hit:
                 continue
+            if is_insider_report(it.get("report_nm")):
+                _dart_ins_pending.append({"it": it, "hit": hit, "tries": 0})
+                continue
             cls = classify_dart(it.get("report_nm"))
             want_doc = bool(cls) and cls[:2] == ("contract", "positive") and docs < DART_DOC_PER_RUN
             docs += int(want_doc)
@@ -461,6 +627,10 @@ def collect_dart(tg=None, now=None, deadline=None, get=None, backfill=False, emi
         if not items or len(items) < 100 or (not cold and len(fresh) < len(items)):
             break                                     # 마지막 페이지 · 이미 본 구간에 닿음
         time.sleep(0.1)
+    if _dart_ins_pending:
+        del _dart_ins_pending[:-INSIDER_PENDING_MAX]   # 너무 쌓이면 오래된 것부터 버린다
+        evs, _ = process_insider(key, get, _dart_ins_pending, DART_ELESTOCK_PER_RUN, day, deadline=deadline, retry=True)
+        out.extend(evs)
     return out
 
 
@@ -1336,6 +1506,8 @@ def _run_efts_backfill(now, tg, budget=None, get=None):
 
 # 나중에 추가된 분류: 시장 전체에 공시가 있어도 이 분류가 하나도 없으면 14일 소급 백필 (미국 유상증자·자사주는 PR #68 에 추가)
 BACKFILL_IF_MISSING = {"US": ("offering", "buyback")}
+# 한국 내부자 매수(PR #88): 최근 14일에 KR insider_buy 가 0건이면 지분공시(D)만 14일 소급 (B·I 는 이미 채워져 있으므로)
+KR_INSIDER_BACKFILL_TYPES = ("D",)
 
 
 def _check_backfill():
@@ -1350,6 +1522,10 @@ def _check_backfill():
             cats = BACKFILL_IF_MISSING.get(m)
             missing = (not empty and bool(cats)
                        and E.query.filter(E.market == m, E.category.in_(cats)).first() is None)
+            ins_missing = False
+            if m == "KR" and not empty:
+                since = _utcnow() - timedelta(days=BACKFILL_DAYS)
+                ins_missing = E.query.filter(E.market == "KR", E.category == "insider_buy", E.disclosed_at >= since).first() is None
         except Exception as e:
             D["db"].session.rollback()
             log(f"백필 확인 실패 {m}: {e}")
@@ -1358,6 +1534,8 @@ def _check_backfill():
             start_backfill([m], reason="DB 0건")
         elif missing:
             start_backfill([m], reason=f"{'·'.join(cats)} 0건 → 새 분류 소급")
+        elif ins_missing:
+            start_backfill([m], reason=f"최근 {BACKFILL_DAYS}일 내부자 매수 0건 → 지분공시(D) 소급", types=KR_INSIDER_BACKFILL_TYPES)
         else:
             _backfilled[m] = True
 
@@ -1367,18 +1545,21 @@ def _bf_status(m):
     st = _bf[m]
     state = st.get("state") or ("done" if st.get("done") else "running")
     if m == "KR":
-        prog = {"done": st.get("pages_done", 0), "total": st.get("total", len(DART_BACKFILL_TYPES) * DART_BACKFILL_PAGES), "unit": "쪽"}
+        prog = {"done": st.get("pages_done", 0), "total": st.get("total", sum(_bf_pages(t) for t in _bf_types(st))), "unit": "쪽"}
     else:
         prog = {"done": st.get("i", 0), "total": st.get("total", 0), "unit": "종목"}
     return {"state": state, "progress": prog, "saved": st.get("saved", 0), "note": st.get("note"),
             "started": st.get("started"), "finished": st.get("finished")}
 
 
-def start_backfill(markets=("KR", "US"), reason="수동"):
-    """14일 백필을 (다시) 시작한다. 진행 상태를 비우고 다음 run 부터 이어서 처리."""
+def start_backfill(markets=("KR", "US"), reason="수동", types=None):
+    """14일 백필을 (다시) 시작한다. 진행 상태를 비우고 다음 run 부터 이어서 처리.
+    types: 한국 공시유형만 골라서 (예: ("D",) = 지분공시만). 없으면 DART_BACKFILL_TYPES 전부."""
     for m in markets:
         _backfilled[m] = False
         _bf[m] = {"started": _utcnow().isoformat() + "Z", "saved": 0}
+        if types and m == "KR":
+            _bf[m]["types"] = tuple(types)
         STATUS[m]["backfill"] = _bf_status(m)
         log(f"{m} 최근 {BACKFILL_DAYS}일 백필 시작 ({reason})")
 
