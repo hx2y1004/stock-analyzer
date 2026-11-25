@@ -6960,7 +6960,7 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 }
 
 /* ══ 모바일 UI 2단계 (PR #93) — 모두 ≤767px. PC(≥768px) 는 그대로 ══════════════════════ */
-.md-more-btn, .sc-mfilter, .sc-basket-m, .sc-go-m { display: none; }
+.sc-mfilter, .sc-basket-m, .sc-go-m { display: none; }
 @media (max-width: 767px) {
   /* ── 홈: 빠른 선택 칩 1줄 가로 스크롤 + 오른쪽 끝 흐림 (끝까지 밀면 흐림 해제) ── */
   .quick-tickers { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; overscroll-behavior-x: contain;
@@ -6975,13 +6975,6 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .md-head-main > .card-title { grid-column: 1; grid-row: 1; }
   .md-head-main #dashMarketToggle { grid-column: 2; grid-row: 1; }
   .md-head-main #mdStatus { grid-column: 1 / -1; grid-row: 2; font-size: 11.5px; }
-  /* 핵심 4개만 기본, 나머지는 '전체 지표 보기' */
-  .md-card-main:not(.md-all) #mdIndices > .md-idx:nth-child(n+5) { display: none; }
-  .md-card-main:not(.md-all) #mdMacro { display: none; }
-  .md-more-btn { display: block; width: 100%; margin-top: 10px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
-    background: transparent; color: var(--text2); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
-  .md-more-btn:hover { color: var(--text); background: var(--bg3); }
-  .md-more-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* ── 홈: 내 포트폴리오 버튼 1줄 균등 폭 ── */
   .portfolio-top { flex-wrap: wrap; gap: 8px; }
   .portfolio-top .portfolio-title-area:empty, .portfolio-top .portfolio-title-area:not(:has(:not(.hidden))) { display: none; }
@@ -7030,4 +7023,35 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .ps-val { font-size: 13.5px; white-space: nowrap; }
   .portfolio-summary .ps-alloc { margin-top: 8px; }
   .portfolio-summary .ps-stats { margin-top: 8px; padding-top: 8px; font-size: 12px; }
+}
+
+/* ── 모의투자 보유 종목: 부드러운 카드 톤 (PR #94, 구성 그대로 · PC·모바일 공통) ───────────── */
+/* 상단 컨트롤: 정렬 · 방향 · 원/$ */
+.pos-toggles .hsort-sel, .pos-toggles .hsort-dir { border-radius: 10px; }
+.pos-toggles .ah-period-tabs { border-radius: 10px; }
+.pos-toggles .ah-period-btn { border-radius: 8px; }
+/* 종목별 액션 버튼 */
+.positions-list .trade-action-btn { border-radius: 8px; }
+/* PC: 표 전체를 둥근 테두리 박스로, 머리행은 bg3, 손절↔익절 구간은 서브 박스 */
+@media (min-width: 769px) {
+  .positions-list .tpt { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: rgba(13, 17, 23, .25); }
+  .positions-list .tpt .tpt-head { background: var(--bg3); border-bottom: 1px solid var(--border); position: static; }
+  .positions-list .tpt .tpt-row { border-radius: 0; border-bottom: 1px solid var(--border); }
+  .positions-list .tpt .tpt-row:last-child { border-bottom: 0; }
+  .positions-list .tpt .tpt-x { background: var(--bg3); border-radius: 10px; padding: 7px 10px; }
+}
+/* 모바일: 종목마다 둥근 카드 · 수량/매입→현재 · 손익 줄은 bg3 서브 박스 · 카드 사이 10px */
+@media (max-width: 768px) {
+  .positions-list .tpt { gap: 10px; }
+  .positions-list .tpt .tpt-row {
+    border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: rgba(13, 17, 23, .35);
+    column-gap: 0; row-gap: 8px;
+  }
+  .positions-list .tpt .tpt-row:last-child { border-bottom: 1px solid var(--border); }
+  .positions-list .tpt .pft-val { padding-left: 10px; }
+  .positions-list .tpt .pft-qty { background: var(--bg3); border-radius: 10px 0 0 10px; padding: 8px 6px 8px 10px; align-self: stretch; align-items: center; }
+  .positions-list .tpt .pft-pl { background: var(--bg3); border-radius: 0 10px 10px 0; padding: 8px 10px 8px 6px; align-self: stretch; align-items: center; }
+  .positions-list .tpt .tpt-acts { column-gap: 8px; }
+  .positions-list .tpt .tpt-acts .trade-action-btn { height: 36px; border-radius: 10px; margin: 0; }
+  .positions-list .tpt .tpt-note-line:empty { display: none; }
 }
