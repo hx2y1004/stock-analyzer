@@ -2251,10 +2251,43 @@ def _dart_parse_amount(text):
         return None
 
 
-def fetch_dart_quarterly(krx_code: str) -> dict:
-    """DART API → 최근 2~3년 분기 매출·영업이익 (단일 분기 기준).
+def dart_single_quarters(raw):
+    """DART 손익 항목 → 분기 단독(3개월) 금액 {"YYYY-MM": KRW}. 네트워크 없음.
 
-    DART 는 보고서가 누적이므로 단일 분기 = 현재 분기 - 직전 분기.
+    raw: {(year, q): (thstrm_amount, thstrm_add_amount)}  q = 1(11013) · 2(11012) · 3(11014) · 4(11011 사업보고서)
+      - 분기·반기 보고서(q=1~3): thstrm_amount = 그 분기 3개월 단독, thstrm_add_amount = 연초부터 누적.
+        → 누적값이 있으면 '누적(q) - 누적(q-1)' 로 단독을 구하고(정의에 상관없이 맞는 값), 없으면 thstrm_amount 를 그대로 단독으로 쓴다.
+          예전 코드는 thstrm_amount 를 누적으로 보고 직전 분기를 또 빼서
+          삼성전자 영업이익이 26.Q2 89.5조 → 32.3조, 26.Q3 107.4조 → 17.9조 로 나왔다 (2026-11 수정).
+      - 사업보고서(q=4): thstrm_amount = 연간 → 4분기 단독 = 연간 - 3분기 누적.
+        3분기 누적을 모르면(Q1~Q3 단독 합도 없으면) 4분기는 비운다 (연간 값을 4분기로 잘못 그리지 않게).
+    """
+    month = {1: "03", 2: "06", 3: "09", 4: "12"}
+    cum, single = {}, {}
+    for (y, q), (amt, add) in raw.items():
+        if q == 4:
+            cum[(y, 4)] = amt
+        elif q == 1:
+            cum[(y, 1)] = add if add is not None else amt
+            single[(y, 1)] = amt
+        else:
+            if add is not None:
+                cum[(y, q)] = add
+            single[(y, q)] = amt                     # 분·반기 보고서의 당기금액 = 3개월 단독
+    for (y, q) in list(single):
+        if q in (2, 3) and (y, q) in cum and (y, q - 1) in cum:
+            single[(y, q)] = cum[(y, q)] - cum[(y, q - 1)]
+    for (y, q), annual in [(k, v) for k, v in cum.items() if k[1] == 4]:
+        q3 = cum.get((y, 3))
+        if q3 is None and all((y, k) in single for k in (1, 2, 3)):
+            q3 = single[(y, 1)] + single[(y, 2)] + single[(y, 3)]
+        if q3 is not None:
+            single[(y, 4)] = annual - q3
+    return {f"{y}-{month[q]}": v for (y, q), v in single.items()}
+
+
+def fetch_dart_quarterly(krx_code: str) -> dict:
+    """DART API → 최근 2~3년 분기 매출·영업이익 (분기 단독 3개월 기준, 변환은 dart_single_quarters).
 
     Returns:
         {"rev_act": {"YYYY-MM": KRW}, "oi_act": {"YYYY-MM": KRW}}
@@ -2273,8 +2306,8 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
         return {"rev_act": {}, "oi_act": {}}
     app.logger.debug(f"[DART] {krx_code}: corp_code={corp_code}")
 
-    rev_cum = {}   # (year, qtr_idx) → cumulative revenue
-    oi_cum  = {}
+    rev_raw = {}   # (year, qtr_idx) → (thstrm_amount, thstrm_add_amount)
+    oi_raw  = {}
 
     # 분기 보고서 코드
     quarters = [(1, "11013", "03"), (2, "11012", "06"),
@@ -2313,11 +2346,12 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
                         amt = _dart_parse_amount(item.get("thstrm_amount", ""))
                         if amt is None:
                             continue
-                        if nm in ("매출액", "수익(매출액)", "영업수익", "매출"):
-                            rev_cum[(y, qi)] = amt
+                        add = _dart_parse_amount(item.get("thstrm_add_amount", ""))
+                        if nm in ("매출액", "수익(매출액)", "영업수익", "매출") and (y, qi) not in rev_raw:
+                            rev_raw[(y, qi)] = (amt, add)
                             rev_found = True
-                        elif nm in ("영업이익", "영업이익(손실)"):
-                            oi_cum[(y, qi)] = amt
+                        elif nm in ("영업이익", "영업이익(손실)") and (y, qi) not in oi_raw:
+                            oi_raw[(y, qi)] = (amt, add)
                             oi_found = True
                     if rev_found or oi_found:
                         app.logger.debug(
@@ -2336,26 +2370,9 @@ def fetch_dart_quarterly(krx_code: str) -> dict:
                         f"[DART] {krx_code} {y}Q1 데이터 없음 (5월인데도 미공시?)"
                     )
 
-    # 누적 → 단일 분기 변환
-    def _to_quarterly(cum_map):
-        out = {}
-        for (y, qi), v in cum_map.items():
-            month = {1: "03", 2: "06", 3: "09", 4: "12"}[qi]
-            period = f"{y}-{month}"
-            if qi == 1:
-                out[period] = v   # Q1 은 이미 단일
-            else:
-                prev = cum_map.get((y, qi - 1))
-                if prev is not None:
-                    out[period] = v - prev
-                else:
-                    # 직전 분기 데이터 없으면 누적 그대로 (마지막 보고서면 ≈ 전체)
-                    out[period] = v
-        return out
-
     result = {
-        "rev_act": _to_quarterly(rev_cum),
-        "oi_act":  _to_quarterly(oi_cum),
+        "rev_act": dart_single_quarters(rev_raw),
+        "oi_act":  dart_single_quarters(oi_raw),
     }
     app.logger.debug(
         f"[DART] {krx_code}: rev_periods={sorted(result['rev_act'].keys())[-4:]} "
@@ -3778,7 +3795,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v9"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v10"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
