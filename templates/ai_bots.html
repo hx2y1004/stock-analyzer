@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=112" />
+  <link rel="stylesheet" href="/static/css/style.css?v=113" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -57,7 +57,7 @@
         <button type="button" class="ab-alert-btn" onclick="window.SANotify ? SANotify.openSettings() : (location.href='/auth/google')">🔔 신호 알림 받기</button>
       </div>
     </section>
-    <section class="card ab-log" id="abLog" hidden aria-label="실행 로그와 진행 규칙"></section>
+    <section class="card ab-runlog" id="abLog" hidden aria-label="실행 로그와 진행 규칙"></section>
     <div class="ab-statusbar" role="note">
       <span id="abNext" class="ab-next">다음 배치 —</span>
       <span class="ab-status-note">모의 검증용 데이터 · 투자 권유 아님</span>
@@ -103,6 +103,6 @@
   <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=8"></script>
-  <script src="/static/js/ai_bots.js?v=12"></script>
+  <script src="/static/js/ai_bots.js?v=13"></script>
 </body>
 </html>

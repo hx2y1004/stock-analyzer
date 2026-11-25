@@ -57,6 +57,14 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### /ai-bots 2단 높이 맞춤 (PR #86)
+- ≥1100px: `.ab-duo` `align-items: stretch`, 두 카드 `flex column; height 100%`. 행 높이는 왼쪽 차트 카드가 정함(최소 460px) —
+  오른쪽 상세는 `contain: size` 라 높이에 기여하지 않고 늘어나기만 함. 목록 영역 `.ab-panels` 만 `flex:1; min-height:0; overflow-y:auto`.
+  → 항목 0~3개든 8개든 상·하단 테두리가 일치(측정 오차 0px), 탭·봇 전환 시 스크롤 맨 위로.
+- 차트 320 → 262px(남는 높이는 차트가 채움, ≤768px 230px). 상세 요약은 카드와 겹치는 총자산·수익률·승률·MDD 를 빼고
+  `현금 · 손익비 · 전략 규칙 ▾` 한 줄. 로그 패널 클래스 `ab-log` → `ab-runlog` (신호 표의 `ab-log` 와 겹쳤음).
+- <1100px(1단): 내부 스크롤 없이 전부 펼침. 캐시: ai_bots.js v13, style.css v113, sa-v80.
+
 ### /ai-bots 리뉴얼: 투자 판단 톤 · 2단 레이아웃 · 카드=상세 수치 통일 (PR #85)
 - 수치 불일치 원인: 개요·상세·차트 마지막 점이 각각 `bot_trader.equity()` 를 따로 불러 실시간가가 달라짐(-0.82% vs -0.79%).
   → `app._bot_account` 에 사용자별 60초 공용 스냅샷(`_BOT_ACCT_CACHE`, 락), 차트 마지막 점도 같은 값. 프론트 상세 KPI 는 개요(OV) 계좌 값을 그대로 씀.
