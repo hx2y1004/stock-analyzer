@@ -238,8 +238,8 @@
       <td class="num">${px(x.fill_price || x.entry_price, cur)}<div class="ab-muted">→ ${x.exit_price ? px(x.exit_price, cur) : '—'}</div></td>
       <td class="num ${dirCls(x.pnl_pct)}">${pct(x.pnl_pct)}</td>
       <td class="num">${x.confidence ?? '—'}</td>
-      <td class="ab-acts"><button type="button" class="ab-why" data-id="${x.id}">${x.has_ai ? 'AI 근거' : '근거'}</button>
-        ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, cur, b.name, x.name) : ''}</td></tr>`;
+      <td class="ab-acts-td"><div class="signal-actions"><button type="button" class="ab-why" data-id="${x.id}">${x.has_ai ? 'AI 근거' : '근거'}</button>
+        ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, cur, b.name, x.name) : ''}</div></td></tr>`;
     }).join('');
   }
 

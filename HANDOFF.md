@@ -57,6 +57,12 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### /ai-bots 신호 표 '근거' 열 가로선 어긋남 (PR #89)
+- 원인: `<td class="ab-acts">` 에 `display:flex` → table-cell 이 깨져 그 셀만 높이가 따로 계산(행 높이와 최대 40px 차이), 버튼 2개가 줄바꿈.
+- 수정: td 는 `ab-acts-td`(table-cell · vertical-align middle), 버튼은 안쪽 `<div class="signal-actions">`(inline-flex · gap 6px · nowrap).
+  규칙: 표의 td 에 display:flex 를 직접 주지 말 것. (≤640px 매매 이력·스크리너 표는 행 자체를 카드(block)로 바꾸는 반응형이라 해당 없음)
+- 캐시: ai_bots.js v15, style.css v115, sa-v82.
+
 ### 한국 내부자 매수(OpenDART 임원·주요주주 소유보고) · D 14일 자동 백필 (PR #88)
 - `disclosures.py`
   - 목록(`list.json`)에서 보고서명에 `임원·주요주주특정증권등소유상황보고서`(가운뎃점 없는 표기 포함)가 있고 추적 종목이면 후보.
