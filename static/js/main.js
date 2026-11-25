@@ -3565,16 +3565,8 @@ function searchAndAnalyze(ticker) {
 }
 
 
-// ── 홈 모바일(≤767px): 시장 현황 '전체 지표 보기' 토글 · 빠른 선택 칩 끝 흐림 ──
+// ── 홈 모바일(≤767px): 빠른 선택 칩 끝 흐림 ──
 (function initHomeMobile() {
-  const btn = document.getElementById('mdMoreBtn');
-  if (btn) btn.addEventListener('click', () => {
-    const card = btn.closest('.md-card');
-    const open = !card.classList.contains('md-all');
-    card.classList.toggle('md-all', open);
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    btn.textContent = open ? '접기 ▴' : '전체 지표 보기 ▾';
-  });
   const qt = document.querySelector('.quick-tickers');
   if (qt) {
     const end = () => qt.classList.toggle('qt-end', qt.scrollLeft + qt.clientWidth >= qt.scrollWidth - 2);
