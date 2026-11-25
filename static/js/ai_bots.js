@@ -228,18 +228,26 @@
       <td>${followLink(p.ticker, p.target_price, p.stop_price, p.currency, b.name, p.name)}</td></tr>`).join('');
   }
 
+  const mmdd = (d) => { const m = /^\d{4}-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[1]}.${m[2]}` : (d || '—'); };
+  // 사유가 있는 결과(주로 '취소')는 배지 1줄 + ⓘ: 마우스를 올리면 사유 전체(title), 누르면 근거 모달(맨 위에 사유)
+  const reasonBadge = (x) => {
+    const [label, cls] = STATUS[x.status] || [x.status, 'off'];
+    const c = x.status === 'TRAILING_STOP' ? ((x.pnl_pct || 0) >= 0 ? 'win' : 'loss') : cls;
+    return `<button type="button" class="ab-badge ab-b-${c} ab-badge-info" data-id="${x.id}" title="${esc(x.status_reason)}"
+      aria-label="${esc(label)} 사유: ${esc(x.status_reason)}">${esc(label)} <span aria-hidden="true">ⓘ</span></button>`;
+  };
+
   function sigRows(list, b) {
     return list.map((x) => {
       const cur = x.market === 'KR' ? 'KRW' : 'USD';
       return `<tr>
-      <td class="ab-nowrap">${esc(x.signal_date)}</td>
+      <td class="ab-nowrap"><span title="${esc(x.signal_date)}">${esc(mmdd(x.signal_date))}</span></td>
       <td>${logoId(x.ticker, x.name, x.account && x.account.status === 'SKIPPED' ? ` · <span title="${esc(x.account.skip_reason)}">계좌 미체결</span>` : '')}</td>
-      <td>${badge(x.status, x.pnl_pct)}${x.status_reason ? `<div class="ab-muted ab-reason">${esc(x.status_reason)}</div>` : ''}</td>
+      <td class="ab-nowrap">${x.status_reason ? reasonBadge(x) : badge(x.status, x.pnl_pct)}</td>
       <td class="num">${px(x.fill_price || x.entry_price, cur)}<div class="ab-muted">→ ${x.exit_price ? px(x.exit_price, cur) : '—'}</div></td>
       <td class="num ${dirCls(x.pnl_pct)}">${pct(x.pnl_pct)}</td>
-      <td class="num">${x.confidence ?? '—'}</td>
-      <td class="ab-acts-td"><div class="signal-actions"><button type="button" class="ab-why" data-id="${x.id}">${x.has_ai ? 'AI 근거' : '근거'}</button>
-        ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, cur, b.name, x.name) : ''}</div></td></tr>`;
+      <td class="ab-acts-td"><div class="signal-actions"><button type="button" class="ab-why" data-id="${x.id}" title="${x.has_ai ? 'AI 검증 근거' : '정량 근거'}${x.confidence != null ? ` · 신뢰도 ${x.confidence}` : ''}">근거${x.confidence != null ? ` <b>${esc(x.confidence)}</b>` : ''}</button>
+        ${x.status === 'ACTIVE' && x.side !== 'SELL' ? followLink(x.ticker, x.target_price, x.stop_price, cur, b.name, x.name, true) : ''}</div></td></tr>`;
     }).join('');
   }
 
@@ -305,8 +313,8 @@
         <div class="ab-panel-foot" id="abTradeFoot"></div>
       </div>
       <div role="tabpanel" class="ab-panel" id="abPanel-sig" aria-labelledby="abTab-sig">
-      ${b.signals.length ? `<div class="ab-scroll"><table class="ab-table ab-compact ab-log">
-        <thead><tr><th>신호일</th><th>종목</th><th>결과</th><th class="num">진입 → 청산</th><th class="num">수익률</th><th class="num">신뢰도</th><th>근거</th></tr></thead>
+      ${b.signals.length ? `<div class="ab-scroll"><table class="ab-table ab-compact ab-log ab-sig">
+        <thead><tr><th>신호일</th><th>종목</th><th>결과</th><th class="num">진입 → 청산</th><th class="num">수익률</th><th>근거 · 신뢰도</th></tr></thead>
         <tbody id="abSigBody"></tbody></table></div>
         ${(b.signals_total || 0) > b.signals.length ? `<div class="ab-panel-foot"><p class="ab-muted ab-sig-note">최근 ${b.signals.length}건만 표시합니다 (전체 ${b.signals_total}건).</p></div>` : ''}`
         : `<p class="ab-empty">아직 이 봇의 신호가 없습니다. 다음 장 마감 배치에서 조건에 맞는 종목이 있으면 신호가 생깁니다.</p>`}
@@ -327,7 +335,7 @@
       const tb = $('#abSigBody', el);
       if (!tb) return;
       tb.innerHTML = sigRows(sorted(b.signals, $('#abSortSig', el).value, 'signal_date'), b);
-      tb.querySelectorAll('.ab-why').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
+      tb.querySelectorAll('.ab-why, .ab-badge-info').forEach((btn) => btn.addEventListener('click', () => openWhy(btn.dataset.id)));
     };
     $('#abSortPos', el).addEventListener('change', paintPos);
     $('#abSortSig', el).addEventListener('change', paintSig);
@@ -464,13 +472,14 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
   // '따라 사기' → /trading?buy=…&target=…&stop=…&memo=[봇 이름 신호] (로그인 상태면 모의 매수 창이 바로 열림)
-function followLink(ticker, target, stop, currency, botName, name) {
+function followLink(ticker, target, stop, currency, botName, name, compact) {
   const krw = currency === 'KRW';
   const r = (v) => krw ? String(Math.round(v)) : Number(v).toFixed(2);
   const q = new URLSearchParams({ buy: ticker });
   if (target > 0) q.set('target', r(target));
   if (stop > 0) q.set('stop', r(stop));
   q.set('memo', `[${botName} 신호]`);
+  if (compact) return `<a class="ab-follow ab-follow-sm" href="/trading?${q.toString()}" aria-label="${esc(name || ticker)} 따라 사기 (모의 매수)">따라사기</a>`;
   return `<a class="ab-follow" href="/trading?${q.toString()}" aria-label="${esc(name || ticker)} 따라 사기 (모의 매수)"><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8M15 7h6v6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>따라 사기</a>`;
 }
 
@@ -498,7 +507,9 @@ async function openWhy(id) {
     const ai = d.ai;
     const path = { momentum: '모멘텀 돌파', breakout: '추세 돌파', rebound: '과매도 반등', value_rebound: '가치 반등' }[ev.path] || ev.path || '—';
     $('#abModalTitle').textContent = `${d.name || d.ticker} · ${d.signal_date} 진입 근거`;
+    const st = (STATUS[d.status] || [d.status])[0];
     body.innerHTML = `
+      ${d.status_reason ? `<div class="ab-why-status"><b>${esc(st)} 사유</b><span>${esc(d.status_reason)}</span></div>` : ''}
       <div class="ab-why-sum">${esc(d.reason || '')}</div>
       <div class="ab-kpis ab-kpis-sm">
         ${statLine('경로', esc(path))}

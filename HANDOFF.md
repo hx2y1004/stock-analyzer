@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### /ai-bots 신호 사후 검증 6열 압축 · 취소 사유 ⓘ (PR #90)
+- 열: 신호일(MM.DD, title 전체 날짜) · 종목(이름 최대 130px 말줄임) · 결과 · 진입→청산 · 수익률 · 근거·신뢰도. 신뢰도 열은 없애고 버튼 라벨 `근거 76`(점수 없으면 `근거`).
+- 사유가 있는 결과(주로 취소)는 배지 1줄 `취소 ⓘ`(`.ab-badge-info` 버튼, title = 사유 전체, 누르면 근거 모달) · 근거 모달 맨 위 `.ab-why-status` 에 사유.
+- `followLink(..., compact)` → 화살표 없는 `따라사기`(`.ab-follow-sm` 4px 8px · 12px · nowrap), 진행 중 행에만.
+- ≥1100px: `.ab-sig` table-layout fixed(신호일 50 · 결과 78 · 가격 92 · 수익률 70 · 근거 150), 종목 열이 남는 폭(글꼴이 달라도 넘치지 않음). 1100~1279px 은 로고 숨김.
+- 캐시: ai_bots.js v16, style.css v116, sa-v83.
+
 ### /ai-bots 신호 표 '근거' 열 가로선 어긋남 (PR #89)
 - 원인: `<td class="ab-acts">` 에 `display:flex` → table-cell 이 깨져 그 셀만 높이가 따로 계산(행 높이와 최대 40px 차이), 버튼 2개가 줄바꿈.
 - 수정: td 는 `ab-acts-td`(table-cell · vertical-align middle), 버튼은 안쪽 `<div class="signal-actions">`(inline-flex · gap 6px · nowrap).
