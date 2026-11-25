@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### /ai-bots 모바일 상세 리스트: 이중 스크롤 제거 · 5개 + 더보기 (PR #96)
+- PR #95 의 440px 내부 스크롤·하단 흐림(CSS·`fadeList` JS) 삭제 → 페이지 단일 스크롤. PC 2단 내부 스크롤은 그대로.
+- ≤767px: `mMore(list, total, open)` 가 `.ab-mlist.m-cut` 이면 6번째부터 숨기고 바로 아래 `.ab-mmore`(`더보기 (N건 남음) ▾` ↔ `접기 ▴`).
+  N = 전체 건수 - 5 (매매 이력은 서버 counts[side]). 봇 전환·탭 전환(`mReset`)·정렬·필터 변경 시 5개로. 매매 이력은 접혀 있으면 서버 `#abMore`(다음 20건) 숨김,
+  펼친 뒤 다음 쪽을 불러와도 펼침 유지(`T.mAll`).
+- 캐시: ai_bots.js v20, style.css v122, sa-v89.
+
 ### /ai-bots 모바일 상세 리스트 높이 제한 (PR #95)
 - ≤767px: `.ab-mlist`(보유·매매 이력·신호 2줄 카드) 만 `max-height: 440px; overflow-y: auto`(약 4~5건). 탭 바·필터 줄·정렬·하단 안내는 리스트 밖이라 고정.
 - 아래로 더 있으면 `.has-more` → 하단 36px 흐림(mask), 끝에 닿으면 해제(`fadeList`, scroll 캡처 리스너 1개). 더보기 후 리스트 스크롤 위치 유지. PC 는 변화 없음.
