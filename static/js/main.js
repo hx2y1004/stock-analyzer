@@ -155,9 +155,15 @@ async function loadMarketOverview() {
     _renderMacroStrip(d.macro);
     const st = document.getElementById('mdStatus');
     if (st) {
+      // 장중 / 마감 / 휴장(사유) · 미국 조기폐장일은 '조기폐장' 표시
+      const lab = (s, open) => {
+        if (!s) return open ? '장중' : '마감';
+        if (s.holiday) return `휴장 (${_esc(s.holiday)})`;
+        return s.open ? (s.early_close ? '장중 · 13시 조기폐장' : '장중') : (s.early_close ? '마감 · 조기폐장' : '마감');
+      };
       st.innerHTML =
-        `<span class="md-dot ${d.kr_open ? 'on' : ''}"></span>한국 ${d.kr_open ? '장중' : '마감'} · ` +
-        `<span class="md-dot ${d.us_open ? 'on' : ''}"></span>미국 ${d.us_open ? '장중' : '마감'}`;
+        `<span class="md-dot ${d.kr_open ? 'on' : ''}"></span>한국 ${lab(d.kr_status, d.kr_open)} · ` +
+        `<span class="md-dot ${d.us_open ? 'on' : ''}"></span>미국 ${lab(d.us_status, d.us_open)}`;
     }
     return d;
   } catch (e) { /* 다음 주기에 재시도 */ }

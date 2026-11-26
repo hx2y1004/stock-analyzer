@@ -23,6 +23,8 @@ from datetime import datetime, timedelta, date
 import numpy as np
 import pandas as pd
 
+import market_hours
+
 D = {}                      # app.py 가 넘겨주는 의존성 (app, db, 모델, 헬퍼 함수)
 _RUN_LOCK = threading.Lock()
 
@@ -889,7 +891,8 @@ def _notify(new_objs, open_before_ids):
 def _drop_unfinished_bar(market, data):
     """장 마감 전(현지 시각이 배치 시각 이전)에 돌리면 오늘 봉은 아직 미완성이라 뺀다."""
     now = datetime.now(_tz(market))
-    if (now.hour, now.minute) >= RUN_AFTER[market] or now.weekday() >= 5:
+    ra = run_after(market, now.date())
+    if ra is None or (now.hour, now.minute) >= ra:            # 휴장·주말이면 오늘 봉 자체가 없음
         return data
     today = now.date()
     return {t: (df[df.index.date < today] if len(df) and df.index[-1].date() == today else df)
@@ -982,7 +985,17 @@ def _evidence(st, z):
 
 
 # ── 스케줄러 (장 마감 후 하루 1회, 여러 프로세스여도 한 곳만 실행) ──────────────────
-RUN_AFTER = {"KR": (15, 45), "US": (16, 30)}     # 각 시장 현지 시각
+RUN_AFTER = {"KR": (15, 45), "US": (16, 30)}     # 각 시장 현지 시각 (평소). 실제 시각은 run_after(): 그날 마감 + 아래 간격
+RUN_AFTER_GAP = {"KR": 15, "US": 30}             # 마감 뒤 몇 분 후 배치 (미국 조기폐장 13:00 → 13:30, 한국 수능일 16:30 → 16:45)
+
+
+def run_after(market, d):
+    """그날 장 마감 배치 시각 (시, 분). 휴장·주말이면 None."""
+    w = market_hours.session_window(market, d)
+    if not w:
+        return None
+    t = w[1][0] * 60 + w[1][1] + RUN_AFTER_GAP[market]
+    return (t // 60, t % 60)
 
 
 def _claim(market, day):
@@ -1004,9 +1017,10 @@ INTRADAY_EVERY = 300          # 장중 체크 간격(초)
 
 
 def in_session(market, now=None):
+    """정규장 중인지 (휴장일 False · 미국 조기폐장일 13:00 ET 마감 · market_hours.session_window)."""
     now = now or datetime.now(_tz(market))
-    (oh, om), (ch, cm) = SESSION[market]
-    return now.weekday() < 5 and (oh, om) <= (now.hour, now.minute) < (ch, cm)
+    w = market_hours.session_window(market, now.date())
+    return bool(w) and w[0] <= (now.hour, now.minute) < w[1]
 
 
 def download_intraday(tickers, market):
@@ -1325,8 +1339,8 @@ def _scheduler_loop():
                         finally:
                             D["db"].session.remove()
                     now = datetime.now(_tz(market))
-                    hh, mm = RUN_AFTER[market]
-                    if now.weekday() >= 5 or (now.hour, now.minute) < (hh, mm) or tried.get(market) == now.date():
+                    ra = run_after(market, now.date())               # 휴장·주말 None → 배치 없음 (조기폐장일은 13:30 ET)
+                    if ra is None or (now.hour, now.minute) < ra or tried.get(market) == now.date():
                         continue
                     tried[market] = now.date()          # 오늘 선점 시도는 한 번만 (DB 중복 삽입 시도 줄이기)
                     if _claim(market, now.date()):
@@ -1354,16 +1368,20 @@ def start_scheduler():
     log("scheduler 시작 (BOT_SCHEDULER=0 으로 끌 수 있음)")
 
 
+def next_scheduled_run_iso(market, now=None):
+    """다음 장 마감 배치 예정 시각 (현지 시각 ISO). 휴장일은 건너뛰고, 미국 조기폐장일은 13:30 ET."""
+    tz = _tz(market)
+    now = now.astimezone(tz) if (now is not None and now.tzinfo) else (now.replace(tzinfo=tz) if now is not None else datetime.now(tz))
+    d = market_hours.next_trading_day(market, now.date(), include=True)
+    for _ in range(3):
+        hh, mm = run_after(market, d)
+        cand = datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz)
+        if now < cand:
+            return cand.isoformat()
+        d = market_hours.next_trading_day(market, d)
+    return cand.isoformat()
+
+
 def next_batch_times():
-    """시장별 다음 장 마감 배치 예정 시각 (현지 시각 ISO 문자열). 공휴일은 고려하지 않음."""
-    out = {}
-    for market, (hh, mm) in RUN_AFTER.items():
-        tz = _tz(market)
-        now = datetime.now(tz)
-        cand = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        if now >= cand:
-            cand += timedelta(days=1)
-        while cand.weekday() >= 5:
-            cand += timedelta(days=1)
-        out[market] = cand.isoformat()
-    return out
+    """시장별 다음 장 마감 배치 예정 시각 (현지 시각 ISO 문자열). 휴장일·조기폐장 반영."""
+    return {market: next_scheduled_run_iso(market) for market in RUN_AFTER}

@@ -22,6 +22,8 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+import market_hours
+
 import toss_api
 import trends_scanner
 
@@ -66,11 +68,12 @@ def market_today(market):
 
 
 def session_progress(market, now=None):
-    """정규장 경과 비율 (0~1). 장 밖이면 None (주말 포함, 공휴일은 모름)."""
+    """정규장 경과 비율 (0~1). 장 밖·주말·거래소 휴장일이면 None."""
     now = now or datetime.now(_tz(market))
-    if now.weekday() >= 5:
+    w = market_hours.session_window(market, now.date())      # 휴장일·미국 조기폐장 반영
+    if not w:
         return None
-    (oh, om), (ch, cm) = SESSION[market]
+    (oh, om), (ch, cm) = w
     o = now.replace(hour=oh, minute=om, second=0, microsecond=0)
     c = now.replace(hour=ch, minute=cm, second=0, microsecond=0)
     if not (o <= now <= c):

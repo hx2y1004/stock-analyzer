@@ -57,6 +57,18 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 한·미 휴장일·미국 조기폐장 반영: `market_hours.py` (PR #97)
+- 새 모듈 `market_hours.py` (표준 라이브러리만): `holiday_name` · `session_window` · `is_trading_day` · `is_market_open` · `market_status` · `next/prev_trading_day`.
+  - 미국: 연방 공휴일 규칙 + 토→금·일→월 대체, 1/1 이 토요일이면 대체 휴장 없음(NYSE). 조기폐장 13:00 ET(7/3·추수감사절 다음 날·12/24, 평일·휴장 아닐 때).
+    `US_SPECIAL`(2025-01-09 국가 애도일). 2026~2028 은 NYSE 발표(2025-12-23)와 대조해 일치.
+  - 한국: 고정 휴장일 + 대체공휴일(토·일 → 다음 평일, 국경일·어린이날·성탄절, 근로자의 날은 2027~), 제헌절 2026~, 연말 휴장(12월 마지막 평일),
+    연초 첫 거래일 10:00 개장 · 수능일 10:00~16:30(`KR_LATE_OPEN`). 음력·선거·임시공휴일은 `KR_YEARLY` 2025~2028 — **2029년 표를 추가해야 함**.
+  - 확인 못 한 것: 2026-10-05(개천절 대체공휴일)는 규정상 휴장이지만 KRX 공지는 못 찾음. 2027 근로자의 날·제헌절 대체(5/3·7/19)는 월력요항 보도 기준. 2028-04-12 총선은 공직선거법 계산.
+- 연동: `app._is_market_open` · `/api/market/overview`(kr/us_status·holiday, 캐시와 별개로 매번 계산) · 홈 상태 문구 `휴장 (추수감사절)`/`조기폐장`.
+  `bot_engine.in_session`(휴장 False · 조기폐장 13:00) · `run_after(market, d)`(마감 + KR 15분/US 30분 → 조기폐장일 13:30 ET, 수능일 16:45) · 스케줄러 휴장일 배치 없음 ·
+  `next_scheduled_run_iso`(휴장 건너뜀) · `_drop_unfinished_bar`. `sector_map._tick`(휴장일 시세 조회 0회 · 조기폐장 마감 스냅샷 13:20) · `trend_setups.session_progress`.
+- 캐시: main.js v103, sa-v90.
+
 ### /ai-bots 모바일 상세 리스트: 이중 스크롤 제거 · 5개 + 더보기 (PR #96)
 - PR #95 의 440px 내부 스크롤·하단 흐림(CSS·`fadeList` JS) 삭제 → 페이지 단일 스크롤. PC 2단 내부 스크롤은 그대로.
 - ≤767px: `mMore(list, total, open)` 가 `.ab-mlist.m-cut` 이면 6번째부터 숨기고 바로 아래 `.ab-mmore`(`더보기 (N건 남음) ▾` ↔ `접기 ▴`).

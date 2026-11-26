@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+import market_hours
 import toss_api
 import ai_cache
 try:
@@ -887,8 +888,10 @@ def _naver_index(sym):
 
 @app.route("/api/market/overview")
 def market_overview():
-    """홈 대시보드용 주요 지수 + 거시 지표 스냅샷 (1분 캐시)."""
-    return jsonify(_market_overview_payload())
+    """홈 대시보드용 주요 지수 + 거시 지표 스냅샷 (1분 캐시). 장 상태(장중·마감·휴장 사유)는 캐시와 별개로 매번 계산."""
+    kr, us = market_hours.market_status("KR"), market_hours.market_status("US")
+    return jsonify({**_market_overview_payload(), "kr_open": kr["open"], "us_open": us["open"],
+                    "kr_status": kr, "us_status": us, "kr_holiday": kr["holiday"], "us_holiday": us["holiday"]})
 
 
 def _market_overview_payload():
@@ -3679,22 +3682,10 @@ def _generate_company_overview(ticker, name, info, revenue_quarters, currency):
 
 
 def _is_market_open(ticker: str) -> bool:
-    """대략적인 시장 개장 여부 (KR=Asia/Seoul 9:00–15:30, US=America/New_York 9:30–16:00).
-    공휴일은 고려하지 않음(yfinance가 자체 처리)."""
+    """정규장 개장 여부 (market_hours: 주말·거래소 휴장일·미국 조기폐장 13:00 ET·한국 연초/수능일 개장 시각 반영)."""
     try:
-        is_kr = ticker.upper().endswith(".KS") or ticker.upper().endswith(".KQ")
-        if is_kr:
-            now = pd.Timestamp.now(tz="Asia/Seoul")
-            if now.weekday() >= 5:
-                return False
-            t = now.time()
-            return (t >= pd.Timestamp("09:00").time()) and (t <= pd.Timestamp("15:30").time())
-        else:
-            now = pd.Timestamp.now(tz="America/New_York")
-            if now.weekday() >= 5:
-                return False
-            t = now.time()
-            return (t >= pd.Timestamp("09:30").time()) and (t <= pd.Timestamp("16:00").time())
+        t = ticker.upper()
+        return market_hours.is_market_open("KR" if t.endswith((".KS", ".KQ")) else "US")
     except Exception:
         return False
 
