@@ -38,6 +38,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `models.py` | SQLAlchemy 모델 (users, holdings, paper_holdings, transactions, asset_snapshots, user_badges, ai_cache, 봇·알림·푸시 테이블). 전체 목록은 README |
 | `badges.py` | 모의투자 배지 |
 | `toss_api.py` | 토스증권 Open API (실시간 시세, 캔들, 환율). 허용 IP 제한이 있어 운영 서버에서만 동작. 여러 화면의 실시간가는 `get_prices_cached`(종목별 20초 공용 캐시, 200종목 묶음) 1순위, 실패 시 네이버/yfinance |
+| `market_hours.py` | 한·미 거래일·장 시간 (표준 라이브러리만). 미국 휴장일·조기폐장 13:00 ET 자동 계산, KRX 고정 휴장일·대체공휴일 규칙 + 연도별 음력·선거일 표(`KR_YEARLY`, 2025~2028 — 2029년부터는 표 추가 필요), 연말 휴장·연초/수능일 개장 시각. `is_market_open`·`session_window`·`market_status`·`next_trading_day` |
 | `krx_ref.py` | 한국 종목 KRX 공식 전일 종가(네이버 실시간 폴링 `종가 − 전일 대비`, 50종목 묶음·1분 캐시). 종목 상세·추세 셋업·스크리너·섹터맵·급등락의 등락률 기준을 통일 |
 | `trends_scanner.py`, `trend_setups.py` | 추세 셋업. 점수 계산(일봉 입력, 네트워크 없음)과 저장. 장 마감 배치가 봇 일봉을 재사용해 `trend_setups` 확정, 장중엔 섹터맵 시세로 돌파만 덮어씀. 화면은 `/screener?tab=trends` |
 | `sector_map.py` | 메인 섹터맵: 전체 유니버스 시총가중 집계와 백그라운드 스냅샷. 분류는 `sector_universe.json` (`build_sector_universe.py` 로 생성) |

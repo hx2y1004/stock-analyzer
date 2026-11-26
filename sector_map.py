@@ -24,6 +24,8 @@ import threading
 import time
 from datetime import datetime
 
+import market_hours
+
 D = {}
 _MEM = {}                      # market → payload
 _REFRESH_LOCK = threading.Lock()
@@ -33,6 +35,15 @@ H = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 SESSION = {"KR": ((9, 0), (15, 30)), "US": ((9, 30), (16, 0))}
 FINAL_AT = {"KR": (15, 40), "US": (16, 20)}
+
+
+def _final_at(market, w):
+    """장 마감 스냅샷 시각: 평소 FINAL_AT, 마감이 다른 날(미국 조기폐장 13:00 · 한국 수능일 16:30)은 그 마감 + 같은 간격."""
+    if w[1] == SESSION[market][1]:
+        return FINAL_AT[market]
+    gap = (FINAL_AT[market][0] * 60 + FINAL_AT[market][1]) - (SESSION[market][1][0] * 60 + SESSION[market][1][1])
+    t = w[1][0] * 60 + w[1][1] + gap
+    return (t // 60, t % 60)
 SLOT_MIN, SLOT_OFFSET = 15, 7  # 장중 15분 간격, 매 슬롯 7분째
 
 
@@ -337,7 +348,10 @@ def _tick(market, now):
     today = now.date()
     if now.weekday() >= 5 or st["holiday"] == today:
         return None
-    (oh, om), (ch, cm) = SESSION[market]
+    w = market_hours.session_window(market, today)
+    if not w:                                 # 거래소 휴장일 (시세 조회 없이 바로)
+        return None
+    (oh, om), (ch, cm) = w
     hm = (now.hour, now.minute)
     if (oh, om) <= hm < (ch, cm) and now.minute % SLOT_MIN >= SLOT_OFFSET:
         slot = (today, now.hour, now.minute // SLOT_MIN)
@@ -350,7 +364,7 @@ def _tick(market, now):
                 st["holiday"] = today        # 오늘 데이터가 아님 → 휴장일
                 log(f"{market} {today} 휴장으로 판단, 오늘은 더 조회하지 않음")
             return "intraday"
-    elif hm >= FINAL_AT[market] and st["final"] != today:
+    elif hm >= _final_at(market, w) and st["final"] != today:
         if _busy():
             return "deferred"
         st["final"] = today
