@@ -57,6 +57,15 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 홈 내 포트폴리오 '리스크 · 배당' 탭 (PR #100)
+- `portfolio_analytics.compute(rows, fx, profiles, today)` (순수 계산): 섹터 비중(원화 평가금액, 상위 5 + 기타, 합 100.0 보정), 최대 업종·편중(≥40%, 'ETF'·'기타'는 판정 제외),
+  통화 비중·`fx_exposure_pct`, 주당 연간 배당 = dividendRate → 최근 1년 이력 합 → trailingAnnualDividendRate → 배당수익률%×현재가(÷100, 30% 이상은 무시),
+  월별 = 최근 1년 이력의 배당락 월 비율(없으면 한국 연배당 → 배당락 월, 미국 → 분기, 정보 없음 → 균등), 정수 원 배분 후 합계 == 연간. 다가오는 배당락 = info exDividendDate(오늘 이후) 또는 지난 간격으로 추정(400일 안), 최대 6건.
+- `GET /api/portfolio/analytics` (로그인 필요, 사용자별 5분 캐시 · 보유 종목이 바뀌면 다시 계산). 입력: 공용 시세 캐시 + 스크리너 스냅샷(섹터·배당수익률) + `_dividend_profile`(yfinance info·dividends, 종목별 12시간 메모리 캐시, 필요한 값만 보관, quoteType ETF → 'ETF').
+- 화면: 포트폴리오 카드 `보유 종목 N | 리스크 · 배당` 서브 탭(처음 열 때 불러옴). KPI 3개 · 섹터 막대 · 통화 스택 막대 · 월별 배당 막대(누르면 금액) · 배당락 D-N 목록. 모바일 1단.
+- 주의: 월별 배당은 배당락 월 기준(실제 입금은 보통 그 뒤). 금액은 세전 추정.
+- 캐시: main.js v106, style.css v125, sa-v93.
+
 ### 주요 지표 그리드 빈 칸 해소 (PR #99)
 - 주요 지표는 `auto-fill` 이라 폭마다 열 수가 2~7열로 바뀐다. `_fitShortCell()`(main.js)이 실제 열 수 c 와 앞 항목 수 n 으로 공매도 셀 칸 수를 정함:
   n % c == 0 이면 `1 / -1`(마지막 줄 전체), 아니면 `span (c - n % c)` (3열·4열 → 2칸, 6열 → 2칸, 7열 → 4칸, 2·5열 → 전체). ResizeObserver 로 폭이 바뀌면 다시.

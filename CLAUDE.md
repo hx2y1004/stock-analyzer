@@ -36,6 +36,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `app.py` | Flask 앱 본체. 페이지 라우트와 `/api/*` (분석, 차트, 시황, 섹터맵, 검색, 포트폴리오, 모의투자, 랭킹 등) |
 | `auth.py` | Google, 카카오 OAuth 로그인. 콜백 주소는 `BASE_URL` 기준 |
 | `models.py` | SQLAlchemy 모델 (users, holdings, paper_holdings, transactions, asset_snapshots, user_badges, ai_cache, 봇·알림·푸시 테이블). 전체 목록은 README |
+| `portfolio_analytics.py` | 홈 '내 포트폴리오' 리스크 · 배당 계산(네트워크 없음): 섹터 비중·편중(ETF·기타 제외 업종 기준 40%), 통화 노출, 연간·월별 예상 배당(dividendRate 우선), 다가오는 배당락일. API `/api/portfolio/analytics` 가 `_dividend_profile`(12시간 캐시)로 입력을 만든다 |
 | `badges.py` | 모의투자 배지 |
 | `toss_api.py` | 토스증권 Open API (실시간 시세, 캔들, 환율). 허용 IP 제한이 있어 운영 서버에서만 동작. 여러 화면의 실시간가는 `get_prices_cached`(종목별 20초 공용 캐시, 200종목 묶음) 1순위, 실패 시 네이버/yfinance |
 | `market_hours.py` | 한·미 거래일·장 시간 (표준 라이브러리만). 미국 휴장일·조기폐장 13:00 ET 자동 계산, KRX 고정 휴장일·대체공휴일 규칙 + 연도별 음력·선거일 표(`KR_YEARLY`, 2025~2028 — 2029년부터는 표 추가 필요), 연말 휴장·연초/수능일 개장 시각. `is_market_open`·`session_window`·`market_status`·`next_trading_day` |
