@@ -7122,8 +7122,11 @@ bot_engine.start_scheduler()
 
 import sector_map
 import screener
+import screener_signals
+from models import ScreenerSignal
 screener.init({
     "app": app, "db": db, "Model": ScreenerSnapshot, "AiSignal": AiSignal, "universe": sector_map.universe,
+    "Signal": ScreenerSignal, "signals": screener_signals,
     "download_daily": bot_engine.download_daily, "compute_features": bot_engine.compute_features,
     "bot_lock": lambda: bot_engine._RUN_LOCK.locked(),
     "name_of": lambda t: _stock_name(t, "KR" if t.endswith((".KS", ".KQ")) else "US"),
@@ -7156,6 +7159,23 @@ sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_L
 market_breadth.init({"app": app, "db": db, "MarketBreadthDaily": MarketBreadthDaily})
 sector_map.start()
 screener.start()
+
+
+def _scr_us_short(t):
+    """미국 공매도 — yfinance info 1회 (종목당 72시간에 한 번, 스크리너 선행지표 배치만)."""
+    try:
+        info = yf.Ticker(t).info or {}
+    except Exception:
+        return None
+    return short_interest_from_info(info, t, info.get("currency", "USD"))
+
+
+screener_signals.init({
+    "app": app, "db": db, "Model": ScreenerSignal, "Snapshot": ScreenerSnapshot,
+    "bot_lock": lambda: bot_engine._RUN_LOCK.locked(),
+    "fetch": {"earn": earnings_mod.get_earnings, "flow": kr_flow.get_flow, "kr_short": kr_short.get_short, "us_short": _scr_us_short},
+})
+screener_signals.start()                  # 선행지표 요약을 백그라운드로 천천히 (동시 3개)
 trend_setups.start()
 
 

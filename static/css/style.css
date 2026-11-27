@@ -7435,3 +7435,20 @@ body.al-lock { overflow: hidden; }
   .ld-label { font-size: 11px; }
   .ld-sub { font-size: 11px; }
 }
+
+/* ── 선행지표 프리셋 (7단계) ──────────────────────────────────────────────── */
+.sc-sig-td { min-width: 0; }
+.sc-sigs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; max-width: 260px; }
+.sc-sig { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--bg3); color: var(--text2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sc-sig.good { color: #34d399; background: rgba(52, 211, 153, .12); }
+.sc-sig.up { color: var(--green); } .sc-sig.down { color: var(--red); }
+.sc-sig.hot { color: #fbbf24; background: rgba(251, 191, 36, .14); }
+@media (max-width: 720px) {
+  /* 프리셋 8개: 한 줄 가로 스크롤 (세로로 밀리지 않게) */
+  .sc-presets { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding-bottom: 6px;
+    scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .sc-preset { flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start; }
+  .sc-table td.sc-sig-td { display: block; grid-column: 1 / -1; }          /* 카드(그리드) 전체 폭 */
+  .sc-table td.sc-sig-td::before { display: block; margin-bottom: 4px; }
+  .sc-sigs { max-width: none; }
+}

@@ -80,7 +80,12 @@
       `<button type="button" class="sc-preset" data-p="${esc(p.key)}" aria-pressed="false"><span aria-hidden="true">${esc(p.emoji)}</span> ${esc(p.name)}</button>`).join('');
     $$('.sc-preset').forEach((b) => b.addEventListener('click', () => {
       S.preset = S.preset === b.dataset.p ? '' : b.dataset.p;
+      const pd = S.meta.presets.find((x) => x.key === S.preset);
+      if (pd && pd.market && S.market !== pd.market) { S.marketBefore = S.market; setMarket(pd.market); }   // 외인·기관 쌍끌이 → 한국
+      else if ((!pd || !pd.market) && S.marketBefore) { setMarket(S.marketBefore); }                        // 빠져나오면 원래 시장으로
+      if (!pd || !pd.market) S.marketBefore = null;
       paintPresets();
+      b.scrollIntoView({ block: 'nearest', inline: 'nearest' });              // 모바일 가로 스크롤에서 누른 버튼이 잘리지 않게
       b.blur();                                   // 터치 기기에서 이전 버튼의 포커스·호버 잔상이 남지 않게
       $('#fSort').value = ''; runQuery();
     }));
@@ -94,10 +99,16 @@
       `<optgroup label="${m === 'KR' ? '한국' : '미국'}">${S.meta.sectors[m].map((s) => `<option value="${esc(s.key)}">${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
     if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
   }
+  function setMarket(m) {
+    S.market = m;
+    $$('#scMarket button').forEach((x) => { const on = x.dataset.m === m; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
+    fillSectors();
+  }
   $$('#scMarket button').forEach((b) => b.addEventListener('click', () => {
-    S.market = b.dataset.m;
-    $$('#scMarket button').forEach((x) => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on); });
-    fillSectors(); runQuery();
+    const pd = S.meta && S.meta.presets.find((x) => x.key === S.preset);
+    if (pd && pd.market && b.dataset.m !== pd.market) S.preset = '';          // 한국 전용 프리셋에서 다른 시장을 고르면 프리셋 해제
+    S.marketBefore = null;
+    setMarket(b.dataset.m); runQuery();
   }));
   $('#fApply').addEventListener('click', () => runQuery());
   $('#fReset').addEventListener('click', () => {
@@ -140,14 +151,62 @@
     return parts.join(' · ');
   }
 
+  // ── 선행지표 프리셋: 결과 행 근거 배지 (screener_signals) ──
+  const eok = (v) => (v == null ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v / 1e8) >= 100 ? Math.round(Math.abs(v / 1e8)).toLocaleString('ko-KR') : Math.abs(v / 1e8).toFixed(1)}억`);
+  function sigBadges(r, kind) {
+    const g = r.signals || {}, b = [];
+    const B = (t, cls = '') => `<span class="sc-sig ${cls}">${t}</span>`;
+    if (kind === 'earn') {
+      if (g.earn_beat_streak >= 2) b.push(B(`${g.earn_beat_streak}연속 Beat`, 'good'));
+      else if (g.earn_beats_4q != null) b.push(B(`${g.earn_quarters || 4}분기 중 ${g.earn_beats_4q}회 Beat`, 'good'));
+      if (g.earn_avg_surprise != null) b.push(B(`평균 ${pct(g.earn_avg_surprise, 1)}`, g.earn_avg_surprise > 0 ? 'up' : 'down'));
+      if (g.earn_d_day != null && g.earn_d_day <= 30) b.push(B(`실적 ${g.earn_d_day === 0 ? 'D-DAY' : 'D-' + g.earn_d_day}`, 'hot'));
+    } else if (kind === 'flow') {
+      b.push(B(`외인 ${eok(g.flow_foreign_5d)}`, g.flow_foreign_5d > 0 ? 'up' : 'down'));
+      b.push(B(`기관 ${eok(g.flow_inst_5d)}`, g.flow_inst_5d > 0 ? 'up' : 'down'));
+      if (g.flow_foreign_streak >= 3) b.push(B(`외인 ${g.flow_foreign_streak}일 연속`, 'good'));
+      if (g.flow_inst_streak >= 3) b.push(B(`기관 ${g.flow_inst_streak}일 연속`, 'good'));
+    } else if (kind === 'short') {
+      if (isKR(r.ticker)) {
+        if (g.short_bal_pct != null) b.push(B(`잔고 ${g.short_bal_pct.toFixed(2)}%`, g.short_bal_pct >= 2 ? 'hot' : ''));
+        if (g.short_bal_chg_5d != null) b.push(B(`5일 ${g.short_bal_chg_5d > 0 ? '+' : ''}${g.short_bal_chg_5d.toFixed(2)}%p`, g.short_bal_chg_5d < 0 ? 'good' : 'down'));
+      } else {
+        if (g.short_pct != null) b.push(B(`공매도 ${g.short_pct.toFixed(1)}%`, g.short_pct >= 15 ? 'hot' : ''));
+        if (g.short_ratio != null) b.push(B(`청산 ${g.short_ratio.toFixed(1)}일`));
+        if (r.volume_ratio != null) b.push(B(`거래량 ${r.volume_ratio.toFixed(1)}배`, r.volume_ratio >= 1.5 ? 'good' : ''));
+      }
+    }
+    return b.join('') || '<span class="ab-muted">—</span>';
+  }
+  function sigCoverage(d) {
+    const sm = d.signal_meta || {}, kind = d.preset && d.preset.signal;
+    const have = (kind === 'earn' ? sm.with_earn : kind === 'flow' ? sm.with_flow : sm.with_short) || 0;
+    const need = (kind === 'flow' ? (sm.kr_universe || sm.universe) : sm.universe) || 0;
+    return { have, need };
+  }
+  function signalEmpty(d) {
+    const { have, need } = sigCoverage(d);
+    if (need && have < need * 0.9) {
+      return `선행지표를 모으는 중이에요 (${have.toLocaleString('ko-KR')}/${need.toLocaleString('ko-KR')}종목). 서버가 천천히 채우니 잠시 뒤 다시 확인해 주세요.`;
+    }
+    return '지금은 조건에 맞는 종목이 없어요. 시장을 바꾸거나 다른 프리셋을 눌러 보세요.';
+  }
+
   function renderResults(d) {
     const c = d.meta || {};
-    $('#scAsof').textContent = coverageNote(c);
+    const sigKind = d.preset && d.preset.signal;
+    if (d.market && d.market !== S.market) { setMarket(d.market); writeUrl(); }    // 서버가 한국 전용 프리셋으로 시장을 맞춘 경우
+    const cov = sigKind ? sigCoverage(d) : null;
+    $('#scAsof').textContent = coverageNote(c) + (cov && cov.need && cov.have < cov.need ? ` · 선행지표 수집 중 ${cov.have}/${cov.need}` : '');
     $('#scCount').textContent = `${d.total.toLocaleString('ko-KR')}종목`;
     $('#scNote').textContent = d.total > d.items.length ? ` · 상위 ${d.items.length}개 표시` : '';
     const list = $('#scList');
     if (!c.with_price) {
       list.innerHTML = '<p class="ab-empty">아직 첫 집계 전입니다. 서버가 시세를 모으는 중이에요 (몇 분 걸려요). 잠시 후 새로고침해 주세요.</p>';
+      return;
+    }
+    if (!d.items.length && sigKind) {
+      list.innerHTML = `<p class="ab-empty">${signalEmpty(d)}</p>`;
       return;
     }
     if (!d.items.length) {
@@ -157,7 +216,7 @@
     }
     list.innerHTML = `<div class="ab-scroll"><table class="ab-table sc-table">
       <thead><tr><th>종목</th><th class="num">현재가</th><th class="num">등락률</th><th class="num">펀더멘탈</th><th class="num">RSI</th>
-        <th class="num">PER (TTM)</th><th class="num">상승여력</th><th class="sc-act-h"><span class="sr-only">관심 · 비교</span></th></tr></thead>
+        <th class="num">PER (TTM)</th><th class="num">상승여력</th>${sigKind ? '<th class="sc-sig-h">근거</th>' : ''}<th class="sc-act-h"><span class="sr-only">관심 · 비교</span></th></tr></thead>
       <tbody>${d.items.map((r) => `<tr>
         <td data-label="종목"><div class="lg-id">${(window.renderStockLogo ? renderStockLogo(r.ticker, r.name, 'md') : '')}<div class="lg-id-text"><a href="/stock/${encodeURIComponent(r.ticker)}" class="sc-name">${esc(r.name)}</a>
           <span class="ab-muted">${esc(r.ticker)}${r.sector_name ? ' · ' + esc(r.sector_name) : ''}</span>
@@ -168,6 +227,7 @@
         <td class="num" data-label="RSI">${num(r.rsi14, 0)}</td>
         <td class="num" data-label="PER (TTM)">${r.per == null ? '—' : num(r.per, 1, 'x')}</td>
         <td class="num ${dir(r.upside_pct)}" data-label="상승여력">${pct(r.upside_pct, 1)}</td>
+        ${sigKind ? `<td class="sc-sig-td" data-label="근거"><div class="sc-sigs">${sigBadges(r, sigKind)}</div></td>` : ''}
         <td class="sc-act" data-label="">
           <button type="button" class="sc-star" data-t="${esc(r.ticker)}" data-n="${esc(r.name)}" aria-pressed="false" aria-label="${esc(r.name)} 관심종목">${STAR(false)}</button>
           <button type="button" class="sc-add" data-t="${esc(r.ticker)}" data-n="${esc(r.name)}"></button>
