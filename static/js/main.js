@@ -2549,7 +2549,8 @@ function renderFundamental(details, stock) {
   // ── 2. 재무 건전성 | 분기 실적 (2단) ────────────────────────
   const sc = (window._lastAnalysis && window._lastAnalysis.scorecard) || null;
   const top = `<div class="fj-grid">${_fjHealthCard(sc, stock)}${_fjQuarterCard(stock)}</div>`
-    + (/\.(KS|KQ)$/i.test((stock && stock.ticker) || '') ? '<div id="fjFlow" class="fj-flow-slot"></div>' : '');
+    + (/\.(KS|KQ)$/i.test((stock && stock.ticker) || '') ? '<div id="fjFlow" class="fj-flow-slot"></div>' : '')
+    + (_earnEligible(stock) ? '<div id="fjEarn" class="fj-flow-slot"></div>' : '');
 
   // ── 3. 세부 지표 · 항목별 판단 (기본 접힘) ─────────────────────
   const detailHTML = _scDetailHTML(sc, stock);
@@ -2561,6 +2562,7 @@ function renderFundamental(details, stock) {
 
   el.innerHTML = top + html + more;
   if (document.getElementById('fjFlow')) loadKrFlow(stock.ticker);
+  if (document.getElementById('fjEarn')) loadEarnings(stock.ticker);
 }
 
 const _FS_SHORT = {
@@ -3684,6 +3686,24 @@ const _krwShort = (v) => {
   return `${sg}${Math.round(a).toLocaleString('ko-KR')}원`;
 };
 
+async function loadPfEarnings() {
+  let d = null;
+  try { const r = await fetch('/api/portfolio/earnings'); if (r.ok) d = await r.json(); } catch (e) { d = null; }
+  const box = document.getElementById('prEarn');
+  if (!box) return;
+  const up = (d && d.upcoming) || [];
+  const head = '<h4 class="pr-h">다가오는 실적 발표 <span class="pr-sub">60일 이내</span></h4>';
+  if (!d) { box.innerHTML = `${head}<p class="pr-note">실적 일정을 불러오지 못했습니다.</p>`; return; }
+  if (!up.length) { box.innerHTML = `${head}<p class="pr-note">60일 안에 실적을 발표하는 보유 종목이 없어요.</p>`; return; }
+  box.innerHTML = `${head}<ul class="pr-ups">${up.map((u) => `
+    <li><a href="/stock/${encodeURIComponent(u.ticker)}" class="pr-up">
+      ${window.renderStockLogo ? renderStockLogo(u.ticker, u.name, 'sm') : ''}
+      <span class="pr-up-id"><b>${_esc(u.name)}</b><small>${_esc(u.ticker)} · ${_mmdd(u.date)}${_ER_SESS[u.session] ? ` ${_ER_SESS[u.session]}` : ''}${u.eps_estimate != null ? ` · 예상 EPS ${_eps(u.eps_estimate, u.currency)}` : ''}</small></span>
+      ${u.beat_streak >= 2 ? `<span class="er-badge beat pr-er-badge">${u.beat_streak}연속 Beat</span>` : ''}
+      <span class="pr-dday ${u.d_day <= 7 ? 'soon' : ''}">${u.d_day === 0 ? 'D-DAY' : `D-${u.d_day}`}</span></a></li>`).join('')}</ul>
+    <p class="pr-note">발표일은 현지 날짜, D-day 는 한국시간 기준이에요. 예상 EPS 는 yfinance 컨센서스.</p>`;
+}
+
 async function loadPfRisk() {
   const el = document.getElementById('pfSubRisk');
   if (!el || _pfRisk.loading) return;
@@ -3786,7 +3806,9 @@ function renderPfRisk(d) {
         <p class="pr-note">배당락일 전날까지 보유해야 배당을 받습니다. '추정'은 지난 배당 간격으로 계산한 날짜예요.</p>`
       : '<div class="pf-empty pr-empty">400일 안에 예정된 배당락일이 없어요.</div>'}
     </section>`;
-  el.innerHTML = `${kpis}<div class="pr-row">${sectors}${curr}</div><div class="pr-row">${monthChart}${upcoming}</div>`;
+  el.innerHTML = `${kpis}<div class="pr-row">${sectors}${curr}</div><div class="pr-row">${monthChart}${upcoming}</div>`
+    + '<section class="pr-box pr-earn" id="prEarn"><h4 class="pr-h">다가오는 실적 발표 <span class="pr-sub">60일 이내</span></h4><p class="pr-note">불러오는 중...</p></section>';
+  loadPfEarnings();
   const cap = document.getElementById('prMcap');
   el.querySelectorAll('.pr-mcol').forEach((b) => {
     const show = () => {
@@ -3802,6 +3824,100 @@ function renderPfRisk(d) {
 
 
 // ── 국내 종목 외국인 · 기관 수급 카드 (투자 판단 탭, /api/stock/<ticker>/flow · 서버 30분 캐시) ─────────
+// ── 어닝 서프라이즈 · 실적 일정 (/api/stock/<t>/earnings, yfinance 6시간 캐시). ETF·우선주·자료 없음이면 카드 숨김 ──
+const _earnMem = {};
+function _earnEligible(stock) {
+  const t = (stock && stock.ticker) || '';
+  if (!t || stock.quote_type === 'ETF') return false;
+  return /\.(KS|KQ)$/i.test(t) ? /^\d{5}0\./.test(t) : true;
+}
+function _eps(v, cur) {
+  if (v == null) return '—';
+  return cur === 'KRW' ? `${Math.round(v).toLocaleString('ko-KR')}원` : `$${(+v).toFixed(2)}`;
+}
+const _ER_SESS = { BMO: '장전', AMC: '장후' };
+const _mmdd = (iso) => (iso ? iso.slice(5).replace('-', '.') : '');
+const _sp = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`);
+async function loadEarnings(ticker) {
+  const slot = document.getElementById('fjEarn');
+  if (!slot) return;
+  let d = _earnMem[ticker];
+  if (!d) {
+    try { d = await (await fetch(`/api/stock/${encodeURIComponent(ticker)}/earnings`)).json(); } catch (e) { d = null; }
+    if (d && d.available) _earnMem[ticker] = d;
+  }
+  const cur = document.getElementById('fjEarn');
+  if (!cur || !window._lastStock || window._lastStock.ticker !== ticker) return;
+  if (!d || !d.available) { cur.innerHTML = ''; return; }
+  cur.innerHTML = _earnHTML(d);
+  _bindEarnChart(cur, d);
+}
+function _earnHTML(d) {
+  const n = d.next_earnings, s = d.summary || {}, h = d.history || [];
+  const badges = [];
+  if (n && n.d_day <= 14) badges.push(`<span class="er-badge soon">실적 발표 ${n.d_day === 0 ? 'D-DAY' : `D-${n.d_day}`}</span>`);
+  if (s.beat_streak >= 2) badges.push(`<span class="er-badge beat">${s.beat_streak}분기 연속 Beat</span>`);
+  else if (s.miss_streak >= 2) badges.push(`<span class="er-badge miss">${s.miss_streak}분기 연속 Miss</span>`);
+  const kr = d.currency === 'KRW';
+  const nextSub = n ? [
+    _ER_SESS[n.session] ? `${kr ? '' : '미국 '}${_ER_SESS[n.session]}` : '',
+    n.time_kst && n.date_kst ? `한국시간 ${_mmdd(n.date_kst)} ${n.time_kst}` : '',
+    n.eps_estimate != null ? `예상 EPS ${_eps(n.eps_estimate, d.currency)}` : '',
+  ].filter(Boolean).join(' · ') : '';
+  const kpiNext = n ? `
+      <div class="er-kpi">
+        <span class="er-k">다음 실적 발표</span>
+        <b class="er-v">${_mmdd(n.date)} <em class="${n.d_day <= 14 ? 'soon' : ''}">${n.d_day === 0 ? 'D-DAY' : `D-${n.d_day}`}</em></b>
+        <span class="er-s">${nextSub || '시간 미정'}</span>
+      </div>` : '';
+  const kpiRec = s.quarters ? `
+      <div class="er-kpi">
+        <span class="er-k">최근 ${s.quarters}분기 성적</span>
+        <b class="er-v">${s.beat_ratio} <em>Beat</em></b>
+        <span class="er-s">평균 서프라이즈 <span class="${s.avg_surprise_pct > 0 ? 'up' : s.avg_surprise_pct < 0 ? 'down' : ''}">${_sp(s.avg_surprise_pct)}</span></span>
+      </div>` : '';
+  const mx = Math.max(1, ...h.map((x) => Math.abs(x.surprise_pct || 0)));
+  // 부호가 한쪽뿐이면 기준선을 아래(모두 Beat)·위(모두 Miss)로 옮겨 막대를 2배 높이로
+  const hasPos = h.some((x) => (x.surprise_pct || 0) > 0), hasNeg = h.some((x) => (x.surprise_pct || 0) < 0);
+  const mode = hasPos && hasNeg ? 'mid' : hasNeg ? 'neg' : 'pos';
+  const half = mode === 'mid' ? 50 : 100;
+  const pos = (v) => (mode === 'pos' ? 'bottom:0' : mode === 'neg' ? 'top:0' : v >= 0 ? 'bottom:50%' : 'top:50%');
+  const chart = h.length ? `
+      <div class="kf-chart-wrap er-chart-wrap">
+        <div class="kf-chart-h"><span>분기별 어닝 서프라이즈 <small>(회계 분기 말 기준)</small></span>
+          <span class="kf-legend"><i class="eb"></i>Beat<i class="em"></i>Miss</span></div>
+        <div class="er-chart er-${mode}" role="list" style="grid-template-columns:repeat(${h.length},minmax(0,1fr))">${h.map((x, i) => {
+          const v = x.surprise_pct || 0, ht = v ? Math.max(3, Math.abs(v) / mx * half) : 2;
+          return `
+          <button type="button" class="er-col" role="listitem" data-i="${i}" aria-label="${x.label} 분기 ${x.result} 서프라이즈 ${_sp(x.surprise_pct)}">
+            <span class="er-bars"><i class="er-b ${x.result}" style="height:${ht}%;${pos(v)}"></i></span>
+            <span class="er-x">${_esc(x.label)}</span></button>`; }).join('')}</div>
+        <p class="kf-tip er-tip" id="erTip"></p>
+      </div>` : '';
+  return `
+    <section class="fj-box er-card" aria-label="어닝 서프라이즈 · 실적 일정">
+      <div class="kf-head er-head"><h4>어닝 서프라이즈 · 실적 일정</h4>${badges.length ? `<div class="kf-badges">${badges.join('')}</div>` : ''}</div>
+      ${kpiNext || kpiRec ? `<div class="er-kpis">${kpiNext}${kpiRec}</div>` : ''}
+      ${chart}
+      <p class="fj-note kf-note">EPS 컨센서스·실제 EPS는 yfinance(Yahoo) 기준 · 차이 1% 미만은 부합(Inline)으로 봅니다.</p>
+    </section>`;
+}
+function _bindEarnChart(root, d) {
+  const tip = root.querySelector('#erTip');
+  const h = d.history || [];
+  const cols = root.querySelectorAll('.er-col');
+  const word = { beat: 'Beat', miss: 'Miss', inline: '부합' };
+  const show = (b) => {
+    cols.forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    const x = h[+b.dataset.i];
+    if (tip && x) tip.innerHTML = `<b>${_esc(x.label)} 분기${x.report_date ? ` (${_mmdd(x.report_date)} 발표)` : ''}</b>`
+      + `예상 ${_eps(x.eps_estimate, d.currency)} → 실제 ${_eps(x.eps_actual, d.currency)} · <span class="er-r ${x.result}">${_sp(x.surprise_pct)} ${word[x.result] || ''}</span>`;
+  };
+  cols.forEach((b) => { b.addEventListener('click', () => show(b)); b.addEventListener('mouseenter', () => show(b)); b.addEventListener('focus', () => show(b)); });
+  if (cols.length) show(cols[cols.length - 1]);                 // 처음엔 가장 최근 분기
+}
+
 const _flowMem = {};
 function _eok(v, sign = true) {
   if (v == null) return '—';

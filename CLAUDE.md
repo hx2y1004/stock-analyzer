@@ -48,7 +48,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `webpush.py` | PWA 웹 푸시 (VAPID 키가 없으면 자동으로 꺼짐, pywebpush 는 보낼 때만 import) |
 | `screener.py` | 스크리너 스냅샷(`screener_snapshots`) 갱신·조회와 종목 비교. 가격은 섹터맵, 기술 지표는 봇 배치에서 받고 펀더멘탈은 7일 순환 |
 | `disclosures.py` | 공시·수주 레이더(`disclosure_events`): DART 공급계약·자사주·유상증자(15분) · SEC Form 4 장내 매수·8-K(30분). 봇 스케줄러 루프에 합류(새 스레드 없음), 30일 보관, 보유·관심종목 알림. 화면은 `/screener?tab=disclosures` |
-| `analysis/` | 기술적 분석(`indicators.py`, `advanced.py`), 종합 판단(`ai_analysis.py`), 밸류에이션과 DCF(`valuation.py`), 미국 공매도(`short_interest.py`), 국내 외국인·기관 수급(`kr_flow.py`: 네이버 모바일 JSON, 30분·200종목 LRU 캐시, `/api/stock/<ticker>/flow`), 국내 공매도 순보유잔고·거래 비중(`kr_short.py`: KRX 외부 제공 화면 `_OUT` 조회 — 로그인 불필요, 보통주만, 2시간·실패 5분·300종목 LRU, `/api/stock/<ticker>/short`) |
+| `analysis/` | 기술적 분석(`indicators.py`, `advanced.py`), 종합 판단(`ai_analysis.py`), 밸류에이션과 DCF(`valuation.py`), 미국 공매도(`short_interest.py`), 국내 외국인·기관 수급(`kr_flow.py`: 네이버 모바일 JSON, 30분·200종목 LRU 캐시, `/api/stock/<ticker>/flow`), 국내 공매도 순보유잔고·거래 비중(`kr_short.py`: KRX 외부 제공 화면 `_OUT` 조회 — 로그인 불필요, 보통주만, 2시간·실패 5분·300종목 LRU, `/api/stock/<ticker>/short`), 어닝 서프라이즈·실적 일정(`earnings.py`: yfinance `get_earnings_dates` 1순위 + `earnings_history` 분기 라벨 + `calendar` 예비, 6시간·실패 15분·300종목 LRU, 공용 풀 4스레드·4초, `/api/stock/<ticker>/earnings`, 포트폴리오 60일 캘린더 `/api/portfolio/earnings`) |
 | `stock_db.json` | 종목 검색 DB (KOSPI, KOSDAQ, S&P500, NASDAQ). `build_stock_db.py`로 생성 |
 | `static/js/chart.js` | 종목 상세 기술적 분석 차트 (LightweightCharts 4.1: 툴바, 동기화, 터치, 전체화면). main.js 는 `renderCharts(data)` 만 부른다 |
 | `templates/`, `static/` | 프론트엔드 (바닐라 JS, LightweightCharts). 정적 파일 캐시 무효화는 `?v=` 쿼리 숫자를 올린다 |
