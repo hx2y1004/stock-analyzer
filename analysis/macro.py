@@ -150,7 +150,10 @@ import threading as _threading
 import time as _time
 from datetime import date as _date, datetime as _datetime
 
-FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}"
+FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}&cosd={start}"   # cosd: 최근 90일만 (전체 기간 CSV 는 커서 시간 초과)
+FRED_TIMEOUT = 6
+FRED_DAYS = 90
+FRED_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 LEADING_TTL = 6 * 3600
 LEADING_NEG_TTL = 15 * 60
 LEADING_TIMEOUT = 4
@@ -239,7 +242,7 @@ def hy_proxy(hyg, lqd):
         state, badge = "normal", "보통"
     return {"key": "hy", "label": "하이일드 (HYG/LQD)", "value": None, "unit": "%", "ratio": round(r[-1][1], 4),
             "change_20d": round(ch, 2), "change_unit": "%", "as_of": r[-1][0].isoformat(),
-            "state": state, "badge": badge, "source": "yfinance HYG/LQD 근사 (FRED 실패)"}
+            "state": state, "badge": badge, "source": "HYG/LQD 비율 근사치 (yfinance)"}
 
 
 def copper_gold(hg, gc):
@@ -297,16 +300,23 @@ def build_leading(fred_get, yf_get):
     if not out["t10y2y"]:                     # 폴백: ^TNX − 2년물 수익률 선물(2YY=F), 같은 날짜끼리
         two = dict(yfd.get("2YY=F") or [])
         approx = [(d, v - two[d]) for d, v in (yfd.get("^TNX") or []) if d in two]
-        out["t10y2y"] = yield_curve(approx, source="yfinance 근사 (^TNX − 2YY=F, FRED 실패)") if approx else None
+        out["t10y2y"] = yield_curve(approx, source="미 10년물 − 2년물 선물 금리 근사치 (yfinance)") if approx else None
     out["hy"] = hy_spread(fred["BAMLH0A0HYM2"]) if fred["BAMLH0A0HYM2"] else hy_proxy(yfd.get("HYG") or [], yfd.get("LQD") or [])
     out["copper_gold"] = copper_gold(yfd.get("HG=F") or [], yfd.get("GC=F") or [])
     out["fetched_at"] = _datetime.utcnow().isoformat() + "Z"
     return out
 
 
+def fred_url(sid, today=None):
+    from datetime import timedelta as _td
+    start = (today or _date.today()) - _td(days=FRED_DAYS)
+    return FRED_URL.format(sid=sid, start=start.isoformat())
+
+
 def _fred_get(sid):
     import requests
-    r = requests.get(FRED_URL.format(sid=sid), timeout=LEADING_TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
+    r = requests.get(fred_url(sid), timeout=FRED_TIMEOUT,
+                     headers={"User-Agent": FRED_UA, "Accept": "text/csv,text/plain,*/*"})
     return r.text if r.status_code == 200 else None
 
 

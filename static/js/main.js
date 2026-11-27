@@ -98,11 +98,11 @@ function _syncDashToggle() {
     b.classList.toggle('active', b.dataset.dm === _dashMarket));
   const lb = document.getElementById('sectorMapMarketLabel');
   if (lb) lb.textContent = _dashMarket === 'KR' ? '🇰🇷' : '🇺🇸';
+  if (_lastOverview) _renderLeadRow(_lastOverview);          // 시장 폭 칸을 활성 시장 토글과 맞춤 (초기 로드 포함)
 }
 
 function setDashMarket(mkt, btn) {
   _dashMarket = mkt;
-  if (_lastOverview) _renderLeadRow(_lastOverview);          // 시장 폭 칸은 선택한 시장 기준
   _dashMarketUserSet = true;
   _syncDashToggle();
   loadSectorMap();
@@ -118,16 +118,18 @@ const _LD_TIP = {
   copper_gold: '경기에 민감한 구리를 안전자산인 금으로 나눈 값이에요. 오르면 경기 확장 기대, 내리면 둔화 우려 (20거래일 ±3% 기준).',
   breadth: '오른 종목 수 − 내린 종목 수를 날마다 쌓은 A/D 선과 지수를 비교해요. 지수는 오르는데 오르는 종목이 줄면 "고점 다이버전스" — 소수 대형주만 끌어올리는 상태예요.',
 };
-function _ldCell(key, label, valHtml, subHtml, badge, tone, extraTip) {
-  const tip = _LD_TIP[key] + (extraTip ? ` (${extraTip})` : '');
+// 시장 폭 판정 → 카드 배지용 짧은 이름 (전체 문구는 설명 영역에)
+const _LD_BREADTH_SHORT = { bearish_divergence: '고점 주의', bullish_divergence: '바닥 신호', weak: '약세 동조', weakening: '폭 약화',
+  healthy: '건강', improving: '폭 개선', flat: '보합', collecting: '수집 중' };
+function _ldCell(key, label, valHtml, subHtml, badge, tone, extraTip, fullName) {
+  const tip = (fullName ? `${fullName} — ` : '') + _LD_TIP[key] + (extraTip ? ` 출처: ${extraTip}.` : '');
   return `
     <div class="ld-cell" data-k="${key}">
       <div class="ld-head"><span class="ld-label">${label}</span>
-        <button type="button" class="ld-info" aria-label="${_esc(label)} 설명" aria-expanded="false" title="${_esc(tip)}">ⓘ</button>
+        <button type="button" class="ld-info" aria-label="${_esc(label)} 설명 보기" aria-expanded="false" aria-controls="ldNote" data-tip="${_esc(tip)}" title="${_esc(tip)}">ⓘ</button>
         ${badge ? `<span class="ld-badge ld-${tone}">${_esc(badge)}</span>` : ''}</div>
       <div class="ld-val">${valHtml}</div>
       <div class="ld-sub">${subHtml}</div>
-      <p class="ld-tip" role="note">${_esc(tip)}</p>
     </div>`;
 }
 function _renderLeadRow(d) {
@@ -138,34 +140,55 @@ function _renderLeadRow(d) {
   const cls = (v, invert) => (v == null || v === 0 ? '' : (v > 0) !== !!invert ? 'up' : 'down');
   const loading = '<span class="ld-dim">불러오는 중…</span>';
   const yc = li && li.t10y2y, hy = li && li.hy, cg = li && li.copper_gold;
-  const approx = (x) => (x && /근사/.test(x.source || '') ? `출처: ${x.source}` : (x ? `출처: ${x.source}${x.as_of ? ' · ' + x.as_of : ''}` : ''));
-  const c1 = yc ? _ldCell('t10y2y', '10Y-2Y 금리차', sgn(yc.value, '%p'), `20일 <span class="${cls(yc.change_20d)}">${sgn(yc.change_20d, '%p')}</span>`, yc.badge, _LD_TONE[yc.state] || 'neu', approx(yc))
-    : _ldCell('t10y2y', '10Y-2Y 금리차', '—', li ? '<span class="ld-dim">자료 없음</span>' : loading, '', 'neu');
+  const src = (x) => (x ? `${x.source}${x.as_of ? ` · ${x.as_of.slice(5).replace('-', '.')} 기준` : ''}` : '');
+  const c1 = yc ? _ldCell('t10y2y', '10Y-2Y', sgn(yc.value, '%p'), `20일 <span class="${cls(yc.change_20d)}">${sgn(yc.change_20d, '%p')}</span>`, yc.badge, _LD_TONE[yc.state] || 'neu', src(yc), '장단기 금리차')
+    : _ldCell('t10y2y', '10Y-2Y', '—', li ? '<span class="ld-dim">자료 없음</span>' : loading, '', 'neu', '', '장단기 금리차');
   const c2 = hy ? (hy.value != null
-      ? _ldCell('hy', '하이일드 스프레드', `${hy.value.toFixed(2)}%`, `20일 <span class="${cls(hy.change_20d, true)}">${sgn(hy.change_20d, '%p')}</span>`, hy.badge, _LD_TONE[hy.state] || 'neu', approx(hy))
-      : _ldCell('hy', '하이일드 (HYG/LQD)', `<span class="${cls(hy.change_20d)}">${sgn(hy.change_20d, '%')}</span>`, '비율 20일 변화 · 근사', hy.badge, _LD_TONE[hy.state] || 'neu', approx(hy)))
-    : _ldCell('hy', '하이일드 스프레드', '—', li ? '<span class="ld-dim">자료 없음</span>' : loading, '', 'neu');
-  const c3 = cg ? _ldCell('copper_gold', '구리/금 비율', cg.value.toFixed(2), `20일 <span class="${cls(cg.change_20d)}">${sgn(cg.change_20d, '%')}</span> · ×1000`, cg.badge, _LD_TONE[cg.state] || 'neu', approx(cg))
-    : _ldCell('copper_gold', '구리/금 비율', '—', li ? '<span class="ld-dim">자료 없음</span>' : loading, '', 'neu');
+      ? _ldCell('hy', '하이일드', `${hy.value.toFixed(2)}%`, `20일 <span class="${cls(hy.change_20d, true)}">${sgn(hy.change_20d, '%p')}</span>`, hy.badge, _LD_TONE[hy.state] || 'neu', src(hy), '하이일드 스프레드')
+      : _ldCell('hy', '하이일드', `<span class="${cls(hy.change_20d)}">${sgn(hy.change_20d, '%')}</span>`, 'HYG/LQD 20일', hy.badge, _LD_TONE[hy.state] || 'neu', src(hy), '하이일드 스프레드'))
+    : _ldCell('hy', '하이일드', '—', li ? '<span class="ld-dim">자료 없음</span>' : loading, '', 'neu', '', '하이일드 스프레드');
+  const c3 = cg ? _ldCell('copper_gold', '구리/금', cg.value.toFixed(2), `20일 <span class="${cls(cg.change_20d)}">${sgn(cg.change_20d, '%')}</span> · ×1000`, cg.badge, _LD_TONE[cg.state] || 'neu', src(cg), '구리/금 비율')
+    : _ldCell('copper_gold', '구리/금', '—', li ? '<span class="ld-dim">자료 없음</span>' : loading, '', 'neu', '', '구리/금 비율');
   const mk = _dashMarket === 'KR' ? 'KR' : 'US';
   const b = (d.breadth || {})[mk];
   const bTone = b ? ({ up: 'good', down: 'bad' }[b.tone] || 'neu') : 'neu';
-  const c4 = b ? _ldCell('breadth', `시장 폭 추세 · ${mk === 'KR' ? '한국' : '미국'}`,
+  const mkName = mk === 'KR' ? '한국' : '미국';
+  const c4 = b ? _ldCell('breadth', `시장 폭 · ${mkName}`,
       b.advancers != null ? `<span class="up">${b.advancers}</span><small> 상승</small> <span class="down">${b.decliners}</span><small> 하락</small>` : '—',
       b.state === 'collecting' ? `<span class="ld-dim">${_esc(b.label)}</span>`
         : `최근 ${b.window_days}일 순상승 ${sgn(b.ad_net_pct, '%', 1)}${b.index_change_pct != null ? ` · 지수 ${sgn(b.index_change_pct, '%')}` : ''}`,
-      b.state === 'collecting' ? '수집 중' : b.label, b.state === 'collecting' ? 'neu' : bTone, mk === 'KR' ? '섹터맵 한국 대표 ~350종목 · KOSPI' : '섹터맵 미국 대표 ~540종목 · S&P 500')
-    : _ldCell('breadth', '시장 폭 추세', '—', '<span class="ld-dim">자료 없음</span>', '', 'neu');
-  el.innerHTML = `<div class="ld-title">선행지표 <small>6시간마다 갱신 · 국면 판정에 반영</small></div><div class="ld-grid">${c1 + c2 + c3 + c4}</div>`;
+      _LD_BREADTH_SHORT[b.state] || b.label, b.state === 'collecting' ? 'neu' : bTone,
+      mk === 'KR' ? '섹터맵 한국 대표 약 350종목 · KOSPI' : '섹터맵 미국 대표 약 540종목 · S&P 500', `시장 폭 추세(${mkName}): ${b.label}`)
+    : _ldCell('breadth', `시장 폭 · ${mkName}`, '—', '<span class="ld-dim">자료 없음</span>', '', 'neu', '', `시장 폭 추세(${mkName})`);
+  const openKey = el.querySelector('.ld-cell.tip-on')?.dataset.k;          // 1분 자동 갱신 때 열어 둔 설명 유지
+  el.innerHTML = `<div class="ld-title">선행지표 <small>6시간마다 갱신 · 국면 판정에 반영</small></div><div class="ld-grid">${c1 + c2 + c3 + c4}</div>`
+    + '<p class="ld-note" id="ldNote" role="note" hidden></p>';
   el.classList.remove('hidden');
+  // 설명은 4칸 아래 공용 영역 하나에 (옆 카드 높이가 늘어나지 않게). 다시 누르거나 바깥을 누르면 닫힘
+  const note = el.querySelector('#ldNote');
+  const closeAll = () => {
+    el.querySelectorAll('.ld-cell.tip-on').forEach((c) => { c.classList.remove('tip-on'); c.querySelector('.ld-info').setAttribute('aria-expanded', 'false'); });
+    note.hidden = true;
+  };
+  const openTip = (btn) => {
+    closeAll();
+    btn.closest('.ld-cell').classList.add('tip-on'); btn.setAttribute('aria-expanded', 'true');
+    note.textContent = btn.dataset.tip; note.hidden = false;
+  };
   el.querySelectorAll('.ld-info').forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const cell = btn.closest('.ld-cell'), on = !cell.classList.contains('tip-on');
-      el.querySelectorAll('.ld-cell.tip-on').forEach((c) => { c.classList.remove('tip-on'); c.querySelector('.ld-info').setAttribute('aria-expanded', 'false'); });
-      if (on) { cell.classList.add('tip-on'); btn.setAttribute('aria-expanded', 'true'); }
-    };
+    btn.onclick = (e) => { e.stopPropagation(); btn.getAttribute('aria-expanded') === 'true' ? closeAll() : openTip(btn); };
   });
+  if (openKey) { const b = el.querySelector(`.ld-cell[data-k="${openKey}"] .ld-info`); if (b) openTip(b); }
+  if (!_renderLeadRow._outside) {
+    _renderLeadRow._outside = true;
+    document.addEventListener('click', (e) => {
+      const box = document.getElementById('mdLead');
+      if (box && !e.target.closest('.ld-info')) {
+        box.querySelectorAll('.ld-cell.tip-on').forEach((c) => { c.classList.remove('tip-on'); c.querySelector('.ld-info').setAttribute('aria-expanded', 'false'); });
+        const n = box.querySelector('#ldNote'); if (n) n.hidden = true;
+      }
+    });
+  }
 }
 
 // 홈 시장 현황 아래 1줄: 미 10년 국채 | 금 | 달러 인덱스 | 매크로 국면
