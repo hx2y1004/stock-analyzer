@@ -11,6 +11,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 import market_hours
+import portfolio_analytics
 import toss_api
 import ai_cache
 try:
@@ -5227,6 +5228,113 @@ def _portfolio_summary(rows):
         "count": len(rows),
         "priced_count": priced,
     }
+
+
+# ── 포트폴리오 리스크 · 배당 진단 (/api/portfolio/analytics) ─────────────────────
+# 새 테이블 없이: 보유 종목 + 공용 시세 캐시 + 스크리너 스냅샷(섹터·배당수익률) + 종목별 배당 프로필(12시간 메모리 캐시)
+_SECTOR_KO = {
+    "Technology": "기술", "Financial Services": "금융", "Healthcare": "헬스케어", "Consumer Cyclical": "경기소비재",
+    "Consumer Defensive": "필수소비재", "Communication Services": "커뮤니케이션", "Industrials": "산업재", "Energy": "에너지",
+    "Basic Materials": "소재", "Real Estate": "부동산", "Utilities": "유틸리티",
+}
+_DIV_PROFILE = {}                 # ticker -> (ts, profile)
+_DIV_PROFILE_TTL = 12 * 3600
+_DIV_PROFILE_LOCK = threading.Lock()
+_PF_ANALYTICS = {}                # user_id -> (ts, 보유 서명, payload)
+_PF_ANALYTICS_TTL = 5 * 60
+
+
+def _dividend_profile(ticker, snap=None):
+    """종목 배당·섹터 프로필 (portfolio_analytics 입력). yfinance info + 최근 1년 배당 이력, 12시간 캐시.
+    큰 info 딕셔너리는 들고 있지 않고 필요한 값만 남긴다."""
+    now = time.time()
+    with _DIV_PROFILE_LOCK:
+        hit = _DIV_PROFILE.get(ticker)
+    if hit and now - hit[0] < _DIV_PROFILE_TTL:
+        return hit[1]
+    snap = snap or {}
+    prof = {"sector_name": snap.get("sector_name"), "yield_pct": snap.get("dividend_yield"), "history": []}
+    is_kr = ticker.upper().endswith((".KS", ".KQ"))
+    try:
+        tk = yf.Ticker(ticker)
+        info = tk.info or {}
+        if (info.get("quoteType") or "").upper() == "ETF":
+            prof["sector_name"] = "ETF"                       # 여러 업종을 담은 상품 → 업종 편중 판정에서 뺀다
+        prof["sector_name"] = prof["sector_name"] or _SECTOR_KO.get(info.get("sector")) or info.get("sector")
+        prof["dividend_rate"] = safe_float(info.get("dividendRate"))
+        prof["trailing_rate"] = safe_float(info.get("trailingAnnualDividendRate"))
+        if prof["yield_pct"] is None and safe_float(info.get("dividendYield")) is not None:
+            prof["yield_pct"] = safe_float(info.get("dividendYield"))            # yfinance 는 % 값 (0.55 = 0.55%)
+        prof["price"] = safe_float(info.get("currentPrice")) or safe_float(info.get("regularMarketPrice"))
+        ex = info.get("exDividendDate")
+        if ex:
+            try:
+                prof["ex_date"] = datetime.utcfromtimestamp(int(ex)).date()
+            except Exception:
+                pass
+        try:
+            dv = tk.dividends
+            if dv is not None and len(dv):
+                cut = pd.Timestamp.now(tz=dv.index.tz) - pd.Timedelta(days=365)
+                recent = dv[dv.index >= cut]
+                prof["history"] = sorted((ix.date(), float(v)) for ix, v in recent.items() if v and v > 0)
+                prof["last_ex"] = dv.index[-1].date()
+        except Exception:
+            pass
+    except Exception as e:
+        app.logger.warning(f"[pf-analytics] {ticker} 배당 정보 실패: {str(e)[:80]}")
+    prof["annual"] = is_kr and len(prof["history"]) <= 1          # 한국은 대개 연 1회(결산) 배당
+    if not prof.get("ex_date") and prof.get("last_ex"):
+        prof["ex_date"] = prof["last_ex"]
+    with _DIV_PROFILE_LOCK:
+        _DIV_PROFILE[ticker] = (now, prof)
+    return prof
+
+
+@app.route("/api/portfolio/analytics")
+def portfolio_analytics_api():
+    """로그인 사용자 실제 포트폴리오의 섹터 편중 · 통화 노출 · 월별 예상 배당 · 다가오는 배당락일 (사용자별 5분 캐시)."""
+    if not current_user.is_authenticated:
+        return jsonify({"error": "로그인이 필요합니다"}), 401
+    holdings = Holding.query.filter_by(user_id=current_user.id).all()
+    sig = tuple(sorted((h.ticker, float(h.quantity or 0)) for h in holdings))
+    hit = _PF_ANALYTICS.get(current_user.id)
+    if hit and time.time() - hit[0] < _PF_ANALYTICS_TTL and hit[1] == sig and request.args.get("fresh") != "1":
+        return jsonify(hit[2])
+    tickers = sorted({h.ticker for h in holdings})
+    prices = {}
+    if tickers:
+        try:
+            for t, inf in toss_api.get_prices_cached(tickers).items():
+                if inf.get("price"):
+                    prices[t] = float(inf["price"])
+        except Exception:
+            pass
+    snaps = {}
+    if tickers:
+        try:
+            for t, sn, dy, px in (db.session.query(ScreenerSnapshot.ticker, ScreenerSnapshot.sector_name,
+                                                    ScreenerSnapshot.dividend_yield, ScreenerSnapshot.price)
+                                  .filter(ScreenerSnapshot.ticker.in_(tickers)).all()):
+                snaps[t] = {"sector_name": sn, "dividend_yield": dy, "price": px}
+        except Exception:
+            db.session.rollback()
+    profiles = {}
+    if tickers:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(tickers))) as ex:
+            for t, prof in zip(tickers, ex.map(lambda t: _dividend_profile(t, snaps.get(t)), tickers)):
+                profiles[t] = prof
+    rows = []
+    for h in holdings:
+        cur = "KRW" if h.ticker.upper().endswith((".KS", ".KQ")) else (h.currency or "USD")
+        rows.append({"ticker": h.ticker, "name": h.name or h.ticker, "currency": cur, "quantity": h.quantity,
+                     "purchase_price": h.purchase_price,
+                     "current_price": prices.get(h.ticker) or (snaps.get(h.ticker) or {}).get("price")})
+    payload = portfolio_analytics.compute(rows, _get_usd_krw_rate(), profiles, today=datetime.now(market_hours.TZ["KR"]).date())
+    payload["as_of"] = datetime.utcnow().isoformat() + "Z"
+    _PF_ANALYTICS[current_user.id] = (time.time(), sig, payload)
+    return jsonify(payload)
 
 
 # ── 포트폴리오 추가 ───────────────────────────────────────────────────────────

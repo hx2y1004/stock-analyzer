@@ -468,6 +468,10 @@ async function loadPortfolio() {
     const holdings = Array.isArray(data) ? data : (data.holdings || []);
     renderPortfolioSummary(Array.isArray(data) ? null : data.summary);
     renderPortfolioCards(holdings);
+    const nEl = document.getElementById('pfHoldCount');
+    if (nEl) nEl.textContent = holdings.length ? holdings.length : '';
+    _pfRisk.stale = true;                                   // 보유 종목이 바뀌었을 수 있음 → 리스크 탭은 다음에 열 때 다시
+    if (_pfRisk.sub === 'risk') loadPfRisk();
   } catch (e) {
     cards.innerHTML = '<div class="pf-loading">불러오기 실패</div>';
   }
@@ -3632,3 +3636,148 @@ function searchAndAnalyze(ticker) {
     end();
   }
 })();
+
+
+// ── 홈 '내 포트폴리오' 서브 탭: 보유 종목 | 리스크 · 배당 (/api/portfolio/analytics, 처음 열 때 불러옴) ─────────
+const _pfRisk = { sub: 'hold', data: null, stale: true, loading: false };
+function selectPfSub(sub, focus) {
+  _pfRisk.sub = sub;
+  document.querySelectorAll('.pf-subtab').forEach((b) => {
+    const on = b.dataset.sub === sub;
+    b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1;
+    if (on && focus) b.focus();
+  });
+  const hold = document.getElementById('pfSubHold'), risk = document.getElementById('pfSubRisk');
+  if (hold) hold.classList.toggle('hidden', sub !== 'hold');
+  if (risk) risk.classList.toggle('hidden', sub !== 'risk');
+  document.querySelector('.pf-top-actions')?.classList.toggle('pf-actions-dim', sub === 'risk');
+  if (sub === 'risk' && (_pfRisk.stale || !_pfRisk.data)) loadPfRisk();
+}
+(function initPfSubTabs() {
+  const tabs = [...document.querySelectorAll('.pf-subtab')];
+  tabs.forEach((b, i) => {
+    b.addEventListener('click', () => selectPfSub(b.dataset.sub));
+    b.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      selectPfSub(tabs[(i + 1) % tabs.length].dataset.sub, true);
+    });
+  });
+})();
+
+const _krwShort = (v) => {
+  if (v == null) return '—';
+  const a = Math.abs(v), sg = v < 0 ? '-' : '';
+  if (a >= 1e8) return `${sg}${(a / 1e8).toFixed(2)}억원`;
+  if (a >= 1e4) return `${sg}${(a / 1e4).toLocaleString('ko-KR', { maximumFractionDigits: a >= 1e6 ? 0 : 1 })}만원`;
+  return `${sg}${Math.round(a).toLocaleString('ko-KR')}원`;
+};
+
+async function loadPfRisk() {
+  const el = document.getElementById('pfSubRisk');
+  if (!el || _pfRisk.loading) return;
+  if (!currentUser) { el.innerHTML = '<div class="pf-empty pr-empty">로그인하면 보유 종목의 섹터 편중 · 환율 노출 · 예상 배당을 볼 수 있어요.</div>'; return; }
+  _pfRisk.loading = true;
+  if (!_pfRisk.data) el.innerHTML = '<div class="pf-loading">진단하는 중... (처음엔 배당 정보를 모으느라 몇 초 걸릴 수 있어요)</div>';
+  else el.classList.add('is-loading');
+  try {
+    const r = await fetch('/api/portfolio/analytics');
+    if (!r.ok) throw new Error(r.status);
+    _pfRisk.data = await r.json();
+    _pfRisk.stale = false;
+    renderPfRisk(_pfRisk.data);
+  } catch (e) {
+    el.innerHTML = '<div class="pf-empty pr-empty">진단을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';
+  } finally {
+    _pfRisk.loading = false;
+    el.classList.remove('is-loading');
+  }
+}
+
+function renderPfRisk(d) {
+  const el = document.getElementById('pfSubRisk');
+  if (!el) return;
+  if (!d || !d.count) {
+    el.innerHTML = '<div class="pf-empty pr-empty">보유 종목을 추가하면 섹터 편중 · 환율 노출 · 월별 예상 배당을 진단해 드려요.</div>';
+    return;
+  }
+  const dv = d.dividends || {};
+  const curName = { KRW: '원화', USD: '달러' };
+  const curCls = (c) => ({ KRW: 'krw', USD: 'usd' }[c] || 'etc');
+  const pctTxt = (v) => (v == null ? '—' : `${(+v).toFixed(1)}%`);
+  const usd = (d.currencies || []).find((c) => c.currency === 'USD');
+  // 1행: KPI
+  const kpis = `
+    <div class="pr-kpis">
+      <div class="pr-kpi">
+        <span class="pr-k">최대 섹터 비중</span>
+        <b class="pr-v">${pctTxt(d.max_sector_pct)}</b>
+        <span class="pr-s">${_esc(d.max_sector_name || '업종 정보 없음')}${(d.sectors || []).some((s) => s.name === 'ETF') ? ' · ETF 제외' : ''}${d.concentrated ? ' <span class="pr-badge warn">편중 주의</span>' : ''}</span>
+      </div>
+      <div class="pr-kpi">
+        <span class="pr-k">외화(환율) 노출</span>
+        <b class="pr-v">${pctTxt(d.fx_exposure_pct)}</b>
+        <span class="pr-s">${(d.currencies || []).map((c) => `${_esc(c.currency)} ${c.pct.toFixed(0)}%`).join(' · ')}</span>
+      </div>
+      <div class="pr-kpi">
+        <span class="pr-k">연간 예상 배당금</span>
+        <b class="pr-v pr-green">${dv.annual_dividend_krw ? _krwShort(dv.annual_dividend_krw) : '—'}</b>
+        <span class="pr-s">${dv.annual_dividend_krw ? `세전 · 월 평균 약 ${_krwShort(dv.monthly_avg_krw)} (${(dv.portfolio_yield_pct || 0).toFixed(2)}%)` : '배당 종목 없음'}</span>
+      </div>
+    </div>`;
+  // 2행: 섹터 · 통화
+  const sectors = `
+    <section class="pr-box">
+      <h4 class="pr-h">섹터별 비중</h4>
+      <div class="pr-bars">${(d.sectors || []).map((s, i) => `
+        <div class="pr-bar-row"><span class="pr-bar-name">${_esc(s.name)}</span>
+          <span class="pr-bar-track"><i style="width:${Math.max(1.5, s.pct)}%" class="${i === 0 && d.concentrated ? 'warn' : ''}"></i></span>
+          <span class="pr-bar-pct">${s.pct.toFixed(1)}%</span></div>`).join('')}</div>
+    </section>`;
+  const curr = `
+    <section class="pr-box">
+      <h4 class="pr-h">통화(환율) 노출</h4>
+      <div class="pr-stack" role="img" aria-label="${(d.currencies || []).map((c) => `${c.currency} ${c.pct}%`).join(', ')}">${(d.currencies || []).map((c) =>
+        `<i class="pr-cur-${curCls(c.currency)}" style="width:${c.pct}%"></i>`).join('')}</div>
+      <div class="pr-legend">${(d.currencies || []).map((c) => `
+        <span><i class="pr-cur-${curCls(c.currency)}"></i>${_esc(curName[c.currency] || c.currency)} <b>${c.pct.toFixed(1)}%</b> <em>${_krwShort(c.value_krw)}</em></span>`).join('')}</div>
+      <p class="pr-note">${usd ? `달러 자산 ${usd.pct.toFixed(1)}%는 원/달러 환율이 1% 움직이면 평가금액이 약 ${_krwShort(usd.value_krw * 0.01)} 달라집니다 (적용 환율 ${Math.round(d.fx_usd_krw).toLocaleString('ko-KR')}원).` : '외화 자산이 없어 환율 변동 영향이 없습니다.'}</p>
+    </section>`;
+  // 3행: 월별 배당 · 다가오는 배당락
+  const months = dv.months || [];
+  const mx = Math.max(1, ...months);
+  const monthChart = `
+    <section class="pr-box">
+      <h4 class="pr-h">월별 예상 배당금 <span class="pr-sub">배당락 월 기준 · 세전</span></h4>
+      ${dv.annual_dividend_krw ? `
+      <div class="pr-months" role="list">${months.map((v, i) => `
+        <button type="button" class="pr-mcol" role="listitem" data-m="${i + 1}" data-v="${v}" title="${i + 1}월 ${v.toLocaleString('ko-KR')}원" aria-label="${i + 1}월 예상 배당 ${v.toLocaleString('ko-KR')}원">
+          <span class="pr-mbar"><i style="height:${v ? Math.max(4, v / mx * 100) : 0}%"></i></span><span class="pr-mlab">${i + 1}</span></button>`).join('')}</div>
+      <p class="pr-mcap" id="prMcap">막대를 누르면 그 달 금액이 보여요.</p>`
+      : '<div class="pf-empty pr-empty">배당을 주는 보유 종목이 없어요.</div>'}
+    </section>`;
+  const up = dv.upcoming || [];
+  const upcoming = `
+    <section class="pr-box">
+      <h4 class="pr-h">다가오는 배당락일</h4>
+      ${up.length ? `<ul class="pr-ups">${up.map((u) => `
+        <li><a href="/stock/${encodeURIComponent(u.ticker)}" class="pr-up">
+          ${window.renderStockLogo ? renderStockLogo(u.ticker, u.name, 'sm') : ''}
+          <span class="pr-up-id"><b>${_esc(u.name)}</b><small>${_esc(u.ticker)} · ${_esc(u.ex_date.slice(5).replace('-', '.'))}${u.estimated ? ' (추정)' : ''}</small></span>
+          <span class="pr-dday ${u.d_day <= 7 ? 'soon' : ''}">${u.d_day === 0 ? 'D-DAY' : `D-${u.d_day}`}</span>
+          <span class="pr-up-amt">${_krwShort(u.est_payout_krw)}</span></a></li>`).join('')}</ul>
+        <p class="pr-note">배당락일 전날까지 보유해야 배당을 받습니다. '추정'은 지난 배당 간격으로 계산한 날짜예요.</p>`
+      : '<div class="pf-empty pr-empty">400일 안에 예정된 배당락일이 없어요.</div>'}
+    </section>`;
+  el.innerHTML = `${kpis}<div class="pr-row">${sectors}${curr}</div><div class="pr-row">${monthChart}${upcoming}</div>`;
+  const cap = document.getElementById('prMcap');
+  el.querySelectorAll('.pr-mcol').forEach((b) => {
+    const show = () => {
+      el.querySelectorAll('.pr-mcol.on').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      if (cap) cap.textContent = `${b.dataset.m}월 예상 배당 ${(+b.dataset.v).toLocaleString('ko-KR')}원`;
+    };
+    b.addEventListener('click', show);
+    b.addEventListener('mouseenter', show);
+    b.addEventListener('focus', show);
+  });
+}

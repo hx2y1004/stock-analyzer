@@ -7101,3 +7101,77 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .fj-short-v { grid-column: 1 / -1; gap: 4px 12px; }
   .fj-si + .fj-si::before { content: none; }
 }
+
+/* ── 홈 내 포트폴리오: 보유 종목 | 리스크 · 배당 (PR #100) ───────────────────────────── */
+.pf-subtabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; }
+.pf-subtab { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--text2); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.pf-subtab:hover { color: var(--text); }
+.pf-subtab.active { background: var(--bg2); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
+.pf-subtab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pf-subtab-n:empty { display: none; }
+.pf-subtab-n { font-size: 11.5px; font-weight: 700; color: var(--text2); background: var(--bg2); border-radius: 999px; padding: 0 7px; line-height: 18px; }
+.pf-subtab.active .pf-subtab-n { background: var(--bg3); color: var(--text); }
+.pf-actions-dim { opacity: .55; }
+.pf-risk { display: flex; flex-direction: column; gap: 12px; }
+.pf-risk.is-loading { opacity: .6; }
+.pr-empty { padding: 24px 12px; text-align: center; color: var(--text2); font-size: 13px; }
+.pr-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pr-kpi { display: flex; flex-direction: column; gap: 4px; min-width: 0; background: var(--bg3); border-radius: 12px; padding: 12px 14px; }
+.pr-k { font-size: 12px; color: var(--text2); }
+.pr-v { font-size: 22px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.pr-v.pr-green { color: var(--sem-up, #34d399); }
+.pr-s { font-size: 12px; color: var(--text2); line-height: 1.5; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
+.pr-badge { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pr-badge.warn { color: #fb923c; background: rgba(251, 146, 60, .14); border: 1px solid rgba(251, 146, 60, .4); }
+.pr-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.pr-box { display: flex; flex-direction: column; gap: 10px; min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--bg2); }
+.pr-h { margin: 0; font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pr-sub { font-size: 11.5px; font-weight: 500; color: var(--text2); }
+.pr-bars { display: flex; flex-direction: column; gap: 8px; }
+.pr-bar-row { display: grid; grid-template-columns: minmax(0, 92px) minmax(0, 1fr) 48px; align-items: center; gap: 8px; font-size: 12.5px; }
+.pr-bar-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr-bar-track { height: 8px; background: var(--bg3); border-radius: 999px; overflow: hidden; }
+.pr-bar-track i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.pr-bar-track i.warn { background: #fb923c; }
+.pr-bar-pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
+.pr-stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--bg3); }
+.pr-stack i { display: block; height: 100%; }
+.pr-cur-krw { background: #60a5fa; } .pr-cur-usd { background: #34d399; } .pr-cur-etc { background: #a78bfa; }
+.pr-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--text2); }
+.pr-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pr-legend span > i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.pr-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+.pr-legend em { font-style: normal; }
+.pr-note { margin: 0; font-size: 11.5px; color: var(--text2); line-height: 1.55; }
+.pr-months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; align-items: end; height: 120px; }
+.pr-mcol { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; min-width: 0; }
+.pr-mbar { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; background: rgba(52, 211, 153, .06); border-radius: 6px; }
+.pr-mbar i { display: block; width: 70%; max-width: 18px; border-radius: 4px 4px 2px 2px; background: #10b981; }
+.pr-mcol:hover .pr-mbar i, .pr-mcol.on .pr-mbar i { background: #34d399; }
+.pr-mcol:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 6px; }
+.pr-mlab { font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.pr-mcol.on .pr-mlab { color: var(--text); font-weight: 700; }
+.pr-mcap { margin: 0; font-size: 12.5px; color: var(--text2); min-height: 18px; }
+.pr-ups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pr-up { display: flex; align-items: center; gap: 10px; padding: 8px 4px; text-decoration: none; color: inherit; border-bottom: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.pr-ups li:last-child .pr-up { border-bottom: 0; }
+.pr-up:hover { background: var(--bg3); }
+.pr-up-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.pr-up-id b { font-size: 13.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr-up-id small { font-size: 11.5px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr-dday { flex: none; font-size: 11.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: var(--bg3); color: var(--text); font-variant-numeric: tabular-nums; }
+.pr-dday.soon { background: rgba(52, 211, 153, .14); color: #34d399; }
+.pr-up-amt { flex: none; min-width: 64px; text-align: right; font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) {
+  .pr-kpis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .pr-kpis .pr-kpi:last-child { grid-column: 1 / -1; }
+  .pr-kpi { padding: 10px 12px; }
+  .pr-v { font-size: 19px; }
+  .pr-row { grid-template-columns: minmax(0, 1fr); }
+  .pr-box { padding: 12px; }
+  .pr-bar-row { grid-template-columns: minmax(0, 80px) minmax(0, 1fr) 44px; }
+  .pf-subtabs { width: 100%; }
+  .pf-subtab { flex: 1 1 0; justify-content: center; }
+}
+@media (max-width: 380px) { .pr-kpis { grid-template-columns: minmax(0, 1fr); } .pr-up-amt { min-width: 0; } }
