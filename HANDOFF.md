@@ -57,6 +57,26 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 내 보유·관심종목 맞춤 PWA 푸시 알림 (5단계, PR #106)
+- 재활용: `webpush.send_to_user`(VAPID · 404/410 만료 구독 삭제), 헤더 종 `Notification`(kind `stock_alert`), 봇 스케줄러 5분 장중 체크·`_RUN_LOCK`,
+  `notify.js` 푸시 구독 절차(`window.SAPush` 로 노출), 서비스워커 `notificationclick`(같은 URL 탭이 열려 있으면 그 탭 포커스 추가). AI 봇 알림 경로는 손대지 않음.
+- 새 테이블(새로 만드는 표라 `db.create_all` 로 PostgreSQL·SQLite 모두 생성, ALTER 없음)
+  - `stock_alert_rules`: user·ticker 유니크, target_price / stop_price / rsi_oversold / rsi_overbought / disclosure_enabled / enabled
+  - `stock_alert_logs`: (user_id, dedup_key) 유니크 → 이력 행을 먼저 커밋하고 성공한 경우만 발송(동시 실행·재시작에도 1회)
+- `stock_alerts.py`
+  - 가격·RSI: `bot_engine` 장중 5분 블록에서 `paper_exit` 다음에 `D["stock_alerts"](market)` — 시장별 정규장에만, 규칙 없으면 쿼리 1번.
+    시세는 `app._live_quotes`(토스 20초 공용 캐시 → 단건 경로, 모의투자 자동 청산과 공용으로 추출). RSI(14)는 켠 종목만 일봉 3개월 + 현재가, 30분 캐시.
+  - 목표가·손절가: 1회 발송 후 그 조건을 NULL 로 자동 해제 (dedup 키에 가격·날짜). RSI: 같은 (사용자·종목·종류) 24시간 쿨다운.
+  - 공시·내부자·실적(30분): `DisclosureEvent`(DART 수주·자사주·유상증자·임원 매수 / SEC Form 4·8-K) — 알림 규칙 종목도 `disclosures.targets()` 수집 대상에 추가.
+    공시 레이더 알림을 이미 받는 사용자(보유·관심 + 설정 켬)는 건너뜀. 미국 내부자 매수는 `analysis.advanced.recent_insider_buys`(yfinance, 6시간 캐시),
+    같은 종목 SEC Form 4 가 ±3일 안에 있으면 중복이라 건너뜀. 실적 D-1 은 `earnings.get_many`(6시간 캐시, 동시 4).
+  - 한 사용자에게 한 번에 4건 이상이면 푸시는 요약 1건(`/?tab=alerts`), 인앱은 건별. 이력 90일 보관.
+- ⚠️ 발견(미수정): yfinance 1.8 `insider_transactions` 의 'Transaction' 열이 비어 있고 내용은 'Text' 열에 있다.
+  기존 `analysis/advanced._insider_activity` 는 'Transaction' 만 봐서 매수·매도가 항상 0건으로 나온다(분석 지표 `metrics["insider"]`). 새 `recent_insider_buys` 는 두 열을 함께 본다.
+- 화면: 종목 상세 ☆ 옆 '🔔 알림 설정'(설정되면 '알림 켜짐'), 모달(목표·손절 % 미리보기·±5/10/20% 버튼·RSI·공시 토글·푸시 권한/iOS 홈 화면 안내, 600px 이하 바텀시트),
+  홈 '내 알림' 탭(규칙 배지·on/off·수정·삭제·최근 20건·테스트 푸시), 보유 종목 행·관심종목 행 🔔 원클릭.
+- 버전: main.js v112, style.css v131, notify.js v9, alerts.js v1, sa-v99.
+
 ### 어닝 서프라이즈 · 실적 일정 (4단계, PR #105)
 - `analysis/earnings.py` (yfinance 1.8.0, 2026-11-27 NVDA·AAPL·MSFT·005930.KS·069500.KS 실호출로 필드 확인)
   - `get_earnings_dates(limit=12)`: 미래 1건 + 과거 11건, 인덱스 = 발표 시각(뉴욕 tz). 미국은 시각으로 장전(09:30 전)/장후(16:00 이후),

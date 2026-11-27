@@ -4,7 +4,7 @@
  *
  * 캐시 버전을 올리면 사용자는 다음 방문 시 새 자산을 받습니다.
  */
-const CACHE_VERSION = 'sa-v98';
+const CACHE_VERSION = 'sa-v99';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -147,6 +147,9 @@ self.addEventListener('notificationclick', (event) => {
   const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
   event.waitUntil((async () => {
     const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // 이미 그 종목(/stock/<ticker>) 화면이 열려 있으면 그 탭을 앞으로
+    const same = wins.find((w) => w.url === target);
+    if (same) { try { await same.focus(); return; } catch (e) { /* 아래로 */ } }
     for (const w of wins) {
       if (new URL(w.url).origin === self.location.origin) {
         try { await w.focus(); } catch (e) { /* 포커스 불가 환경 */ }

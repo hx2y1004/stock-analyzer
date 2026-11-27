@@ -71,7 +71,7 @@ from analysis.short_interest import short_interest as short_interest_from_info
 from analysis import kr_flow
 from analysis import kr_short
 from analysis import earnings as earnings_mod
-from models import AppliedStockSplit, DropHoldState, DisclosureEvent
+from models import AppliedStockSplit, DropHoldState, DisclosureEvent, StockAlertRule, StockAlertLog
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
                     BotPosition, PushSubscription, ScreenerSnapshot, TrendSetup)
@@ -6143,6 +6143,23 @@ def trading_holding_targets(ticker):
     return jsonify({"ok": True, "ticker": ticker, "target_price": h.target_price, "stop_loss_price": h.stop_loss_price})
 
 
+def _live_quotes(tickers):
+    """{ticker: 현재가}. 토스 1회 배치(20초 공용 캐시) → 없는 종목만 기존 경로(토스 단건 → 네이버 → yfinance, 3초 캐시, 동시 4)."""
+    quotes = {}
+    if not tickers:
+        return quotes
+    try:
+        quotes = {t: float(i["price"]) for t, i in toss_api.get_prices_cached(tickers).items() if i.get("price")}
+    except Exception:
+        pass
+    rest = [t for t in tickers if t not in quotes]
+    if rest:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(4, len(rest))) as ex:
+            quotes.update({t: p for t, p in zip(rest, ex.map(_fetch_current_price, rest)) if p})
+    return quotes
+
+
 def paper_auto_exits(market, quotes=None):
     """장중 5분 체크(bot_engine 스케줄러)에서 호출: 목표가·손절가가 예약된 사용자 모의 보유 종목만 시세 확인 → 전량 자동 매도.
     예약이 하나도 없으면 쿼리 1번 후 바로 끝 (시세 조회 없음). quotes 는 테스트용 {ticker: 현재가}.
@@ -6156,17 +6173,7 @@ def paper_auto_exits(market, quotes=None):
         return {"checked": 0, "closed": 0}
     tickers = sorted({r.ticker for r in rows})
     if quotes is None:
-        # 토스 1회 배치(20초 공용 캐시) → 없는 종목만 기존 경로(토스 단건 → 네이버 → yfinance)
-        quotes = {}
-        try:
-            quotes = {t: float(i["price"]) for t, i in toss_api.get_prices_cached(tickers).items() if i.get("price")}
-        except Exception:
-            pass
-        rest = [t for t in tickers if t not in quotes]
-        if rest:
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=min(4, len(rest))) as ex:
-                quotes.update(dict(zip(rest, ex.map(_fetch_current_price, rest))))
+        quotes = _live_quotes(tickers)
     # 오손절 방어: 매입가 대비 -40% 이상(분할 비율만큼 떨어진 것처럼 보임)이면 먼저 액면분할 여부를 확인.
     # 분할이면 수량·매입가·목표가·손절가를 보정하고 이번 회차 자동 청산은 건너뛴다 (다음 5분 체크에서 보정값으로 판정)
     split_hit = set()
@@ -7022,12 +7029,55 @@ import disclosures
 import sector_map as _sector_map_for_disc
 disclosures.init({
     "app": app, "db": db, "DisclosureEvent": DisclosureEvent, "Holding": Holding, "PaperHolding": PaperHolding,
-    "WatchlistItem": WatchlistItem, "universe": _sector_map_for_disc.universe, "notify": notifier.dispatch_disclosures,
+    "WatchlistItem": WatchlistItem, "StockAlertRule": StockAlertRule,
+    "universe": _sector_map_for_disc.universe, "notify": notifier.dispatch_disclosures,
     "kr_prices": lambda: {m_["ticker"]: m_["price"] for g_ in ((_sector_map_for_disc.get("KR") or {}).get("groups") or [])
                           for m_ in (g_.get("members") or []) if m_.get("price")},   # 내부자 매수 소액 필터용 (네트워크 없음)
 })
 with app.app_context():
-    disclosures.migrate_8k_contract()          # 예전 8-K Item 1.01(material_8k) → 수주·계약(contract)
+    disclosures.migrate_8k_contract()
+
+# ── 내 종목 맞춤 알림 (stock_alerts.py): 목표가·손절가·RSI(장중 5분) · 공시·내부자 매수·실적 D-1(30분) ─────────
+import stock_alerts
+from analysis.advanced import recent_insider_buys as _recent_insider_buys
+
+
+def _alert_rsi_fetch(tickers, live):
+    """RSI(14) — 일봉 3개월 한 번에 받고 마지막 값을 현재가로 (오늘 봉이 없으면 덧붙임). → {ticker: rsi | None}"""
+    import yfinance as yf
+    from analysis.indicators import rsi_series
+    out = {t: None for t in tickers}
+    df = yf.download(tickers, period="3mo", interval="1d", group_by="ticker", auto_adjust=False, progress=False, threads=False)
+    if df is None or df.empty:
+        return out
+    for t in tickers:
+        try:
+            c = (df[t]["Close"] if isinstance(df.columns, pd.MultiIndex) else df["Close"]).dropna()
+            if len(c) < 20:
+                continue
+            px = (live or {}).get(t)
+            if px:
+                today = datetime.now(market_hours.TZ["KR" if stock_alerts.is_kr(t) else "US"]).date()
+                if c.index[-1].date() >= today:
+                    c.iloc[-1] = px
+                else:
+                    c = pd.concat([c, pd.Series([px], index=[pd.Timestamp(today)])])
+            v = rsi_series(c, 14).iloc[-1]
+            out[t] = round(float(v), 1) if v == v else None
+        except Exception:
+            continue
+    return out
+
+
+stock_alerts.init({
+    "app": app, "db": db, "StockAlertRule": StockAlertRule, "StockAlertLog": StockAlertLog, "Notification": Notification,
+    "DisclosureEvent": DisclosureEvent, "webpush": webpush, "quotes": _live_quotes, "rsi_fetch": _alert_rsi_fetch,
+    "insider_buys": lambda t: _recent_insider_buys(yf.Ticker(t), days=stock_alerts.INSIDER_DAYS),
+    "earnings_many": lambda ts: earnings_mod.get_many(ts, max_workers=4),
+    "radar_receivers": notifier.disclosure_receivers,
+})
+bot_engine.D["stock_alerts"] = stock_alerts.check_prices          # 장중 5분 (시장별 정규장 · _RUN_LOCK 안)
+bot_engine.D["stock_alert_events"] = stock_alerts.check_events    # 30분 주기 (루프 매 회차 호출, 주기 안 되면 바로 끝)          # 예전 8-K Item 1.01(material_8k) → 수주·계약(contract)
 bot_engine.D["disclosures_tick"] = disclosures.tick
 bot_engine.start_scheduler()
 
@@ -7821,6 +7871,98 @@ def push_test():
         "url": "/ai-bots", "tag": "push-test"})
     return jsonify({"ok": r["sent"] > 0, **r})
 
+
+
+
+# ── 내 종목 맞춤 알림 API (stock_alerts.py) ─────────────────────────────────────────
+_ALERT_TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-^=]{0,19}$")
+
+
+def _alert_push_state():
+    ok, _ = webpush.status()
+    return {"enabled": ok, "devices": PushSubscription.query.filter_by(user_id=current_user.id).count()}
+
+
+@app.route("/api/alerts/rules", methods=["GET", "POST", "DELETE"])
+@login_required
+def alert_rules():
+    """GET: 내 알림 규칙 전체 · POST: 한 종목 규칙 저장(전체 덮어쓰기, 없으면 생성) · DELETE: ?ticker= 삭제."""
+    if request.method == "GET":
+        rows = (StockAlertRule.query.filter_by(user_id=current_user.id)
+                .order_by(StockAlertRule.enabled.desc(), StockAlertRule.updated_at.desc()).all())
+        return jsonify({"rules": [stock_alerts.rule_dict(r) for r in rows], "push": _alert_push_state()})
+    if request.method == "DELETE":
+        return alert_rule_one((request.args.get("ticker") or (request.get_json(silent=True) or {}).get("ticker") or ""))
+    body = request.get_json(silent=True) or {}
+    return _alert_save(body.get("ticker"), body, partial=False)
+
+
+def _alert_save(ticker, body, partial):
+    t = (ticker or "").strip().upper()
+    if not _ALERT_TICKER_RE.match(t):
+        return jsonify({"error": "종목 코드가 올바르지 않습니다"}), 400
+    r = StockAlertRule.query.filter_by(user_id=current_user.id, ticker=t).first()
+    if r is None:
+        if partial:
+            return jsonify({"error": "이 종목에 설정된 알림이 없습니다"}), 404
+        if StockAlertRule.query.filter_by(user_id=current_user.id).count() >= stock_alerts.MAX_RULES_PER_USER:
+            return jsonify({"error": f"알림은 종목 {stock_alerts.MAX_RULES_PER_USER}개까지 설정할 수 있어요"}), 400
+        r = StockAlertRule(user_id=current_user.id, ticker=t, stock_name=t, enabled=True)
+        db.session.add(r)
+    try:
+        stock_alerts.apply_fields(r, body, partial=partial)
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    if not stock_alerts.has_condition(r) and not partial:
+        db.session.rollback()
+        return jsonify({"error": "알림 조건을 하나 이상 켜 주세요"}), 400
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()                              # 같은 종목을 동시에 저장한 경우 (유니크)
+        return jsonify({"error": "잠시 후 다시 시도해 주세요"}), 409
+    return jsonify({"ok": True, "rule": stock_alerts.rule_dict(r), "push": _alert_push_state()})
+
+
+@app.route("/api/alerts/rules/<path:ticker>", methods=["GET", "POST", "DELETE"])
+@login_required
+def alert_rule_one(ticker):
+    """GET: 한 종목 규칙(없으면 rule: null) · POST: 일부 항목만 수정(on/off 토글 등) · DELETE: 삭제."""
+    t = (ticker or "").strip().upper()
+    if request.method == "POST":
+        return _alert_save(t, request.get_json(silent=True) or {}, partial=True)
+    r = StockAlertRule.query.filter_by(user_id=current_user.id, ticker=t).first()
+    if request.method == "GET":
+        return jsonify({"rule": stock_alerts.rule_dict(r) if r else None, "push": _alert_push_state()})
+    if not r:
+        return jsonify({"ok": True, "removed": 0})
+    db.session.delete(r)
+    db.session.commit()
+    return jsonify({"ok": True, "removed": 1})
+
+
+@app.route("/api/alerts/logs")
+@login_required
+def alert_logs():
+    rows = (StockAlertLog.query.filter_by(user_id=current_user.id)
+            .order_by(StockAlertLog.fired_at.desc(), StockAlertLog.id.desc()).limit(20).all())
+    return jsonify({"logs": [stock_alerts.log_dict(g) for g in rows]})
+
+
+@app.route("/api/alerts/test", methods=["POST"])
+@login_required
+def alert_test():
+    """로그인한 본인 기기 전체로 테스트 푸시 1건 (배포 후 실기 확인용)."""
+    if not webpush.enabled():
+        return jsonify({"error": "서버에 푸시 알림이 설정되지 않았습니다"}), 503
+    if not PushSubscription.query.filter_by(user_id=current_user.id).count():
+        return jsonify({"error": "이 계정에 푸시를 켠 기기가 없습니다. 먼저 '이 기기에서 알림 받기'를 눌러 주세요"}), 400
+    r = webpush.send_to_user(current_user.id, {
+        "title": "🔔 내 종목 알림 테스트",
+        "body": "목표가·손절가·RSI·공시·실적 알림이 이렇게 도착해요. 누르면 내 알림 화면으로 이동합니다.",
+        "url": "/?tab=alerts", "tag": "stock-alert-test"})
+    return jsonify({"ok": r["sent"] > 0, **r})
 
 
 # ── 스크리너 · 종목 비교 ─────────────────────────────────────────────────────────

@@ -105,12 +105,12 @@ def targets():
                 out[m][t] = (v or {}).get("name") or t
     except Exception as e:
         log(f"유니버스 읽기 실패: {e}")
-    for model in ("Holding", "PaperHolding", "WatchlistItem"):
+    for model in ("Holding", "PaperHolding", "WatchlistItem", "StockAlertRule"):     # + 내 종목 알림(공시) 규칙 종목
         M = D.get(model)
         if M is None:
             continue
         try:
-            for r in M.query.with_entities(M.ticker, M.name).distinct().all():
+            for r in M.query.with_entities(M.ticker, M.name if hasattr(M, "name") else M.stock_name).distinct().all():
                 t = (r[0] or "").upper()
                 if not t:
                     continue

@@ -402,10 +402,12 @@
             <span class="watch-id"><span class="watch-name">${esc(i.name)}</span><span class="watch-tk">${esc(i.ticker)}</span></span>
           </button>
           <span class="watch-quote" data-q="${esc(i.ticker)}"><span class="watch-px">…</span><span class="watch-chg"></span></span>
+          ${window.SAAlerts ? `<button type="button" class="watch-bell" data-t="${esc(i.ticker)}" data-n="${esc(i.name)}" title="알림 설정" aria-label="${esc(i.name)} 알림 설정">🔔</button>` : ''}
           <button type="button" class="watch-del" data-t="${esc(i.ticker)}" aria-label="${esc(i.name)} 관심종목에서 빼기">${ICON_X}</button>
         </div>`).join('');
       this.fillQuotes(el);
       el.querySelectorAll('.watch-open').forEach((b) => { b.onclick = () => onOpen && onOpen(b.dataset.t); });
+      el.querySelectorAll('.watch-bell').forEach((b) => { b.onclick = () => window.SAAlerts && SAAlerts.open(b.dataset.t, b.dataset.n); });
       el.querySelectorAll('.watch-del').forEach((b) => {
         b.onclick = async () => {
           b.disabled = true;
@@ -416,6 +418,45 @@
     },
   };
   window.SAWatch = SAWatch;
+
+  // ── 다른 화면(내 종목 알림)에서 쓰는 이 기기 푸시 상태·켜기 (위 initPush 와 같은 절차) ──
+  window.SAPush = {
+    supported: pushSupported, isIOS, isStandalone,
+    /** → {supported, server, permission, subscribed, iosNeedsInstall, reason} */
+    async status() {
+      const out = { supported: pushSupported(), server: false, permission: 'default', subscribed: false,
+        iosNeedsInstall: isIOS() && !isStandalone(), reason: null };
+      if (!out.supported) return out;
+      out.permission = Notification.permission;
+      try {
+        const cfg = await api('/api/push/vapid-public-key');
+        out.server = !!cfg.enabled; out.reason = cfg.reason || null;
+        if (!out.server) return out;
+        const reg = await swReg();
+        const sub = await reg.pushManager.getSubscription();
+        const key = sub && sub.options && sub.options.applicationServerKey
+          ? btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : null;
+        out.subscribed = !!sub && (!key || key === cfg.public_key);
+      } catch (e) { /* 서비스워커 준비 안 됨 등 → 꺼짐으로 */ }
+      return out;
+    },
+    /** 권한 요청 → 구독 → 서버 저장. → {ok, error} */
+    async enable() {
+      if (!pushSupported()) return { ok: false, error: isIOS() ? 'iPhone은 Safari 공유 → "홈 화면에 추가" 후 그 앱에서 알림을 허용해 주세요.' : '이 브라우저는 웹 푸시를 지원하지 않아요.' };
+      try {
+        const cfg = await api('/api/push/vapid-public-key');
+        if (!cfg.enabled) return { ok: false, error: cfg.reason || '서버에 푸시 알림이 아직 설정되지 않았습니다' };
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return { ok: false, error: perm === 'denied' ? '브라우저에서 알림이 차단돼 있어요. 주소창 왼쪽 사이트 설정에서 알림을 허용해 주세요.' : '알림 권한을 허용해야 푸시를 받을 수 있어요.' };
+        const reg = await swReg();
+        let sub = await reg.pushManager.getSubscription();
+        if (sub) { try { await sub.unsubscribe(); } catch (e) {} }
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.public_key) });
+        const r = await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: sub.toJSON() }) });
+        return { ok: true, device: r.device };
+      } catch (e) { return { ok: false, error: e.code === 401 ? '로그인이 필요합니다.' : `푸시를 켜지 못했습니다: ${e.message || e}` }; }
+    },
+  };
   window.SANotify = { openSettings, refresh: refreshCount };
 
   // ── 프로필 메뉴 (헤더 우측 아바타 → 드롭다운: 이름·이메일 · 알림 설정 · 로그아웃) ──────────────

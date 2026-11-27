@@ -43,6 +43,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 구형 링크 호환: /?ticker=XXX → /stock/XXX 로 통일
   const _t = new URLSearchParams(location.search).get('ticker');
   if (!PAGE_TICKER && _t) { gotoStock(_t); return; }
+  // 알림 푸시(요약·테스트)에서 온 /?tab=alerts → 홈 '내 알림' 탭
+  if (!PAGE_TICKER && new URLSearchParams(location.search).get('tab') === 'alerts') {
+    setTimeout(() => { switchPfTab('alerts'); document.getElementById('pfTabAlerts')?.closest('section')?.scrollIntoView({ block: 'start' }); }, 0);
+  }
 
   if (PAGE_TICKER) {
     // 분석 모드: 대시보드·포트폴리오 탭 숨기고(body 클래스, 비동기 로드에도 유지) 자동 분석
@@ -576,6 +580,7 @@ function _pfRowHTML(h) {
       <div class="pft-pl ${cls}"><div>${pfMoney(pl, cur, true)}</div><div class="pft-sub">${pctTxt}</div></div>
       <div class="pft-meta">${pfQty(q)} · ${pfMoney(h.purchase_price, cur)} → ${hasPx ? pfMoney(h.current_price, cur) : '—'}</div>
       <div class="pft-acts">
+        ${window.SAAlerts ? `<button type="button" class="pft-btn al-pft" onclick="event.stopPropagation(); SAAlerts.open('${tk}', this.dataset.n, ${hasPx ? h.current_price : 'null'}, '${cur}')" data-n="${nm}" title="알림 설정" aria-label="${nm} 알림 설정">🔔</button>` : ''}
         <button type="button" class="pft-btn" onclick="openEditModal(event, ${h.id})" title="매입가·수량 수정" aria-label="${nm} 매입가·수량 수정">${_PF_EDIT_SVG}</button>
         <button type="button" class="pft-btn del" onclick="deleteHolding(event, ${h.id})" title="삭제" aria-label="${nm} 삭제">${_PF_DEL_SVG}</button>
       </div>
@@ -676,7 +681,7 @@ function togglePortfolio() {
 
 // ── 포트폴리오 / 관심종목 탭 전환 (추세 셋업은 /screener?tab=trends 로 이동) ──
 function switchPfTab(tab) {
-  if (tab !== 'watch') tab = 'portfolio';
+  if (tab !== 'watch' && tab !== 'alerts') tab = 'portfolio';
   document.querySelectorAll('.pf-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
@@ -684,6 +689,9 @@ function switchPfTab(tab) {
   const wtPanel  = document.getElementById('pfTabWatch');
   if (pfPanel) pfPanel.classList.toggle('hidden', tab !== 'portfolio');
   if (wtPanel) wtPanel.classList.toggle('hidden', tab !== 'watch');
+  const alPanel = document.getElementById('pfTabAlerts');
+  if (alPanel) alPanel.classList.toggle('hidden', tab !== 'alerts');
+  if (tab === 'alerts' && window.SAAlerts) SAAlerts.renderHome(alPanel);
   if (tab === 'watch' && window.SAWatch) {
     SAWatch.renderList(document.getElementById('watchList'), (t) => gotoStock(t));
   }
@@ -1498,6 +1506,7 @@ function renderStockInfo(stock) {
   if (_lgSlot) _lgSlot.innerHTML = window.renderStockLogo ? renderStockLogo(stock.ticker, stock.name, 'lg') : '';
   document.getElementById('stockTicker').textContent = stock.ticker;
   if (document.getElementById('notifyBell') && window.SAWatch) SAWatch.bindStar(document.getElementById('watchStar'), stock.ticker, stock.name);
+  if (document.getElementById('notifyBell') && window.SAAlerts) SAAlerts.bindBell(document.getElementById('alertBell'), stock);
   document.getElementById('stockSector').textContent = sectorKo(stock.sector);
   document.getElementById('stockExchange').textContent = stock.exchange ? `· ${exchangeKo(stock.exchange)}` : '';
 

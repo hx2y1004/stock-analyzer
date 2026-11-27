@@ -1313,6 +1313,15 @@ def _scheduler_loop():
                         log(f"scheduler: 공시 수집 실패: {e}")
                     finally:
                         D["db"].session.remove()
+                # 내 종목 알림: 공시·내부자 매수·실적 D-1 (30분 주기, 시장 시간과 무관 · 주기가 안 됐으면 바로 끝)
+                if D.get("stock_alert_events"):
+                    try:
+                        D["stock_alert_events"]()
+                    except Exception as e:
+                        D["db"].session.rollback()
+                        log(f"scheduler: 종목 이벤트 알림 실패: {e}")
+                    finally:
+                        D["db"].session.remove()
                 for market in ("KR", "US"):
                     # 장중: 매 5분 정각(0·5·10…분)에 체결·청산 확인. 섹터맵 갱신(7·22·37·52분)과 겹치지 않게 시계에 맞춘다.
                     # (판정이 멱등이라 중복 실행돼도 결과 같음)
@@ -1331,6 +1340,13 @@ def _scheduler_loop():
                                         except Exception as e:
                                             D["db"].session.rollback()
                                             log(f"scheduler: {market} 모의투자 자동 청산 실패: {e}")
+                                    # 내 종목 알림: 목표가·손절가·RSI (규칙이 없으면 쿼리 1번으로 끝)
+                                    if D.get("stock_alerts"):
+                                        try:
+                                            D["stock_alerts"](market)
+                                        except Exception as e:
+                                            D["db"].session.rollback()
+                                            log(f"scheduler: {market} 종목 알림 실패: {e}")
                                 finally:
                                     _RUN_LOCK.release()
                         except Exception as e:

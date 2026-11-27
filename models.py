@@ -464,3 +464,38 @@ class DisclosureEvent(db.Model):
     external_id = db.Column(db.String(120), nullable=False, unique=True)
     disclosed_at = db.Column(db.DateTime, nullable=False, index=True)        # UTC
     created_at  = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class StockAlertRule(db.Model):
+    """내 종목 맞춤 알림 규칙 (stock_alerts.py). 사용자·종목당 1행.
+    목표가·손절가는 한 번 울리면 자동 해제(NULL), RSI 는 24시간 쿨다운, 공시·내부자 매수·실적 D-1 은 건별 1회."""
+    __tablename__ = "stock_alert_rules"
+    id                 = db.Column(db.Integer, primary_key=True)
+    user_id            = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    ticker             = db.Column(db.String(30), nullable=False, index=True)
+    stock_name         = db.Column(db.String(200))
+    target_price       = db.Column(db.Float)                 # 이상 도달
+    stop_price         = db.Column(db.Float)                 # 이하 도달
+    rsi_oversold       = db.Column(db.Boolean, nullable=False, default=False)   # RSI ≤ 30
+    rsi_overbought     = db.Column(db.Boolean, nullable=False, default=False)   # RSI ≥ 70
+    disclosure_enabled = db.Column(db.Boolean, nullable=False, default=False)   # 공시 · 내부자 매수 · 실적 D-1
+    enabled            = db.Column(db.Boolean, nullable=False, default=True)
+    created_at         = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at         = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("user_id", "ticker", name="uq_alert_rule_user_ticker"),)
+
+
+class StockAlertLog(db.Model):
+    """내 종목 알림 발송 이력 겸 중복 방지. (user_id, dedup_key) 유니크 → 먼저 이 행을 넣은(커밋한) 쪽만 발송한다.
+    rule_type: target | stop | rsi_low | rsi_high | disclosure | insider_buy | earnings"""
+    __tablename__ = "stock_alert_logs"
+    id        = db.Column(db.Integer, primary_key=True)
+    user_id   = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    ticker    = db.Column(db.String(30), nullable=False)
+    rule_type = db.Column(db.String(20), nullable=False)
+    dedup_key = db.Column(db.String(200), nullable=False)
+    title     = db.Column(db.String(200), nullable=False)
+    body      = db.Column(db.String(500))
+    fired_at  = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    __table_args__ = (db.UniqueConstraint("user_id", "dedup_key", name="uq_alert_log_user_dedup"),
+                      db.Index("ix_alert_log_user_ticker_type", "user_id", "ticker", "rule_type"))
