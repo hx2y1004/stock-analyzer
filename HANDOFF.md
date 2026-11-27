@@ -57,6 +57,13 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 내 포트폴리오 리스크 탭 상단 정리 (PR #101)
+- 토스 불러오기·종목 추가는 '보유 종목' 탭에서만(`.pf-actions-off`). 하위 탭은 언더라인(`.pf-top-tabs` 밑줄 + 활성 2px 파랑) → 상위 알약 탭과 구분.
+- 모바일: 안내 문구는 박스 없는 1줄(괄호 설명 `.pf-note-extra` 숨김), 연간 배당 KPI 는 [라벨·금액] | [세전 · 월 약 X · Y%] 가로 1줄.
+  390px 기준 탭 줄 → 섹터별 비중 끝 559 → 442px (KPI 시작 213 → 126px).
+- 섹터 막대 순위별 색 #38BDF8 · #34D399 · #A78BFA · #FBBF24, 기타 #94A3B8.
+- 캐시: main.js v107, style.css v126, sa-v94.
+
 ### 홈 내 포트폴리오 '리스크 · 배당' 탭 (PR #100)
 - `portfolio_analytics.compute(rows, fx, profiles, today)` (순수 계산): 섹터 비중(원화 평가금액, 상위 5 + 기타, 합 100.0 보정), 최대 업종·편중(≥40%, 'ETF'·'기타'는 판정 제외),
   통화 비중·`fx_exposure_pct`, 주당 연간 배당 = dividendRate → 최근 1년 이력 합 → trailingAnnualDividendRate → 배당수익률%×현재가(÷100, 30% 이상은 무시),
