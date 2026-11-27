@@ -85,7 +85,6 @@
       else if ((!pd || !pd.market) && S.marketBefore) { setMarket(S.marketBefore); }                        // 빠져나오면 원래 시장으로
       if (!pd || !pd.market) S.marketBefore = null;
       paintPresets();
-      b.scrollIntoView({ block: 'nearest', inline: 'nearest' });              // 모바일 가로 스크롤에서 누른 버튼이 잘리지 않게
       b.blur();                                   // 터치 기기에서 이전 버튼의 포커스·호버 잔상이 남지 않게
       $('#fSort').value = ''; runQuery();
     }));
@@ -121,6 +120,9 @@
   function paintPresets() {
     // 항상 현재 프리셋 1개만 강조 (모든 버튼의 상태를 매번 다시 씀)
     $$('.sc-preset').forEach((b) => { const on = !!S.preset && b.dataset.p === S.preset; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    // 모바일에서 '필터 ▾' 가 접혀 있어도 지금 프리셋이 보이게 (PC 는 CSS 로 숨김)
+    const chip = $('#scPresetChip'), pd = S.meta && S.meta.presets.find((x) => x.key === S.preset);
+    if (chip) { chip.hidden = !pd; chip.textContent = pd ? `${pd.emoji} ${pd.name}` : ''; chip.title = pd ? `${pd.name} 프리셋 적용 중` : ''; }
   }
 
   async function runQuery() {
@@ -290,6 +292,7 @@
     S.basket = []; store.set('scBasket', S.basket); paintRowButtons(); renderBasket();
   });
   // 모바일: 상단 프리셋·안내는 '필터 ▾' 로 접기 (PC 에서는 버튼이 보이지 않음)
+  $('#scPresetChip').addEventListener('click', () => { const f = $('#scPanel-screen .sc-mfilter'); if (f && f.getAttribute('aria-expanded') !== 'true') f.click(); });
   $$('.sc-mfilter').forEach((b) => b.addEventListener('click', () => {
     const card = b.closest('.card');
     const open = !card.classList.contains('m-open');
