@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=125" />
+  <link rel="stylesheet" href="/static/css/style.css?v=126" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -74,10 +74,10 @@
       <!-- 포트폴리오 탭 -->
       <div id="pfTabPortfolio" class="pf-tab-panel">
         <div class="pf-portfolio-note">
-          <strong>실제 보유 종목</strong>입니다 (모의투자와 별개 · 랭킹 제외).
+          <strong>실제 보유 종목</strong>입니다<span class="pf-note-extra"> (모의투자와 별개 · 랭킹 제외)</span>.
           <a href="/trading" class="pf-note-link">모의투자 보러가기 →</a>
         </div>
-        <div class="portfolio-top">
+        <div class="portfolio-top pf-top-tabs">
           <div class="portfolio-title-area">
             <div class="pf-subtabs" role="tablist" aria-label="내 포트폴리오 보기">
               <button type="button" role="tab" class="pf-subtab active" id="pfSub-hold" data-sub="hold" aria-selected="true" aria-controls="pfSubHold">보유 종목 <span class="pf-subtab-n" id="pfHoldCount"></span></button>
@@ -551,6 +551,6 @@
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=8"></script>
   <script src="/static/js/hsort.js?v=1"></script>
-  <script src="/static/js/main.js?v=106"></script>
+  <script src="/static/js/main.js?v=107"></script>
 </body>
 </html>

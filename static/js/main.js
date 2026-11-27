@@ -3650,7 +3650,8 @@ function selectPfSub(sub, focus) {
   const hold = document.getElementById('pfSubHold'), risk = document.getElementById('pfSubRisk');
   if (hold) hold.classList.toggle('hidden', sub !== 'hold');
   if (risk) risk.classList.toggle('hidden', sub !== 'risk');
-  document.querySelector('.pf-top-actions')?.classList.toggle('pf-actions-dim', sub === 'risk');
+  // 종목 추가·토스 불러오기는 '보유 종목' 탭 전용 → 리스크 · 배당 탭에서는 숨김
+  document.querySelector('.pf-top-actions')?.classList.toggle('pf-actions-off', sub === 'risk');
   if (sub === 'risk' && (_pfRisk.stale || !_pfRisk.data)) loadPfRisk();
 }
 (function initPfSubTabs() {
@@ -3693,6 +3694,10 @@ async function loadPfRisk() {
   }
 }
 
+// 섹터 막대 순위별 색 (기타·ETF 는 회색)
+const _PR_SEC_COLORS = ['#38BDF8', '#34D399', '#A78BFA', '#FBBF24'];
+const _prSecColor = (name, i) => (name === '기타' ? '#94A3B8' : _PR_SEC_COLORS[i] || '#94A3B8');
+
 function renderPfRisk(d) {
   const el = document.getElementById('pfSubRisk');
   if (!el) return;
@@ -3718,10 +3723,12 @@ function renderPfRisk(d) {
         <b class="pr-v">${pctTxt(d.fx_exposure_pct)}</b>
         <span class="pr-s">${(d.currencies || []).map((c) => `${_esc(c.currency)} ${c.pct.toFixed(0)}%`).join(' · ')}</span>
       </div>
-      <div class="pr-kpi">
+      <div class="pr-kpi pr-kpi-div">
         <span class="pr-k">연간 예상 배당금</span>
         <b class="pr-v pr-green">${dv.annual_dividend_krw ? _krwShort(dv.annual_dividend_krw) : '—'}</b>
-        <span class="pr-s">${dv.annual_dividend_krw ? `세전 · 월 평균 약 ${_krwShort(dv.monthly_avg_krw)} (${(dv.portfolio_yield_pct || 0).toFixed(2)}%)` : '배당 종목 없음'}</span>
+        <span class="pr-s">${dv.annual_dividend_krw
+          ? `<span class="pr-s-pc">세전 · 월 평균 약 ${_krwShort(dv.monthly_avg_krw)} (${(dv.portfolio_yield_pct || 0).toFixed(2)}%)</span><span class="pr-s-m">세전 · 월 약 ${_krwShort(dv.monthly_avg_krw)} · ${(dv.portfolio_yield_pct || 0).toFixed(2)}%</span>`
+          : '배당 종목 없음'}</span>
       </div>
     </div>`;
   // 2행: 섹터 · 통화
@@ -3730,7 +3737,7 @@ function renderPfRisk(d) {
       <h4 class="pr-h">섹터별 비중</h4>
       <div class="pr-bars">${(d.sectors || []).map((s, i) => `
         <div class="pr-bar-row"><span class="pr-bar-name">${_esc(s.name)}</span>
-          <span class="pr-bar-track"><i style="width:${Math.max(1.5, s.pct)}%" class="${i === 0 && d.concentrated ? 'warn' : ''}"></i></span>
+          <span class="pr-bar-track"><i style="width:${Math.max(1.5, s.pct)}%;background:${_prSecColor(s.name, i)}"></i></span>
           <span class="pr-bar-pct">${s.pct.toFixed(1)}%</span></div>`).join('')}</div>
     </section>`;
   const curr = `
