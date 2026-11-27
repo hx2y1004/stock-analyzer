@@ -18,7 +18,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=135" />
+  <link rel="stylesheet" href="/static/css/style.css?v=136" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
@@ -63,6 +63,7 @@
             <button type="button" data-m="US" aria-pressed="false">미국</button>
           </div>
           <span class="sc-asof" id="scAsof"></span>
+          <button type="button" class="sc-pchip" id="scPresetChip" hidden aria-label="선택한 프리셋 (누르면 필터 펼치기)"></button>
           <button type="button" class="sc-mfilter" aria-expanded="false">필터 <span aria-hidden="true">▾</span></button>
         </div>
         <div class="sc-presets" id="scPresets" role="group" aria-label="원클릭 프리셋"></div>
@@ -201,6 +202,6 @@
   <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
   <script src="/static/js/logo.js?v=1"></script>
   <script src="/static/js/notify.js?v=10"></script>
-  <script src="/static/js/screener.js?v=12"></script>
+  <script src="/static/js/screener.js?v=13"></script>
 </body>
 </html>
