@@ -45,6 +45,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `sector_map.py` | 메인 섹터맵: 전체 유니버스 시총가중 집계와 백그라운드 스냅샷. 분류는 `sector_universe.json` (`build_sector_universe.py` 로 생성) |
 | `splits.py` | 액면분할 자동 반영 (yfinance splits 12시간 캐시 → 모의·봇 계좌·봇 신호·실제 포트폴리오 수량·단가·목표/손절 보정, `applied_stock_splits` 로 멱등). 봇 장 마감 배치 시작·장중 -40% 급락 방어·사용자 화면 하루 1회 |
 | `bot_engine.py`, `bot_trader.py`, `notifier.py` | AI 매매 신호 봇: 신호 생성·추적, 봇 가상 계좌 매매, 알림 |
+| `stock_alerts.py` | 내 보유·관심종목 맞춤 알림(5단계): 규칙 `stock_alert_rules`(목표가·손절가·RSI 30/70·공시/내부자 매수/실적 D-1), 이력 겸 중복 방지 `stock_alert_logs`((user_id, dedup_key) 유니크 — 이력을 먼저 커밋한 쪽만 발송). 봇 스케줄러 장중 5분 체크(`_RUN_LOCK` 안, 시장별 정규장)에서 가격·RSI, 루프 매 회차에서 30분 주기로 공시·내부자·실적. 목표·손절은 1회 후 자동 해제, RSI 24시간 쿨다운. API `/api/alerts/rules`·`/logs`·`/test`, 화면 `static/js/alerts.js` |
 | `webpush.py` | PWA 웹 푸시 (VAPID 키가 없으면 자동으로 꺼짐, pywebpush 는 보낼 때만 import) |
 | `screener.py` | 스크리너 스냅샷(`screener_snapshots`) 갱신·조회와 종목 비교. 가격은 섹터맵, 기술 지표는 봇 배치에서 받고 펀더멘탈은 7일 순환 |
 | `disclosures.py` | 공시·수주 레이더(`disclosure_events`): DART 공급계약·자사주·유상증자(15분) · SEC Form 4 장내 매수·8-K(30분). 봇 스케줄러 루프에 합류(새 스레드 없음), 30일 보관, 보유·관심종목 알림. 화면은 `/screener?tab=disclosures` |

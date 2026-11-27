@@ -19,7 +19,7 @@
   <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png" />
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=130" />
+  <link rel="stylesheet" href="/static/css/style.css?v=131" />
   <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     // ── Service Worker 등록 (자동 업데이트 체크만, 새로고침은 안 함) ──
@@ -61,6 +61,7 @@
       <div class="pf-tabs" role="tablist">
         <button class="pf-tab active" data-tab="portfolio" onclick="switchPfTab('portfolio')">내 포트폴리오</button>
         <button class="pf-tab" data-tab="watch" onclick="switchPfTab('watch')">관심종목</button>
+        <button class="pf-tab" data-tab="alerts" onclick="switchPfTab('alerts')">내 알림</button>
       </div>
 
       <!-- 관심종목 탭 -->
@@ -70,6 +71,9 @@
         </div>
         <div id="watchList" class="watch-list"></div>
       </div>
+
+      <!-- 내 알림 탭 (alerts.js) -->
+      <div id="pfTabAlerts" class="pf-tab-panel hidden"></div>
 
       <!-- 포트폴리오 탭 -->
       <div id="pfTabPortfolio" class="pf-tab-panel">
@@ -210,6 +214,7 @@
           <h2 id="stockName" class="stock-name"></h2>
           <span id="stockTicker" class="stock-ticker-badge"></span>
           <button type="button" id="watchStar" class="watch-star hidden" aria-pressed="false">☆</button>
+          <button type="button" id="alertBell" class="al-bell hidden" aria-pressed="false"><span aria-hidden="true">🔔</span><span class="al-bell-t">알림 설정</span></button>
         </div>
         <div class="stock-meta">
           <span id="stockSector"></span>
@@ -549,8 +554,9 @@
   <script src="/static/js/chart.js?v=5"></script>
   <script>window.SA_LOGO_TPL = {{ logo_url_template | tojson }};</script>
   <script src="/static/js/logo.js?v=1"></script>
-  <script src="/static/js/notify.js?v=8"></script>
+  <script src="/static/js/notify.js?v=9"></script>
+  <script src="/static/js/alerts.js?v=1"></script>
   <script src="/static/js/hsort.js?v=1"></script>
-  <script src="/static/js/main.js?v=111"></script>
+  <script src="/static/js/main.js?v=112"></script>
 </body>
 </html>

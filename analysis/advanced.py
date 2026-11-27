@@ -259,6 +259,45 @@ def _insider_activity(stock):
         return None
 
 
+def _pick(df, names):
+    return next((c for c in names if c in df.columns), None)
+
+
+def recent_insider_buys(stock, days=14, today=None):
+    """최근 days 일 내부자 매수(Purchase/Buy) 건별 목록 — _insider_activity 와 같은 열 판정. 알림(stock_alerts)용.
+    → [{"date": date, "insider": 이름, "position": 직책, "shares": 주수, "value": 금액 USD}] (최신 먼저). 자료 없으면 []."""
+    try:
+        df = stock.insider_transactions
+    except Exception:
+        return []
+    if df is None or getattr(df, "empty", True):
+        return []
+    date_col = _pick(df, ["Start Date", "startDate", "Date"])
+    # yfinance 1.8: 'Transaction' 열은 비어 있고 'Text'("Purchase at price 64.73 per share.")에 내용이 있다 → 둘 다 본다
+    text_cols = [c for c in ("Transaction", "transactionText", "Text", "Type") if c in df.columns]
+    if not date_col or not text_cols:
+        return []
+    val_col, sh_col = _pick(df, ["Value", "valueAtTransaction"]), _pick(df, ["Shares", "shares"])
+    who_col, pos_col = _pick(df, ["Insider", "filerName", "Name"]), _pick(df, ["Position", "filerRelation", "Relation"])
+    today = today or pd.Timestamp.utcnow().tz_localize(None).date()
+    out = []
+    for _, r in df.iterrows():
+        txt = " ".join(str(r.get(c, "") or "") for c in text_cols).lower()
+        if not ("buy" in txt or "purchase" in txt):            # 매수만 (acquisition·grant·option 행사 제외)
+            continue
+        d = pd.to_datetime(r.get(date_col), errors="coerce")
+        if pd.isna(d):
+            continue
+        d = d.tz_localize(None).date() if getattr(d, "tzinfo", None) else d.date()
+        if (today - d).days > days or d > today:
+            continue
+        out.append({"date": d, "insider": str(r.get(who_col) or "").strip()[:80] if who_col else "",
+                    "position": str(r.get(pos_col) or "").strip()[:60] if pos_col else "",
+                    "shares": _f(r.get(sh_col)) if sh_col else None, "value": _f(r.get(val_col)) if val_col else None})
+    out.sort(key=lambda x: x["date"], reverse=True)
+    return out
+
+
 # ── Buyback Yield (자사주 매입 수익률) ───────────────────────────
 def _buyback_yield(stock, market_cap):
     """최근 연간 자사주 매입 / 시가총액(%) → (매입 수익률, 순발행 희석률).
