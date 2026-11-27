@@ -76,6 +76,8 @@
 - 화면: 종목 상세 ☆ 옆 '🔔 알림 설정'(설정되면 '알림 켜짐'), 모달(목표·손절 % 미리보기·±5/10/20% 버튼·RSI·공시 토글·푸시 권한/iOS 홈 화면 안내, 600px 이하 바텀시트),
   홈 '내 알림' 탭(규칙 배지·on/off·수정·삭제·최근 20건·테스트 푸시), 보유 종목 행·관심종목 행 🔔 원클릭.
 - 버전: main.js v112, style.css v131, notify.js v9, alerts.js v1, sa-v99.
+- 후속(PR #107): 알림 버튼·모달의 이모지 🔔 → 상단 네비 종(#notifyBell)과 같은 라인 SVG(`SAAlerts.bellSvg`). 꺼짐 = ☆ 버튼과 같은 회색 테두리·회색 선,
+  켜짐 = `--yellow` 선 + 옅은 노란 테두리·배경 + 아이콘 30% 채움. 버전: main.js v113, style.css v132, notify.js v10, alerts.js v2, sa-v100.
 
 ### 어닝 서프라이즈 · 실적 일정 (4단계, PR #105)
 - `analysis/earnings.py` (yfinance 1.8.0, 2026-11-27 NVDA·AAPL·MSFT·005930.KS·069500.KS 실호출로 필드 확인)

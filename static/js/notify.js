@@ -402,7 +402,7 @@
             <span class="watch-id"><span class="watch-name">${esc(i.name)}</span><span class="watch-tk">${esc(i.ticker)}</span></span>
           </button>
           <span class="watch-quote" data-q="${esc(i.ticker)}"><span class="watch-px">…</span><span class="watch-chg"></span></span>
-          ${window.SAAlerts ? `<button type="button" class="watch-bell" data-t="${esc(i.ticker)}" data-n="${esc(i.name)}" title="알림 설정" aria-label="${esc(i.name)} 알림 설정">🔔</button>` : ''}
+          ${window.SAAlerts ? `<button type="button" class="watch-bell" data-t="${esc(i.ticker)}" data-n="${esc(i.name)}" title="알림 설정" aria-label="${esc(i.name)} 알림 설정">${SAAlerts.bellSvg(15)}</button>` : ''}
           <button type="button" class="watch-del" data-t="${esc(i.ticker)}" aria-label="${esc(i.name)} 관심종목에서 빼기">${ICON_X}</button>
         </div>`).join('');
       this.fillQuotes(el);
