@@ -64,7 +64,7 @@
 - 응답 `stock.short_interest` (`_ANALYZE_VER` v12). 화면: 주요 지표 `#shortCell`(한 줄 전체 폭, 배지 high 주황 · elevated 노랑 · normal 회색, 없으면 숨김),
   투자 판단 › 재무 건전성 카드 아래 `.fj-short`(bg3 10px, ⓘ 설명). 모바일은 [제목·배지]/수치 2줄(구분점 없이).
 - Yahoo 값은 FINRA 반월 공시 기준이라 2주가량 늦음(툴팁에 표기).
-- 캐시: main.js v104, style.css v122, sa-v91.
+- 캐시: main.js v104, style.css v123, sa-v91.
 
 ### 한·미 휴장일·미국 조기폐장 반영: `market_hours.py` (PR #97)
 - 새 모듈 `market_hours.py` (표준 라이브러리만): `holiday_name` · `session_window` · `is_trading_day` · `is_market_open` · `market_status` · `next/prev_trading_day`.
