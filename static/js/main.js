@@ -580,7 +580,7 @@ function _pfRowHTML(h) {
       <div class="pft-pl ${cls}"><div>${pfMoney(pl, cur, true)}</div><div class="pft-sub">${pctTxt}</div></div>
       <div class="pft-meta">${pfQty(q)} · ${pfMoney(h.purchase_price, cur)} → ${hasPx ? pfMoney(h.current_price, cur) : '—'}</div>
       <div class="pft-acts">
-        ${window.SAAlerts ? `<button type="button" class="pft-btn al-pft" onclick="event.stopPropagation(); SAAlerts.open('${tk}', this.dataset.n, ${hasPx ? h.current_price : 'null'}, '${cur}')" data-n="${nm}" title="알림 설정" aria-label="${nm} 알림 설정">🔔</button>` : ''}
+        ${window.SAAlerts ? `<button type="button" class="pft-btn al-pft" onclick="event.stopPropagation(); SAAlerts.open('${tk}', this.dataset.n, ${hasPx ? h.current_price : 'null'}, '${cur}')" data-n="${nm}" title="알림 설정" aria-label="${nm} 알림 설정">${SAAlerts.bellSvg(15)}</button>` : ''}
         <button type="button" class="pft-btn" onclick="openEditModal(event, ${h.id})" title="매입가·수량 수정" aria-label="${nm} 매입가·수량 수정">${_PF_EDIT_SVG}</button>
         <button type="button" class="pft-btn del" onclick="deleteHolding(event, ${h.id})" title="삭제" aria-label="${nm} 삭제">${_PF_DEL_SVG}</button>
       </div>

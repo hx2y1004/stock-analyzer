@@ -1,6 +1,6 @@
 /* 내 종목 맞춤 알림 (목표가·손절가·RSI·공시/내부자 매수/실적 D-1) — 서버: stock_alerts.py · /api/alerts/*
  * window.SAAlerts.open(ticker, name, price?, currency?)  알림 설정 모달
- * window.SAAlerts.bindBell(btn, stock)                     종목 상세 '🔔 알림 설정' 버튼
+ * window.SAAlerts.bindBell(btn, stock)                     종목 상세 '알림 설정' 버튼 (라인 종 SVG)
  * window.SAAlerts.renderHome(el)                           홈 '내 알림' 탭 (규칙 목록 · 최근 발송 이력 · 테스트 푸시)
  * 푸시 권한·구독은 notify.js 의 window.SAPush 를 쓴다.
  */
@@ -23,6 +23,8 @@
     if (s < 86400) return `${Math.floor(s / 3600)}시간 전`; return `${Math.floor(s / 86400)}일 전`;
   };
   const ruleCache = new Map();        // ticker → rule | null
+  // 상단 네비게이션 알림 종(_auth_area.html #notifyBell)과 같은 라인 SVG. 활성 상태는 CSS(.on)에서 노란색 + 옅은 채움
+  const bellSvg = (size = 15) => `<svg class="al-ic-svg" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
   // ── 푸시 상태 블록 (모달 · 홈 공용) ─────────────────────────────────────────
   async function pushBox(box, onChange) {
@@ -43,7 +45,7 @@
       html = '<p class="al-push-msg warn">이 브라우저에서 알림이 차단돼 있어요. 주소창 왼쪽 사이트 설정 → 알림을 <b>허용</b>으로 바꿔 주세요.</p>';
     } else {
       html = `<div class="al-push-row"><p class="al-push-msg">${st.iosNeedsInstall ? '홈 화면에 추가한 앱에서 알림을 허용하면 잠금화면으로 받아요.' : '이 기기로 푸시를 받으려면 알림을 허용해 주세요.'}</p>
-        <button type="button" class="al-btn al-btn-pri al-push-on">🔔 이 기기에서 알림 받기</button></div>`;
+        <button type="button" class="al-btn al-btn-pri al-push-on">${bellSvg(14)}이 기기에서 알림 받기</button></div>`;
     }
     box.innerHTML = html;
     const b = box.querySelector('.al-push-on');
@@ -65,7 +67,7 @@
     modal.className = 'al-overlay hidden';
     modal.innerHTML = `
       <div class="al-modal" role="dialog" aria-modal="true" aria-labelledby="alTitle">
-        <div class="al-head"><h3 id="alTitle">🔔 알림 설정</h3><button type="button" class="al-x" aria-label="닫기">✕</button></div>
+        <div class="al-head"><h3 id="alTitle">알림 설정</h3><button type="button" class="al-x" aria-label="닫기">✕</button></div>
         <div class="al-body"></div>
       </div>`;
     document.body.appendChild(modal);
@@ -88,7 +90,7 @@
     const m = ensureModal();
     lastFocus = document.activeElement;
     const body = m.querySelector('.al-body');
-    m.querySelector('#alTitle').innerHTML = `🔔 알림 설정 <span class="al-sub">${esc(name || ticker)}</span>`;
+    m.querySelector('#alTitle').innerHTML = `<span class="al-title-ic">${bellSvg(17)}</span>알림 설정 <span class="al-sub">${esc(name || ticker)}</span>`;
     body.innerHTML = '<p class="al-note">불러오는 중...</p>';
     m.classList.remove('hidden');
     document.body.classList.add('al-lock');
@@ -176,7 +178,7 @@
     setTimeout(() => tI.focus({ preventScroll: true }), 50);
   }
 
-  // ── 종목 상세 '🔔 알림 설정' 버튼 ─────────────────────────────────────────────
+  // ── 종목 상세 '알림 설정' 버튼 ─────────────────────────────────────────────
   const bells = new Set();
   function paintBells(ticker) {
     bells.forEach((b) => {
@@ -250,7 +252,7 @@
         <section class="al-card">
           <div class="al-card-h"><h4>내 알림 <span class="al-n">${d.rules.length}</span></h4></div>
           ${d.rules.length ? `<ul class="al-list">${rules}</ul>`
-            : '<p class="al-empty">아직 설정한 알림이 없어요. 보유 종목·관심종목의 🔔 또는 종목 화면의 <b>🔔 알림 설정</b>에서 목표가·손절가·RSI·공시 알림을 만들 수 있어요.</p>'}
+            : '<p class="al-empty">아직 설정한 알림이 없어요. 보유 종목·관심종목의 <span class="al-inline-ic">${bellSvg(13)}</span> 또는 종목 화면의 <b>알림 설정</b>에서 목표가·손절가·RSI·공시 알림을 만들 수 있어요.</p>'}
         </section>
         <section class="al-card">
           <div class="al-card-h"><h4>최근 발송 이력</h4><span class="al-sub">최근 20건</span></div>
@@ -285,5 +287,5 @@
     });
   }
 
-  window.SAAlerts = { open, bindBell, renderHome, close };
+  window.SAAlerts = { open, bindBell, renderHome, close, bellSvg };
 })();
