@@ -7400,3 +7400,36 @@ body.al-lock { overflow: hidden; }
   .al-bell .al-bell-t { display: none; }
   .al-bell { width: 30px; padding: 0; justify-content: center; }          /* 좁은 화면: ☆ 버튼과 같은 크기의 아이콘 버튼 */
 }
+
+/* ── 선행지표 행 (6단계) ─────────────────────────────────────────────────── */
+.md-lead { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+.ld-title { font-size: 12.5px; font-weight: 700; color: var(--text2); margin-bottom: 8px; }
+.ld-title small { font-weight: 400; margin-left: 6px; font-size: 11px; }
+.ld-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ld-cell { position: relative; min-width: 0; background: var(--bg3); border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; }
+.ld-head { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.ld-label { font-size: 11.5px; color: var(--text2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ld-info { background: none; border: 0; padding: 0 2px; color: var(--text2); font-size: 11px; cursor: pointer; line-height: 1; }
+.ld-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.ld-badge { margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.ld-good { color: #34d399; background: rgba(52, 211, 153, .13); }
+.ld-bad { color: #f87171; background: rgba(248, 113, 113, .13); }
+.ld-warn { color: #fbbf24; background: rgba(251, 191, 36, .14); }
+.ld-neu { color: var(--text2); background: rgba(139, 148, 158, .14); }
+.ld-val { font-size: 17px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ld-val small { font-size: 11px; font-weight: 600; color: var(--text2); }
+.ld-val .up, .ld-sub .up { color: var(--green); } .ld-val .down, .ld-sub .down { color: var(--red); }
+.ld-sub { font-size: 11.5px; color: var(--text2); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.ld-dim { color: var(--text2); opacity: .8; }
+.ld-tip { display: none; margin: 4px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text); background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
+.ld-cell.tip-on .ld-tip { display: block; }
+@media (max-width: 900px) {
+  .ld-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .ld-cell { padding: 8px 9px; }
+  .ld-val { font-size: 15.5px; }
+}
+@media (max-width: 400px) {
+  .ld-badge { font-size: 10px; padding: 1px 6px; }
+  .ld-label { font-size: 11px; }
+  .ld-sub { font-size: 11px; }
+}

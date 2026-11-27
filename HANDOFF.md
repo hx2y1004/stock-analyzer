@@ -57,6 +57,24 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 거시 선행지표 3종 + 시장 폭 일별 스냅샷 (6단계, PR #108)
+- `analysis/macro.py` 선행지표 (요청을 막지 않게 `leading_snapshot()` 이 캐시만 돌려주고, 만료면 백그라운드 스레드 1개로 갱신)
+  - 장단기 금리차 FRED `T10Y2Y`: 역전(<0) · 주의(0~0.25) · 정상. 실패 시 yfinance `^TNX − 2YY=F`(2년물 수익률 선물) 근사.
+  - 하이일드 스프레드 FRED `BAMLH0A0HYM2`: 안정(<3.5) · 보통 · 경계(≥4.5 또는 20영업일 +0.5%p↑). 실패 시 `HYG/LQD` 비율 20일 변화(≤−2% 경계, ≥+1% 안정).
+  - 구리/금 `HG=F ÷ GC=F × 1000` 20거래일 변화 ±3% → 확장 · 중립 · 둔화.
+  - `parse_fred_csv`: 헤더(DATE / observation_date) 무관, 결측 '.'·빈칸 건너뜀.
+  - ⚠️ 이 클라우드 환경은 fred.stlouisfed.org 가 막혀 있어(허용 요청 거절됨) FRED 실호출을 확인하지 못했다. 파서는 형식 두 가지를 모두
+    처리하게 짰고 단위 테스트로만 확인. 운영 서버에서 FRED 가 되는지는 홈 선행지표 출처 툴팁(ⓘ)으로 확인 — '근사'가 보이면 폴백 중.
+    yfinance 근사 금리차는 2년물 '선물' 수익률이라 FRED 값과 수십 bp 다를 수 있다.
+  - `macro_regime(..., leading=)`: 장단기 역전 −1 · 하이일드 경계 −2 / 안정 +1 · 구리/금 확장 +1 / 둔화 −1 을 기존 점수에 더함(±6 클램핑 그대로).
+    종목 분석의 매크로 보정 점수에도 반영된다. 기존 키 유지 + `base_score`(선행지표 제외) · `leading_score` · `leading_indicators`.
+  - 홈 시황 응답에 `regime`(risk_on/neutral/risk_off) · `leading_indicators`(상세) · `breadth` 추가 (8단계 AI 봇 재사용용).
+- `market_breadth.py` + `market_breadth_daily` (새 표 → create_all, ALTER 없음). PostgreSQL·SQLite 모두 `INSERT … ON CONFLICT DO UPDATE`,
+  index_close 는 COALESCE 로 기존 값 유지. 섹터맵 `refresh()` → `on_breadth` 훅. 홈 시황을 받을 때 오늘 줄의 지수 종가를 채움.
+  판정: 5거래일 미만 '수집 중 (N/5일)', 이후 최근 20거래일 누적 순상승 ÷ 누적 종목 수(±2%)와 지수(±1%) 비교.
+- 홈 '시장 현황' 매크로 줄 아래 '선행지표' 행(4열 → 900px 이하 2열): 값 · 20일 변화 · 상태 배지 · ⓘ 설명(누르면 펼침, 출처 포함). 시장 폭은 한국/미국 토글을 따른다.
+- 버전: main.js v114, style.css v133, sa-v101.
+
 ### 내 보유·관심종목 맞춤 PWA 푸시 알림 (5단계, PR #106)
 - 재활용: `webpush.send_to_user`(VAPID · 404/410 만료 구독 삭제), 헤더 종 `Notification`(kind `stock_alert`), 봇 스케줄러 5분 장중 체크·`_RUN_LOCK`,
   `notify.js` 푸시 구독 절차(`window.SAPush` 로 노출), 서비스워커 `notificationclick`(같은 URL 탭이 열려 있으면 그 탭 포커스 추가). AI 봇 알림 경로는 손대지 않음.

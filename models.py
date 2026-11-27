@@ -499,3 +499,20 @@ class StockAlertLog(db.Model):
     fired_at  = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     __table_args__ = (db.UniqueConstraint("user_id", "dedup_key", name="uq_alert_log_user_dedup"),
                       db.Index("ix_alert_log_user_ticker_type", "user_id", "ticker", "rule_type"))
+
+
+class MarketBreadthDaily(db.Model):
+    """시장 폭(상승·하락 종목 수) 일별 스냅샷 (market_breadth.py). 섹터맵 집계에서 그대로 받아 하루 1줄 UPSERT.
+    대상은 섹터맵 유니버스(한국 ~350 · 미국 ~537 대표 종목). index_close 는 홈 시황 캐시의 S&P 500 / KOSPI 값."""
+    __tablename__ = "market_breadth_daily"
+    id          = db.Column(db.Integer, primary_key=True)
+    market      = db.Column(db.String(4), nullable=False)          # US | KR
+    trade_date  = db.Column(db.Date, nullable=False)
+    advancers   = db.Column(db.Integer, nullable=False, default=0)
+    decliners   = db.Column(db.Integer, nullable=False, default=0)
+    unchanged   = db.Column(db.Integer, nullable=False, default=0)
+    total       = db.Column(db.Integer, nullable=False, default=0)
+    ad_diff     = db.Column(db.Integer, nullable=False, default=0)  # advancers - decliners
+    index_close = db.Column(db.Float)
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("market", "trade_date", name="uq_breadth_market_date"),)

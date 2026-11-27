@@ -300,6 +300,11 @@ def refresh(market, reason="manual"):
             "via": via,
         }
         _MEM[market] = payload
+        if D.get("on_breadth"):
+            try:
+                D["on_breadth"](market, payload)    # 시장 폭 일별 스냅샷 UPSERT (추가 외부 호출 없음)
+            except Exception as e:
+                log(f"{market} 시장 폭 저장 실패: {e}")
         if D.get("on_rows"):
             try:
                 D["on_rows"](market, rows)          # 스크리너 스냅샷의 가격·등락률·시총 갱신

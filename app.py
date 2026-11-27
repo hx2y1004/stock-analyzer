@@ -71,7 +71,8 @@ from analysis.short_interest import short_interest as short_interest_from_info
 from analysis import kr_flow
 from analysis import kr_short
 from analysis import earnings as earnings_mod
-from models import AppliedStockSplit, DropHoldState, DisclosureEvent, StockAlertRule, StockAlertLog
+from models import AppliedStockSplit, DropHoldState, DisclosureEvent, StockAlertRule, StockAlertLog, MarketBreadthDaily
+import market_breadth
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
                     BotPosition, PushSubscription, ScreenerSnapshot, TrendSetup)
@@ -725,7 +726,9 @@ def _market_overview_payload():
     now = time.time()
     c = _MARKET_OVERVIEW_CACHE
     if c["data"] and (now - c["ts"]) < _MARKET_OVERVIEW_TTL:
-        return c["data"]
+        # 선행지표가 비어 있던 응답인데 그새 백그라운드 갱신이 끝났으면 1분을 기다리지 않고 다시 만든다
+        if not (c["data"].get("leading_indicators") is None and macro_mod.leading_snapshot(background=False)):
+            return c["data"]
 
     out = []
     macro = {}
@@ -765,11 +768,28 @@ def _market_overview_payload():
         app.logger.warning(f"[market_overview] {e}")
 
     vix = next((it for it in out if it.get("symbol") == "^VIX"), None)
-    macro["regime"] = macro_mod.macro_regime(vix, macro.get("tnx"), macro.get("gold"), macro.get("dxy"), is_korean=False)
-    macro["regime_kr"] = macro_mod.macro_regime(vix, macro.get("tnx"), macro.get("gold"), macro.get("dxy"), is_korean=True)
+    lead = macro_mod.leading_snapshot()        # 선행지표 3종 (6시간 캐시 · 만료면 백그라운드 갱신, 여기서 기다리지 않음)
+    macro["leading"] = lead
+    macro["regime"] = macro_mod.macro_regime(vix, macro.get("tnx"), macro.get("gold"), macro.get("dxy"), is_korean=False, leading=lead)
+    macro["regime_kr"] = macro_mod.macro_regime(vix, macro.get("tnx"), macro.get("gold"), macro.get("dxy"), is_korean=True, leading=lead)
+    breadth = {}
+    from flask import has_app_context
+    if has_app_context():                      # 백그라운드에서 앱 컨텍스트 없이 불려도 시황 자체는 동작하게
+        for _m in ("US", "KR"):
+            try:                               # 홈 시황에 이미 있는 S&P 500 / KOSPI 값으로 오늘 시장 폭 줄의 지수 종가를 채움 (추가 호출 없음)
+                ix = next((it for it in out if it.get("symbol") == market_breadth.INDEX_SYMBOL[_m]), None)
+                if ix and ix.get("value"):
+                    market_breadth.set_index_close(_m, datetime.now(market_hours.TZ[_m]).date(), ix["value"])
+            except Exception:
+                db.session.rollback()
+            breadth[_m] = market_breadth.trend(_m)
     payload = {
         "indices": out,
         "macro": macro,
+        # 8단계 AI 봇 등에서 바로 쓰는 구조화 필드 (macro.regime 과 같은 값)
+        "regime": macro["regime"].get("regime"),
+        "leading_indicators": lead,
+        "breadth": breadth,
         "kr_open": _is_market_open("005930.KS"),
         "us_open": _is_market_open("AAPL"),
         "fetched_at": datetime.utcnow().isoformat() + "Z",
@@ -777,6 +797,25 @@ def _market_overview_payload():
     if out:
         _MARKET_OVERVIEW_CACHE.update(ts=now, data=payload)
     return payload
+
+
+def _save_breadth(market, payload):
+    """섹터맵 스냅샷(백그라운드 스레드) → market_breadth_daily UPSERT. 지수 종가는 홈 시황 캐시에 오늘 값이 있으면 함께."""
+    dd = (payload or {}).get("data_date")
+    if not dd:
+        return
+    close = None
+    c = _MARKET_OVERVIEW_CACHE.get("data") or {}
+    if str(datetime.now(market_hours.TZ[market]).date()) == str(dd)[:10] and time.time() - _MARKET_OVERVIEW_CACHE.get("ts", 0) < 30 * 60:
+        ix = next((it for it in (c.get("indices") or []) if it.get("symbol") == market_breadth.INDEX_SYMBOL[market]), None)
+        close = (ix or {}).get("value")
+    with app.app_context():
+        try:
+            market_breadth.upsert(market, dd, payload.get("advancing_count"), payload.get("declining_count"),
+                                  payload.get("unchanged_count"), close)
+        except Exception as e:
+            db.session.rollback()
+            app.logger.warning(f"[breadth] {market} {dd} 저장 실패: {e}")
 
 
 _MACRO_FAIL = {"ts": 0.0}
@@ -7112,7 +7151,9 @@ def _on_sector_rows(market, rows):
 
 bot_engine.D["on_features"] = _on_batch_features
 sector_map.init({"app": app, "ai_cache": ai_cache, "bot_lock": bot_engine._RUN_LOCK,
-                 "on_rows": _on_sector_rows})
+                 "on_rows": _on_sector_rows,
+                 "on_breadth": lambda m, p: _save_breadth(m, p)})   # 시장 폭 일별 스냅샷 (market_breadth_daily, 추가 호출 없음)
+market_breadth.init({"app": app, "db": db, "MarketBreadthDaily": MarketBreadthDaily})
 sector_map.start()
 screener.start()
 trend_setups.start()
