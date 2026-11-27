@@ -452,9 +452,6 @@ def fetch_naver_realtime_price(krx_code: str):
         return None
 
 
-# ── 한국 종목 보충 데이터: 공매도 / 외국인·기관 수급 ─────────────
-_KR_SUPPLEMENT_CACHE = {}
-_KR_SUPPLEMENT_TTL = 1800  # 30분 (일별 데이터라 자주 변경 안 됨)
 
 
 def _ttl_cached(cache: dict, key, ttl_ok: int, ttl_empty: int, is_empty, fetch, max_entries: int = 300):
@@ -485,182 +482,6 @@ _KR_QUARTERLY_TTL = 6 * 3600       # 분기 실적: 자주 바뀌지 않음
 _KR_ANALYST_CACHE = {}
 _KR_ANALYST_TTL = 3600             # 증권사 리포트: 하루 몇 건 수준
 _KR_EMPTY_TTL = 600                # 빈 결과(조회 실패 포함)는 10분만 보관
-
-
-def _naver_request(url):
-    """네이버 모바일/PC 페이지 GET — 인코딩 처리 포함."""
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Referer": "https://finance.naver.com/",
-    }
-    r = requests.get(url, headers=headers, timeout=8)
-    if r.status_code != 200:
-        return None
-    # 인코딩 자동 감지
-    for enc in ("euc-kr", "cp949", "utf-8"):
-        try:
-            return r.content.decode(enc, errors="strict")
-        except UnicodeDecodeError:
-            continue
-    return r.content.decode("euc-kr", errors="replace")
-
-
-def fetch_kr_short_interest(krx_code: str):
-    """네이버 일별 공매도 → 최근일 공매도 비율 + 5일 평균.
-
-    URL: https://finance.naver.com/item/dailyShort.naver?code=005930
-    컬럼: 날짜 | 공매도거래량 | 거래량 | 공매도비중(%) | 공매도잔고(주) | 공매도잔고비중(%)
-
-    Returns: dict {date, short_ratio_pct, short_balance_pct, short_5d_avg_pct} 또는 None
-    """
-    if not krx_code:
-        return None
-    try:
-        from bs4 import BeautifulSoup
-        url = f"https://finance.naver.com/item/dailyShort.naver?code={krx_code}"
-        html = _naver_request(url)
-        if not html:
-            return None
-        soup = BeautifulSoup(html, "html.parser")
-
-        def _num(s):
-            if not s: return None
-            t = s.strip().replace(",", "").replace("+", "").replace("%", "")
-            if not t or t == "-": return None
-            try: return float(t)
-            except ValueError: return None
-
-        # 데이터 테이블: rows 안에 첫번째 셀이 날짜 형식인 것
-        rows = []
-        for tr in soup.find_all("tr"):
-            tds = tr.find_all("td")
-            if len(tds) < 5:
-                continue
-            date_txt = tds[0].get_text(strip=True)
-            if not re.match(r"^\d{4}\.\d{2}\.\d{2}$", date_txt):
-                continue
-            short_qty   = _num(tds[1].get_text(strip=True))
-            total_qty   = _num(tds[2].get_text(strip=True))
-            short_ratio = _num(tds[3].get_text(strip=True))
-            bal_qty     = _num(tds[4].get_text(strip=True)) if len(tds) > 4 else None
-            bal_pct     = _num(tds[5].get_text(strip=True)) if len(tds) > 5 else None
-            rows.append({
-                "date": date_txt,
-                "short_ratio": short_ratio,
-                "balance_pct": bal_pct,
-            })
-            if len(rows) >= 10:
-                break
-
-        if not rows:
-            return None
-
-        latest = rows[0]
-        five = [r["short_ratio"] for r in rows[:5] if r["short_ratio"] is not None]
-        five_avg = round(sum(five) / len(five), 2) if five else None
-
-        return {
-            "date":              latest["date"],
-            "short_ratio_pct":   latest["short_ratio"],
-            "short_balance_pct": latest["balance_pct"],
-            "short_5d_avg_pct":  five_avg,
-        }
-    except Exception as e:
-        try: app.logger.warning(f"[kr-short] {krx_code}: {e}")
-        except Exception: pass
-        return None
-
-
-def fetch_kr_supply_demand(krx_code: str):
-    """네이버 외국인/기관 → 외국인 보유율 + 최근 5일 순매수.
-
-    URL: https://finance.naver.com/item/frgn.naver?code=005930
-    컬럼: 날짜 | 종가 | 전일비 | 등락률 | 거래량 | 기관순매매 | 외국인순매매 | 보유주식수 | 보유율
-
-    Returns: dict {foreign_ratio_pct, foreign_net_5d, inst_net_5d, latest_date}
-    """
-    if not krx_code:
-        return None
-    try:
-        from bs4 import BeautifulSoup
-        url = f"https://finance.naver.com/item/frgn.naver?code={krx_code}"
-        html = _naver_request(url)
-        if not html:
-            return None
-        soup = BeautifulSoup(html, "html.parser")
-
-        def _num(s):
-            if not s: return None
-            t = s.strip().replace(",", "").replace("+", "").replace("%", "")
-            if not t or t == "-": return None
-            try: return float(t)
-            except ValueError: return None
-
-        rows = []
-        for tr in soup.find_all("tr"):
-            tds = tr.find_all("td")
-            if len(tds) < 9:
-                continue
-            date_txt = tds[0].get_text(strip=True)
-            if not re.match(r"^\d{4}\.\d{2}\.\d{2}$", date_txt):
-                continue
-            # 부호 보정: 빨강(상승=매수) 또는 파랑(하락=매도)
-            def _signed(td):
-                v = _num(td.get_text(strip=True))
-                if v is None:
-                    return None
-                cls = " ".join(td.get("class", []))
-                if "nv01" in cls or "down" in cls:
-                    return -v
-                return v
-            inst_net    = _signed(tds[5])
-            foreign_net = _signed(tds[6])
-            foreign_pct = _num(tds[8].get_text(strip=True))
-            rows.append({
-                "date": date_txt,
-                "inst_net": inst_net,
-                "foreign_net": foreign_net,
-                "foreign_pct": foreign_pct,
-            })
-            if len(rows) >= 5:
-                break
-
-        if not rows:
-            return None
-
-        inst_5d    = sum((r["inst_net"]    or 0) for r in rows[:5])
-        foreign_5d = sum((r["foreign_net"] or 0) for r in rows[:5])
-
-        return {
-            "latest_date":      rows[0]["date"],
-            "foreign_ratio_pct": rows[0]["foreign_pct"],
-            "foreign_net_5d":    int(foreign_5d) if foreign_5d else 0,
-            "inst_net_5d":       int(inst_5d) if inst_5d else 0,
-        }
-    except Exception as e:
-        try: app.logger.warning(f"[kr-supply] {krx_code}: {e}")
-        except Exception: pass
-        return None
-
-
-def fetch_kr_supplements(krx_code: str):
-    """한국 종목 보충 데이터(공매도/수급) 통합 — 30분 캐시."""
-    if not krx_code:
-        return None
-    now_ts = time.time()
-    cached = _KR_SUPPLEMENT_CACHE.get(krx_code)
-    if cached and (now_ts - cached[0]) < _KR_SUPPLEMENT_TTL:
-        return cached[1]
-    result = {
-        "short":  fetch_kr_short_interest(krx_code),
-        "supply": fetch_kr_supply_demand(krx_code),
-    }
-    _KR_SUPPLEMENT_CACHE[krx_code] = (now_ts, result)
-    return result
 
 
 # ── 섹터/테마 강도 (Sector Strength) ───────────────────────────
@@ -3914,6 +3735,49 @@ def _dcf_brief(dcf):
             f"애널리스트 목표가 {dcf.get('analyst_target')}, 신뢰도 {dcf.get('reliability')}")
 
 
+def _flow_brief(ticker):
+    """국내 종목 수급 요약 1줄 (kr_flow 30분 캐시 재사용 · 종목 상세 수급 카드와 같은 캐시). 실패·미지원이면 None."""
+    try:
+        f = kr_flow.get_flow(ticker)
+    except Exception:
+        return None
+    if not f or not f.get("available"):
+        return None
+    def eok(v):
+        return f"{v / 1e8:+,.0f}억원" if v is not None else "?"
+    s5, s20 = f.get("sum_5d") or {}, f.get("sum_20d") or {}
+    who = [("외국인", "foreign"), ("기관", "inst"), ("개인", "retail")]
+    parts = [f"{k} 5일 {eok(s5.get(f'{c}_krw'))} / 20일 {eok(s20.get(f'{c}_krw'))}" for k, c in who]
+    st = []
+    for k, v in (("외국인", f.get("foreign_streak")), ("기관", f.get("inst_streak"))):
+        if v:
+            st.append(f"{k} {abs(v)}일 연속 {'순매수' if v > 0 else '순매도'}")
+    out = "; ".join(parts)
+    if st:
+        out += " · " + ", ".join(st)
+    if f.get("badges"):
+        out += " · 신호: " + ", ".join(b["text"] for b in f["badges"])
+    if f.get("foreign_hold_ratio") is not None:
+        out += f" · 외국인 보유율 {f['foreign_hold_ratio']:.1f}%"
+    return f"{out} ({f.get('as_of')} 기준, 순매수 주수×종가 추정{', 개인은 추정' if f.get('retail_estimated') else ''})"
+
+
+def _short_brief(si):
+    """미국 종목 공매도 요약 1줄 (분석 응답의 short_interest = 이미 받은 info 그대로). 값이 없으면 None."""
+    if not si:
+        return None
+    p = []
+    if si.get("short_pct") is not None:
+        p.append(f"유동주식 대비 공매도 {si['short_pct']}%")
+    if si.get("short_ratio") is not None:
+        p.append(f"청산 소요 {si['short_ratio']}일")
+    if si.get("mom_change_pct") is not None:
+        p.append(f"공매도 잔고 전월 대비 {si['mom_change_pct']:+.1f}%")
+    if not p:
+        return None
+    return ", ".join(p) + f" · 단계: {si.get('label')} (FINRA 반월 공시, 약 2주 지연)"
+
+
 def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr, disclosures_recent=None):
     """→ {"move_reason", "valuation_comment", "news_tr": {id: {"title","summary"}}, "ai": bool}
 
@@ -3974,7 +3838,7 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr, disclosu
                        "먼저 짚을 것. 뉴스·기술적 요인은 보조 근거로만. 공시가 원인이라고 단정하지 말고 가능성으로 표현할 것.")
         elif ask_move:
             req.append(f'- "move_reason": 오늘 {chg:+.2f}% 움직임의 가능한 원인 2~3문장. 아래 헤드라인에 근거가 있으면 짧게 인용, '
-                       "없으면 기술적·시장 요인. 단정하지 말 것.")
+                       "없으면 기술적·시장 요인. [수급]·[공매도] 자료가 있으면 보조 근거로 한 번만 짚을 것. 단정하지 말 것.")
         if ask_val:
             req.append('- "valuation_comment": 아래 DCF 결과 해설 2~3문장. 주어진 숫자만 인용, 역산 값 중심, '
                        "신뢰도 low면 모델 한계를 언급, 매수·매도 권유 금지.")
@@ -3993,6 +3857,10 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr, disclosu
             heads = [n.get("title_orig") or n["title"] for n in news[:6]]
             if heads:
                 lines.append("[최근 헤드라인]\n" + "\n".join(f"- {h}" for h in heads))
+            # 보조 근거: 국내 = 외국인·기관·개인 수급, 미국 = 공매도 (정량 점수에는 쓰지 않음 · 있을 때만)
+            ctx = _flow_brief(ticker) if is_kr else _short_brief(stock_data.get("short_interest"))
+            if ctx:
+                lines.append(("[수급 — 보조 근거] " if is_kr else "[공매도 — 보조 근거] ") + ctx)
         if ask_val:
             lines.append("[DCF] " + _dcf_brief(dcf))
         if items:
@@ -4330,37 +4198,6 @@ def analyze():
             _macro = None
         ai_result = analyze_signals(df, info, df_weekly=df_weekly, stock=stock,
                                     macro=(_macro or {}).get("regime"))
-
-        # ── 한국 종목 보충: 공매도 + 외국인/기관 수급 ──────────────
-        if is_korean:
-            try:
-                krx_code_supp = ticker.split(".")[0]
-                kr_supp = fetch_kr_supplements(krx_code_supp)
-                sc = ai_result.get("scorecard") or {}
-                metrics = sc.get("metrics") if isinstance(sc, dict) else None
-                if metrics is None and sc is not None:
-                    sc["metrics"] = {}; metrics = sc["metrics"]
-                if metrics is not None and kr_supp:
-                    sh = kr_supp.get("short") or {}
-                    su = kr_supp.get("supply") or {}
-                    # 공매도 비율을 short_pct_of_float에 매핑 (UI 호환)
-                    if sh.get("short_ratio_pct") is not None:
-                        metrics["short_pct_of_float"]   = sh["short_ratio_pct"]
-                        metrics["kr_short_balance_pct"] = sh.get("short_balance_pct")
-                        metrics["kr_short_5d_avg_pct"]  = sh.get("short_5d_avg_pct")
-                        metrics["kr_short_date"]        = sh.get("date")
-                    # 외국인/기관 수급 (한국 전용)
-                    if su:
-                        metrics["kr_foreign_ratio_pct"] = su.get("foreign_ratio_pct")
-                        metrics["kr_foreign_net_5d"]    = su.get("foreign_net_5d")
-                        metrics["kr_inst_net_5d"]       = su.get("inst_net_5d")
-                        metrics["kr_supply_date"]       = su.get("latest_date")
-                    # DART 공시 직링크 (corp_code 없이 종목코드로 검색)
-                    metrics["kr_dart_url"] = (
-                        f"https://dart.fss.or.kr/dsab007/main.do?option=corp&textCrpNm={krx_code_supp}"
-                    )
-            except Exception as _e:
-                app.logger.warning(f"[kr-supplements] inject failed: {_e}")
 
         # 차트용 데이터
         chart_df = df.tail(chart_bars).copy()
@@ -5245,6 +5082,26 @@ _PF_ANALYTICS = {}                # user_id -> (ts, 보유 서명, payload)
 _PF_ANALYTICS_TTL = 5 * 60
 
 
+def _dividend_yield_pct(info, price=None):
+    """배당수익률 % (2.4 = 2.4%). yfinance dividendYield 는 버전에 따라 소수(0.024)·퍼센트(2.4) 둘 다 나와서,
+    기준값(trailingAnnualDividendYield 소수 → %, 또는 dividendRate ÷ 현재가)과 가까운 쪽으로 단위를 정한다. 30% 이상은 버림."""
+    dy = safe_float(info.get("dividendYield"))
+    if dy is None or dy <= 0:
+        return None
+    ref = None
+    tdy = safe_float(info.get("trailingAnnualDividendYield"))
+    if tdy and 0 < tdy < 1:
+        ref = tdy * 100
+    rate = safe_float(info.get("dividendRate"))
+    if ref is None and rate and price:
+        ref = rate / price * 100
+    if ref:
+        pct = dy if abs(dy - ref) <= abs(dy * 100 - ref) else dy * 100
+    else:
+        pct = dy                                                 # 기준값이 없으면 최근 yfinance 관례(퍼센트)
+    return round(pct, 4) if 0 < pct < 30 else None
+
+
 def _dividend_profile(ticker, snap=None):
     """종목 배당·섹터 프로필 (portfolio_analytics 입력). yfinance info + 최근 1년 배당 이력, 12시간 캐시.
     큰 info 딕셔너리는 들고 있지 않고 필요한 값만 남긴다."""
@@ -5264,13 +5121,13 @@ def _dividend_profile(ticker, snap=None):
         prof["sector_name"] = prof["sector_name"] or _SECTOR_KO.get(info.get("sector")) or info.get("sector")
         prof["dividend_rate"] = safe_float(info.get("dividendRate"))
         prof["trailing_rate"] = safe_float(info.get("trailingAnnualDividendRate"))
-        if prof["yield_pct"] is None and safe_float(info.get("dividendYield")) is not None:
-            prof["yield_pct"] = safe_float(info.get("dividendYield"))            # yfinance 는 % 값 (0.55 = 0.55%)
         prof["price"] = safe_float(info.get("currentPrice")) or safe_float(info.get("regularMarketPrice"))
+        if prof["yield_pct"] is None:
+            prof["yield_pct"] = _dividend_yield_pct(info, prof["price"])
         ex = info.get("exDividendDate")
         if ex:
             try:
-                prof["ex_date"] = datetime.utcfromtimestamp(int(ex)).date()
+                prof["ex_date"] = datetime.fromtimestamp(int(ex), tz=market_hours.TZ["KR"]).date()   # 화면·D-Day 는 한국 날짜 기준
             except Exception:
                 pass
         try:
@@ -5290,6 +5147,24 @@ def _dividend_profile(ticker, snap=None):
     with _DIV_PROFILE_LOCK:
         _DIV_PROFILE[ticker] = (now, prof)
     return prof
+
+
+_FX_OTHER = {}                    # 통화 -> (ts, KRW 환율 | None)
+
+
+def _fx_to_krw(cur):
+    """KRW·USD 외 통화(JPY·HKD·EUR 등) → 1단위당 원화 (yfinance '{CUR}KRW=X', 1시간 캐시). 실패하면 None."""
+    hit = _FX_OTHER.get(cur)
+    if hit and time.time() - hit[0] < 3600:
+        return hit[1]
+    rate = None
+    try:
+        fi = yf.Ticker(f"{cur}KRW=X").fast_info
+        rate = safe_float(getattr(fi, "last_price", None))
+    except Exception:
+        rate = None
+    _FX_OTHER[cur] = (time.time(), rate if rate and rate > 0 else None)
+    return _FX_OTHER[cur][1]
 
 
 @app.route("/api/portfolio/analytics")
@@ -5332,7 +5207,10 @@ def portfolio_analytics_api():
         rows.append({"ticker": h.ticker, "name": h.name or h.ticker, "currency": cur, "quantity": h.quantity,
                      "purchase_price": h.purchase_price,
                      "current_price": prices.get(h.ticker) or (snaps.get(h.ticker) or {}).get("price")})
-    payload = portfolio_analytics.compute(rows, _get_usd_krw_rate(), profiles, today=datetime.now(market_hours.TZ["KR"]).date())
+    others = sorted({r["currency"].upper() for r in rows} - {"KRW", "USD"})
+    fx_rates = {c: _fx_to_krw(c) for c in others}
+    payload = portfolio_analytics.compute(rows, _get_usd_krw_rate(), profiles, today=datetime.now(market_hours.TZ["KR"]).date(),
+                                          fx_rates={c: v for c, v in fx_rates.items() if v})
     payload["as_of"] = datetime.utcnow().isoformat() + "Z"
     _PF_ANALYTICS[current_user.id] = (time.time(), sig, payload)
     return jsonify(payload)

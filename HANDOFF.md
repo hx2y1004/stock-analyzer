@@ -57,6 +57,18 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### PR 1~3 마무리 정리 (PR #103)
+- 구버전 '한국 시장 시그널' 제거: `fetch_kr_short_interest`(dailyShort 404) · `fetch_kr_supply_demand`(frgn 302) · `fetch_kr_supplements` · `_KR_SUPPLEMENT_CACHE` · `_naver_request` ·
+  analyze() 의 `kr_*` 지표 주입(점수 계산 뒤라 점수 영향 없음) · main.js 세부 지표 섹션·안내·도움말 · CSS `.sc-kr-*`. 한국 종목 세부 지표의 공매도 행도 제거(값 없음).
+  → 한국 종목 분석마다 나가던 죽은 네이버 요청 2건이 없어짐. (위쪽 2026-05 기록의 '🇰🇷 한국 시장 시그널'은 역사 기록으로 남김)
+- AI 프롬프트: `get_stock_insight`(daily_insight, move_reason) 에만 보조 근거 1줄 — 국내 `_flow_brief`(kr_flow 30분 캐시 재사용), 미국 `_short_brief`(분석 응답의 short_interest).
+  정량 점수 공식은 그대로. 기업 소개 프롬프트(장기 캐시)에는 넣지 않음.
+- 엣지: `is_us_ticker` currency upper · `normalize_short_pct(v, ref_pct)` 0<v≤1 은 sharesShort÷floatShares 기준과 가까운 단위 ·
+  portfolio_analytics 환율 모르는 통화는 USD 환율로 바꾸지 않고 `skipped` (앱은 KRW·USD 외 통화만 `_fx_to_krw` yfinance 1시간 캐시) ·
+  `_dividend_profile` 배당락 KST 날짜 · `_dividend_yield_pct` 소수/퍼센트 판정(trailingAnnualDividendYield 또는 dividendRate÷현재가 기준).
+- 360px: 배당 월 라벨 9.5px(≤420) · 수급 KPI 13.5px(≤390) + overflow hidden · 공매도 셀 라벨 말줄임.
+- 캐시: main.js v109, style.css v128, sa-v96.
+
 ### 국내 종목 외국인·기관 수급 카드 (PR #102)
 - `analysis/kr_flow.py`: 네이버 모바일 JSON `m.stock.naver.com/api/stock/{code}/trend?pageSize=20` (UA·5초) → 일별 외국인·기관·개인 순매수 주수·종가·외국인 보유율.
   금액 = 주수 × 그날 종가(추정). 개인은 응답의 개인 주수(있으면), 없으면 -(외국인+기관). 5·20일 합, 연속 일수(최신부터 같은 부호), 배지(±3일 연속 · 쌍끌이 = 5일 합 둘 다 + 최신일 동반 순매수), 최근 10거래일 차트 데이터.
