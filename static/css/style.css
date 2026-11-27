@@ -7070,9 +7070,13 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 }
 
 /* ── 미국 종목 공매도 (PR #98): 주요 지표 한 줄 셀 · 투자 판단 1줄 요약 ───────────────── */
-.metric-item.metric-short { grid-column: 1 / -1; }
+.metric-item.metric-short { grid-column: 1 / -1; min-width: 0; }   /* 실제 칸 수는 main.js _fitShortCell() 이 열 수에 맞춰 정함 */
 .metric-short.hidden { display: none; }
 .si-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.si-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-line { flex-wrap: nowrap; }
+.metric-label.si-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.metric-label.si-head .si-badge { margin-left: 0; font-size: 11px; padding: 1px 8px; line-height: 1.5; }
 .si-line .metric-value { font-weight: 800; font-variant-numeric: tabular-nums; }
 .si-sub { font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
 .si-badge { margin-left: auto; align-self: center; font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }

@@ -57,6 +57,12 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 주요 지표 그리드 빈 칸 해소 (PR #99)
+- 주요 지표는 `auto-fill` 이라 폭마다 열 수가 2~7열로 바뀐다. `_fitShortCell()`(main.js)이 실제 열 수 c 와 앞 항목 수 n 으로 공매도 셀 칸 수를 정함:
+  n % c == 0 이면 `1 / -1`(마지막 줄 전체), 아니면 `span (c - n % c)` (3열·4열 → 2칸, 6열 → 2칸, 7열 → 4칸, 2·5열 → 전체). ResizeObserver 로 폭이 바뀌면 다시.
+- 배지를 라벨 줄 오른쪽으로 옮겨 셀이 다른 칸과 같은 2줄 높이(75px). 보조 문구는 넘치면 말줄임. 한국 종목은 셀 숨김이라 영향 없음.
+- 캐시: main.js v105, style.css v124, sa-v92.
+
 ### 미국 종목 공매도(Short Interest) 지표 (PR #98)
 - `analysis/short_interest.py`: yfinance `info` 만 사용(추가 호출 없음). `shortPercentOfFloat` 정규화(0<v≤1 → ×100, 1<v≤100 그대로, 그 밖 None) ·
   `shortRatio`(청산일수) · `sharesShort`/`sharesShortPriorMonth` → 전월 대비 %. level: 15%·5일 이상 high '숏 스퀴즈 주의', 8%·3일 이상 elevated '공매도 높음', 그 외 normal.

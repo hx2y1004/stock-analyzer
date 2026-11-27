@@ -2626,6 +2626,23 @@ function _renderShortCell(si) {
   const b = document.getElementById('shortBadge');
   b.className = `si-badge ${_SI_BADGE[si.level] || 'si-norm'}`;
   b.textContent = si.label;
+  _fitShortCell();
+}
+// 주요 지표 그리드는 폭에 따라 열 수가 바뀐다(auto-fill). 공매도 셀이 윗줄의 남은 칸을 채우게:
+// 앞 항목 n개, 열 c개 → 나머지 r = n % c. r=0 이면 마지막 줄 전체 폭, 아니면 c-r 칸 (3열 → 2칸, 4열 → 2칸, 2·5열 → 전체 폭)
+function _fitShortCell() {
+  const cell = document.getElementById('shortCell');
+  if (!cell || cell.classList.contains('hidden')) return;
+  const grid = cell.parentElement;
+  const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+  const n = [...grid.children].filter((e) => e !== cell && e.offsetParent !== null && !e.classList.contains('hidden')).length;
+  const r = n % cols;
+  cell.style.gridColumn = r === 0 ? '1 / -1' : `span ${cols - r}`;
+  if (!grid._siRO && window.ResizeObserver) {
+    let last = 0;
+    grid._siRO = new ResizeObserver(() => { const w = Math.round(grid.clientWidth); if (w !== last) { last = w; requestAnimationFrame(_fitShortCell); } });
+    grid._siRO.observe(grid);
+  }
 }
 function _fjShortRow(stock) {
   const si = stock && stock.short_interest;
