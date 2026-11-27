@@ -2012,6 +2012,7 @@ function renderMetrics(stock, analysis) {
   document.getElementById('dividendYield').textContent =
     stock.dividend_yield != null ? (stock.dividend_yield * 100).toFixed(2) + '%' : '—';
   _renderShortCell(stock.short_interest);
+  if (_krShortEligible(stock)) loadKrShort(stock.ticker);
 
   if (stock.volume != null && stock.avg_volume != null && stock.avg_volume > 0) {
     const ratio = (stock.volume / stock.avg_volume * 100).toFixed(0);
@@ -2569,13 +2570,21 @@ const _FS_SHORT = {
 };
 
 // ── 미국 종목 공매도 (Short Interest): 주요 지표 셀 · 투자 판단 1줄 요약. 한국 종목·자료 없음이면 숨김 ──
-const _SI_BADGE = { high: 'si-high', elevated: 'si-elev', normal: 'si-norm' };
+const _SI_BADGE = { high: 'si-high', elevated: 'si-elev', normal: 'si-norm', caution: 'si-elev', low: 'si-low' };
+const _SI_TIP_US = '유동주식 대비 공매도 잔고 비율 · 청산일수(평균 거래량으로 공매도 물량을 다 갚는 데 걸리는 거래일). FINRA 반월 공시 기준이라 2주가량 늦습니다.';
+const _SI_TIP_KR = '상장주식수 대비 공매도 순보유잔고 비율(KRX). 잔고는 보고 의무 발생일 기준이라 거래일보다 2영업일(T+2) 늦습니다. 0.5% 미만 낮음 · 0.5~2% 보통 · 2~5% 주의 · 5% 이상 높음. 거래 비중 = 그날 거래대금 중 공매도 비중(KRX+NXT).';
+function _siLabel(text, tip) {
+  const l = document.getElementById('shortLabel'), i = document.getElementById('shortInfo');
+  if (l) l.textContent = text;
+  if (i) { i.title = tip; i.setAttribute('aria-label', tip); }
+}
 function _siMom(v) { return v == null ? '' : `전월 대비 ${v > 0 ? '+' : ''}${v.toFixed(1)}%`; }
 function _renderShortCell(si) {
   const cell = document.getElementById('shortCell');
   if (!cell) return;
   if (!si) { cell.classList.add('hidden'); return; }
   cell.classList.remove('hidden');
+  _siLabel('공매도 비율', _SI_TIP_US);
   document.getElementById('shortPct').textContent = si.short_pct != null ? `${si.short_pct.toFixed(1)}%` : '—';
   const sub = [si.short_ratio != null ? `청산 ${si.short_ratio.toFixed(1)}일` : '', _siMom(si.mom_change_pct)].filter(Boolean).join(' · ');
   document.getElementById('shortSub').textContent = sub;
@@ -2600,7 +2609,57 @@ function _fitShortCell() {
     grid._siRO.observe(grid);
   }
 }
+// ── 국내 보통주 공매도 순보유잔고 (KRX, /api/stock/<t>/short 2시간 캐시). ETF·우선주·실패면 칸·줄 모두 숨김 ──
+const _krShortMem = {};
+function _krShortEligible(stock) {
+  return !!stock && /^\d{5}0\.(KS|KQ)$/i.test(stock.ticker || '') && stock.quote_type !== 'ETF';
+}
+async function loadKrShort(ticker) {
+  let d = _krShortMem[ticker];
+  if (!d) {
+    try { d = await (await fetch(`/api/stock/${encodeURIComponent(ticker)}/short`)).json(); } catch (e) { d = null; }
+    if (d && d.available) _krShortMem[ticker] = d;
+  }
+  if (!window._lastStock || window._lastStock.ticker !== ticker) return;   // 그새 다른 종목으로 바뀜
+  if (!d || !d.available) return;
+  _renderKrShortCell(d);
+  const slot = document.getElementById('fjShortKr');
+  if (slot) slot.outerHTML = _fjKrShortHTML(d);
+}
+const _pp = (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%p`;
+function _renderKrShortCell(d) {
+  const cell = document.getElementById('shortCell');
+  if (!cell) return;
+  cell.classList.remove('hidden');
+  _siLabel('공매도 잔고', _SI_TIP_KR);
+  document.getElementById('shortPct').textContent = `${d.balance_pct.toFixed(2)}%`;
+  document.getElementById('shortSub').textContent =
+    [d.trade_pct != null ? `거래 비중 ${d.trade_pct.toFixed(1)}%` : '', `기준 ${d.as_of_label}`].filter(Boolean).join(' · ');
+  const b = document.getElementById('shortBadge');
+  b.className = `si-badge ${_SI_BADGE[d.level] || 'si-norm'}`;
+  b.textContent = d.label;
+  _fitShortCell();
+}
+function _fjKrShortHTML(d) {
+  const ch = (v, lab) => (v == null ? '' : `<span class="fj-si ${v > 0 ? 'si-up' : v < 0 ? 'si-dn' : ''}">${lab} ${_pp(v)}</span>`);
+  const parts = [
+    `<span class="fj-si">상장주식 대비 잔고 <b>${d.balance_pct.toFixed(2)}%</b></span>`,
+    d.trade_pct != null ? `<span class="fj-si">거래 비중 <b>${d.trade_pct.toFixed(1)}%</b></span>` : '',
+    `<span class="fj-si">기준 ${d.as_of_label} (T+2)</span>`,
+    ch(d.change_1d_pp, '전일'), ch(d.change_5d_pp, '5일'),
+  ].filter(Boolean);
+  return `
+      <div class="fj-short">
+        <span class="fj-short-h">공매도 현황 <span class="si-info" tabindex="0" title="${_SI_TIP_KR}" aria-label="${_SI_TIP_KR}">ⓘ</span></span>
+        <span class="fj-short-v">${parts.join('')}</span>
+        <span class="si-badge ${_SI_BADGE[d.level] || 'si-norm'}">${d.label}</span>
+      </div>`;
+}
 function _fjShortRow(stock) {
+  if (_krShortEligible(stock)) {
+    const d = _krShortMem[stock.ticker];
+    return d ? _fjKrShortHTML(d) : '<div id="fjShortKr" hidden></div>';
+  }
   const si = stock && stock.short_interest;
   if (!si) return '';
   const parts = [

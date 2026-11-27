@@ -69,6 +69,7 @@ from analysis.valuation import compute_dcf, ttm_from_quarters
 from analysis import macro as macro_mod
 from analysis.short_interest import short_interest as short_interest_from_info
 from analysis import kr_flow
+from analysis import kr_short
 from models import AppliedStockSplit, DropHoldState, DisclosureEvent
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
@@ -3610,7 +3611,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v12"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v13"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
@@ -3762,6 +3763,25 @@ def _flow_brief(ticker):
     return f"{out} ({f.get('as_of')} 기준, 순매수 주수×종가 추정{', 개인은 추정' if f.get('retail_estimated') else ''})"
 
 
+def _kr_short_brief(ticker, stock_data=None):
+    """국내 종목 공매도 잔고 요약 1줄 (kr_short 2시간 캐시 = 종목 상세 공매도 칸과 같은 캐시). ETF·우선주·실패면 None."""
+    if (stock_data or {}).get("quote_type") == "ETF":
+        return None
+    try:
+        k = kr_short.get_short(ticker)
+    except Exception:
+        return None
+    if not k or not k.get("available"):
+        return None
+    out = f"상장주식 대비 공매도 순보유잔고 {k['balance_pct']:.2f}% ({k['as_of']} 기준, T+2 공시)"
+    ch = [f"{lab} {k[key]:+.2f}%p" for lab, key in (("전일 대비", "change_1d_pp"), ("5거래일 대비", "change_5d_pp")) if k.get(key) is not None]
+    if ch:
+        out += " · " + ", ".join(ch)
+    if k.get("trade_pct") is not None:
+        out += f" · 공매도 거래대금 비중 {k['trade_pct']:.1f}% ({k['trade_as_of']})"
+    return out + f" · 단계: {k['label']} (KRX)"
+
+
 def _short_brief(si):
     """미국 종목 공매도 요약 1줄 (분석 응답의 short_interest = 이미 받은 info 그대로). 값이 없으면 None."""
     if not si:
@@ -3858,9 +3878,14 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr, disclosu
             if heads:
                 lines.append("[최근 헤드라인]\n" + "\n".join(f"- {h}" for h in heads))
             # 보조 근거: 국내 = 외국인·기관·개인 수급, 미국 = 공매도 (정량 점수에는 쓰지 않음 · 있을 때만)
-            ctx = _flow_brief(ticker) if is_kr else _short_brief(stock_data.get("short_interest"))
-            if ctx:
-                lines.append(("[수급 — 보조 근거] " if is_kr else "[공매도 — 보조 근거] ") + ctx)
+            if is_kr:
+                for tag, ctx in (("[수급 — 보조 근거] ", _flow_brief(ticker)), ("[공매도 — 보조 근거] ", _kr_short_brief(ticker, stock_data))):
+                    if ctx:
+                        lines.append(tag + ctx)
+            else:
+                ctx = _short_brief(stock_data.get("short_interest"))
+                if ctx:
+                    lines.append("[공매도 — 보조 근거] " + ctx)
         if ask_val:
             lines.append("[DCF] " + _dcf_brief(dcf))
         if items:
@@ -4674,6 +4699,7 @@ def analyze():
             "dividend_yield": _calc_dividend_yield(info, current_price),
             # 미국 종목 공매도 (info 그대로, 추가 호출 없음). 한국 종목·자료 없음이면 None
             "short_interest": short_interest_from_info(info, ticker, info.get("currency", "USD")),
+            "quote_type": (info.get("quoteType") or "").upper() or None,   # ETF 면 국내 공매도 잔고 칸을 띄우지 않음
             "sector": info.get("sector"),
             "industry": info.get("industry"),
             "currency": info.get("currency", "USD"),
@@ -7588,6 +7614,17 @@ def ai_bots_detail(key):
 
 
 _BOT_SIG_RE = re.compile(r"신호 #(\d+)")
+
+
+@app.route("/api/stock/<path:ticker>/short")
+def stock_kr_short(ticker):
+    """국내 보통주 공매도 순보유잔고 비중 · 거래대금 비중 (KRX, 2시간 캐시 · 실패 5분). 해외·우선주는 {"available": false}."""
+    t = (ticker or "").strip().upper()
+    try:
+        return jsonify(kr_short.get_short(t))
+    except Exception as e:
+        app.logger.warning(f"[kr_short] {t}: {str(e)[:80]}")
+        return jsonify({"available": False, "reason": "error"})
 
 
 @app.route("/api/stock/<path:ticker>/flow")
