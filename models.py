@@ -516,3 +516,32 @@ class MarketBreadthDaily(db.Model):
     index_close = db.Column(db.Float)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.UniqueConstraint("market", "trade_date", name="uq_breadth_market_date"),)
+
+
+class ScreenerSignal(db.Model):
+    """스크리너 선행지표 요약 (screener_signals.py, 7단계). 종목당 1행, 요청 때 외부 호출 없이 스냅샷과 조인만 한다.
+    백그라운드가 PR 1~4 모듈(earnings · kr_flow · kr_short · short_interest)의 캐시로 천천히 채운다."""
+    __tablename__ = "screener_signals"
+    id                  = db.Column(db.Integer, primary_key=True)
+    ticker              = db.Column(db.String(30), nullable=False, unique=True)
+    market              = db.Column(db.String(4), nullable=False, index=True)
+    # 어닝 (earnings.py)
+    earn_beat_streak    = db.Column(db.Integer)
+    earn_miss_streak    = db.Column(db.Integer)
+    earn_beats_4q       = db.Column(db.Integer)
+    earn_quarters       = db.Column(db.Integer)
+    earn_avg_surprise   = db.Column(db.Float)        # 최근 4분기 평균 서프라이즈 %
+    earn_next_date      = db.Column(db.Date)         # 다음 발표일 (KST)
+    earn_updated_at     = db.Column(db.DateTime)
+    # 국내 수급 (kr_flow.py) — 최근 5일 순매수 금액(원)
+    flow_foreign_5d     = db.Column(db.Float)
+    flow_inst_5d        = db.Column(db.Float)
+    flow_foreign_streak = db.Column(db.Integer)      # +연속 순매수 / −연속 순매도
+    flow_inst_streak    = db.Column(db.Integer)
+    flow_updated_at     = db.Column(db.DateTime)
+    # 공매도 — 미국 short_interest.py (유동주식 대비 %, 청산일수) / 한국 kr_short.py (상장주식 대비 잔고 %, 5거래일 %p)
+    short_pct           = db.Column(db.Float)
+    short_ratio         = db.Column(db.Float)
+    short_bal_pct       = db.Column(db.Float)
+    short_bal_chg_5d    = db.Column(db.Float)
+    short_updated_at    = db.Column(db.DateTime)

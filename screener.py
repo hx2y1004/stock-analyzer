@@ -386,7 +386,17 @@ PRESETS = [
      "desc": "오늘 3% 이상 오르고 거래량이 평균의 150% 이상", "sort": "change_pct"},
     {"key": "ai_signals", "emoji": "🤖", "name": "AI 봇 최근 신호",
      "desc": "최근 7일 안에 AI 봇 매수 신호가 나온 종목", "sort": "fundamental"},
+    # ── 선행지표 프리셋 (7단계, screener_signals 표만 조인 — 요청 중 외부 호출 없음) ──
+    {"key": "earnings_beat", "emoji": "📈", "name": "연속 어닝 Beat", "signal": "earn",
+     "desc": "최근 3분기 이상 연속으로 예상 EPS 를 넘었거나, 최근 4분기 중 3번 이상 Beat · 평균 서프라이즈 플러스인 종목", "sort": "beat"},
+    {"key": "flow_double", "emoji": "🤝", "name": "외인·기관 쌍끌이", "signal": "flow", "market": "KR",
+     "desc": "최근 5일 외국인과 기관이 함께 순매수한 한국 종목 (5일 합산 순매수 금액 순)", "sort": "flow"},
+    {"key": "short_squeeze", "emoji": "🩳", "name": "공매도 스퀴즈/커버링", "signal": "short",
+     "desc": "미국: 공매도 비율 5% 이상 또는 청산 3일 이상 + 상승·거래량 활성 / 한국: 잔고 1% 이상이면서 5일 감소(커버링) 또는 잔고 2% 이상",
+     "sort": "squeeze"},
 ]
+EARN_MIN_STREAK, EARN_MIN_BEATS = 3, 3
+SQ_US_PCT, SQ_US_DAYS, SQ_KR_COVER, SQ_KR_HIGH = 5.0, 3.0, 1.0, 2.0
 SORTS = {"fundamental": "fundamental_score", "change_pct": "change_pct", "upside_pct": "upside_pct",
          "volume_ratio": "volume_ratio", "market_cap": "market_cap", "rsi": "rsi14", "per": "per",
          "trend": "trend_score"}
@@ -403,13 +413,16 @@ def _ai_signal_tickers(days=7):
 
 
 def query(args):
-    """GET /api/screener 파라미터 → 결과 dict. DB 쿼리만 사용."""
-    M = D["Model"]
-    q = M.query.filter(M.price.isnot(None))
+    """GET /api/screener 파라미터 → 결과 dict. DB 쿼리만 사용 (선행지표는 screener_signals 를 바깥 조인)."""
+    M, S = D["Model"], D["Signal"]
+    q = D["db"].session.query(M, S).outerjoin(S, S.ticker == M.ticker).filter(M.price.isnot(None))
+    preset = args.get("preset") or ""
+    pdef = next((p for p in PRESETS if p["key"] == preset), None)
     market = (args.get("market") or "ALL").upper()
+    if pdef and pdef.get("market"):                  # 외인·기관 쌍끌이 = 한국 전용
+        market = pdef["market"]
     if market in ("KR", "US"):
         q = q.filter(M.market == market)
-    preset = args.get("preset") or ""
     ai_map = {}
     if preset == "quality_oversold":
         q = q.filter(M.fundamental_score >= 70, (M.rsi14 <= 35) | (M.bb_pos <= 25))
@@ -422,6 +435,17 @@ def query(args):
     elif preset == "ai_signals":
         ai_map = _ai_signal_tickers()
         q = q.filter(M.ticker.in_(list(ai_map) or ["__none__"]))
+    elif preset == "earnings_beat":
+        q = q.filter((S.earn_beat_streak >= EARN_MIN_STREAK)
+                     | ((S.earn_beats_4q >= EARN_MIN_BEATS) & (S.earn_avg_surprise > 0)))
+    elif preset == "flow_double":
+        q = q.filter(S.flow_foreign_5d > 0, S.flow_inst_5d > 0)
+    elif preset == "short_squeeze":
+        from sqlalchemy import and_, or_
+        us = and_(M.market == "US", or_(S.short_pct >= SQ_US_PCT, S.short_ratio >= SQ_US_DAYS),
+                  or_(M.change_pct > 0, M.volume_ratio >= 1.0))
+        kr = and_(M.market == "KR", or_(and_(S.short_bal_pct >= SQ_KR_COVER, S.short_bal_chg_5d < 0), S.short_bal_pct >= SQ_KR_HIGH))
+        q = q.filter(or_(us, kr))
 
     def num(k):
         v = args.get(k)
@@ -439,27 +463,49 @@ def query(args):
     if num("min_upside") is not None:
         q = q.filter(M.upside_pct >= num("min_upside"))
 
-    pdef = next((p for p in PRESETS if p["key"] == preset), None)
     sort_key = args.get("sort_by") or (pdef or {}).get("sort") or "market_cap"
-    col = getattr(M, SORTS.get(sort_key, "market_cap"))
     asc = (args.get("order") or "desc").lower() == "asc"
-    q = q.order_by(col.is_(None), col.asc() if asc else col.desc(), M.market_cap.desc())
+    special = _signal_sort(sort_key, M, S)
+    if special is not None:                          # 선행지표 프리셋 기본 정렬 (여러 열)
+        q = q.order_by(*special, M.market_cap.desc())
+    else:
+        col = getattr(M, SORTS.get(sort_key, "market_cap"))
+        q = q.order_by(col.is_(None), col.asc() if asc else col.desc(), M.market_cap.desc())
     try:
         limit = max(1, min(200, int(args.get("limit", 50))))
     except ValueError:
         limit = 50
     total = q.count()
     rows = q.limit(limit).all()
-    return {"total": total, "items": [row_dict(r, ai_map.get(r.ticker)) for r in rows],
-            "preset": pdef, "sort_by": sort_key, "order": "asc" if asc else "desc", "meta": coverage(market)}
+    sig_meta = D["signals"].coverage(market) if (pdef or {}).get("signal") and D.get("signals") else None
+    return {"total": total, "items": [row_dict(r, ai_map.get(r.ticker), s) for r, s in rows],
+            "preset": pdef, "sort_by": sort_key, "order": "asc" if asc else "desc", "market": market,
+            "meta": coverage(market), "signal_meta": sig_meta}
 
 
-def row_dict(r, ai=None):
+def _signal_sort(key, M, S):
+    """선행지표 프리셋 정렬 → order_by 인자들 | None."""
+    from sqlalchemy import case, func
+    if key == "beat":
+        return [S.earn_beat_streak.is_(None), S.earn_beat_streak.desc(), S.earn_avg_surprise.is_(None), S.earn_avg_surprise.desc()]
+    if key == "flow":
+        tot = func.coalesce(S.flow_foreign_5d, 0) + func.coalesce(S.flow_inst_5d, 0)
+        return [tot.desc()]
+    if key == "squeeze":
+        # 단위가 다른 미국(유동주식 대비 %)·한국(상장주식 대비 잔고 %)을 각 기준선의 배수로 맞춰 한 줄로 정렬
+        mult = case((M.market == "US", func.coalesce(S.short_pct, 0) / SQ_US_PCT), else_=func.coalesce(S.short_bal_pct, 0) / SQ_KR_COVER)
+        return [mult.desc()]
+    return None
+
+
+def row_dict(r, ai=None, sig=None):
     d = {k: getattr(r, k) for k in ("ticker", "name", "market", "sector", "sector_name", "price", "change_pct", "market_cap",
                                      "per", "forward_per", "pbr", "dividend_yield", "rsi14", "bb_pos", "volume_ratio",
                                      "ma_aligned", "trend_score", "fundamental_score", "upside_pct")}
     if ai:
         d["ai_strategies"] = sorted(set(ai))
+    if sig is not None and D.get("signals"):
+        d["signals"] = D["signals"].sig_dict(sig)
     return d
 
 
