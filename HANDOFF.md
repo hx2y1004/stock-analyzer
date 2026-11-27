@@ -57,6 +57,21 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 어닝 서프라이즈 · 실적 일정 (4단계, PR #105)
+- `analysis/earnings.py` (yfinance 1.8.0, 2026-11-27 NVDA·AAPL·MSFT·005930.KS·069500.KS 실호출로 필드 확인)
+  - `get_earnings_dates(limit=12)`: 미래 1건 + 과거 11건, 인덱스 = 발표 시각(뉴욕 tz). 미국은 시각으로 장전(09:30 전)/장후(16:00 이후),
+    D-day 는 한국시간 날짜 기준(장후 16:00 ET = 다음 날 06:00 KST). 국내는 시각을 장전/장후로 쓰지 않고 KST 날짜만.
+  - `earnings_history`: 최근 4분기(회계 분기 말일) → 분기 라벨(YY.MM). 그 이전 분기는 3개월씩 이어 붙임. earnings_dates 가 비면 이력 대신 사용.
+  - `calendar`: earnings_dates 에 미래 일정이 없을 때만 다음 발표일·예상 EPS.
+  - 서프라이즈율은 Yahoo `Surprise(%)`(반올림 전 예상치 기준) 우선. |서프라이즈| < 1% = inline. 최근 4분기 Beat 수·평균, 연속 Beat/Miss.
+  - ETF·우선주·자료 없음 → `{"available": False}`. 캐시: 정상·자료 없음 6시간, 실패 15분, 300종목 LRU, 캐시를 읽을 때 D-day 재계산.
+  - 동시성: 모듈 공용 ThreadPoolExecutor(4). 핵심 두 호출이 같은 4초 기한을 공유(시간 초과 스레드는 yfinance 자체 타임아웃까지 남음).
+- 화면: 투자 판단 탭 `#fjEarn` 카드(수급 카드 아래). 배지 'N분기 연속 Beat/Miss', 14일 이내면 '실적 발표 D-N'. 분기 막대(Beat 녹·Miss 적·부합 회색),
+  부호가 한쪽뿐이면 기준선을 아래/위로. 420px 이하에서 분기 라벨 하나 걸러 표시.
+- 홈 리스크 · 배당 탭 맨 아래 '다가오는 실적 발표'(60일, `/api/portfolio/earnings`, 사용자별 5분 캐시, `get_many` 최대 4 동시).
+- AI 급등락 사유 프롬프트: 캐시에 어닝 요약이 있을 때만 `[실적 — 보조 근거]` 한 줄(`earnings.peek`, 여기서 새로 조회하지 않음). 점수 공식 변경 없음.
+- 버전: main.js v111, style.css v130, sa-v98.
+
 ### 국내 종목 공매도 잔고 비중 (PR #104)
 - `analysis/kr_short.py`: KRX `getJsonData.cmd` 의 외부용 조회(네이버 '공매도현황' 탭이 iframe 으로 띄우는 KRX `srtLoader` 화면이 쓰는 것).
   KRX 웹 로그인·증권 계좌 없이 응답한다(2026-11-27 005930·000660·247540 실호출 확인). 일반 화면용 `MDCSTAT30502`(`_OUT` 없음)는 `LOGOUT` 400.

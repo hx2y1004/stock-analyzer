@@ -7246,3 +7246,49 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .kf-v { font-size: 13.5px; }
   .kf-kpi { padding: 8px 7px; }
 }
+
+/* ── 어닝 서프라이즈 · 실적 일정 (4단계) ───────────────────────────────────── */
+.er-card { gap: 12px; }
+.er-head h4 { min-width: 0; }
+.er-badge { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+.er-badge.beat { color: #34d399; background: rgba(52, 211, 153, .12); border-color: rgba(52, 211, 153, .35); }
+.er-badge.miss { color: #f87171; background: rgba(248, 113, 113, .12); border-color: rgba(248, 113, 113, .35); }
+.er-badge.soon { color: #fbbf24; background: rgba(251, 191, 36, .14); border-color: rgba(251, 191, 36, .45); }
+.er-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 8px; }
+.er-kpi { display: flex; flex-direction: column; gap: 3px; min-width: 0; background: var(--bg3); border-radius: 10px; padding: 10px 12px; overflow: hidden; }
+.er-k { font-size: 12px; color: var(--text2); }
+.er-v { font-size: 19px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.er-v em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--text2); margin-left: 4px; }
+.er-v em.soon { color: #fbbf24; }
+.er-s { font-size: 11.5px; color: var(--text2); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.er-s .up { color: #34d399; } .er-s .down { color: #f87171; }
+.kf-legend i.eb { background: #34d399; } .kf-legend i.em { background: #f87171; }
+.kf-chart-h small { font-weight: 400; color: var(--text2); font-size: 11px; }
+.er-chart { display: grid; gap: 4px; height: 140px; }
+.er-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; height: 100%; padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; border-radius: 6px; }
+.er-bars { position: relative; flex: 1; display: block; border-radius: 6px; background: linear-gradient(to bottom, transparent calc(50% - .5px), rgba(139, 148, 158, .45) calc(50% - .5px), rgba(139, 148, 158, .45) calc(50% + .5px), transparent calc(50% + .5px)); }
+.er-col:hover .er-bars, .er-col.on .er-bars { background-color: rgba(255, 255, 255, .04); }
+.er-pos .er-bars { background: linear-gradient(to top, rgba(139, 148, 158, .45) 1px, transparent 1px); }
+.er-neg .er-bars { background: linear-gradient(to bottom, rgba(139, 148, 158, .45) 1px, transparent 1px); }
+.er-pos .er-col:hover .er-bars, .er-pos .er-col.on .er-bars, .er-neg .er-col:hover .er-bars, .er-neg .er-col.on .er-bars { background-color: rgba(255, 255, 255, .04); }
+.er-b { position: absolute; left: 50%; transform: translateX(-50%); width: 46%; max-width: 22px; border-radius: 3px; }
+.er-b.beat { background: #34d399; } .er-b.miss { background: #f87171; } .er-b.inline { background: #94a3b8; }
+.er-col.on .er-b { box-shadow: 0 0 0 2px rgba(255, 255, 255, .35); }
+.er-x { font-size: 10.5px; color: var(--text2); text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
+.er-col.on .er-x { color: var(--text); font-weight: 700; }
+.er-col:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.er-r.beat { color: #34d399; } .er-r.miss { color: #f87171; } .er-r.inline { color: var(--text2); }
+.pr-earn { margin-top: 12px; }
+.pr-er-badge { flex: none; font-size: 10.5px; padding: 1px 7px; }
+@media (max-width: 767px) {
+  .er-v { font-size: 16px; }
+  .er-chart { height: 120px; gap: 2px; }
+  .er-x { font-size: 9.5px; letter-spacing: -0.03em; }
+}
+@media (max-width: 420px) {
+  .er-col:nth-child(even) .er-x { visibility: hidden; }          /* 8분기면 분기 라벨 하나 걸러 (겹침 방지) */
+  .er-col.on .er-x { visibility: visible; }
+  .er-col:has(+ .er-col.on) .er-x, .er-col.on + .er-col .er-x { visibility: hidden; }
+  .er-col { overflow: visible; } .er-x { overflow: visible; margin: 0 -6px; }
+  .pr-er-badge { font-size: 10px; padding: 1px 6px; }
+}

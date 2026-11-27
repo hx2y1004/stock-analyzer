@@ -70,6 +70,7 @@ from analysis import macro as macro_mod
 from analysis.short_interest import short_interest as short_interest_from_info
 from analysis import kr_flow
 from analysis import kr_short
+from analysis import earnings as earnings_mod
 from models import AppliedStockSplit, DropHoldState, DisclosureEvent
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
@@ -3782,6 +3783,16 @@ def _kr_short_brief(ticker, stock_data=None):
     return out + f" · 단계: {k['label']} (KRX)"
 
 
+def _earnings_brief(ticker, stock_data=None):
+    """어닝 요약 1줄 — 종목 상세 실적 카드가 채운 earnings 6시간 캐시에 있을 때만 (여기서 새로 조회하지 않음). ETF 면 None."""
+    if (stock_data or {}).get("quote_type") == "ETF":
+        return None
+    try:
+        return earnings_mod.brief(earnings_mod.peek(ticker))
+    except Exception:
+        return None
+
+
 def _short_brief(si):
     """미국 종목 공매도 요약 1줄 (분석 응답의 short_interest = 이미 받은 info 그대로). 값이 없으면 None."""
     if not si:
@@ -3886,6 +3897,9 @@ def get_stock_insight(ticker, name, stock_data, ai_result, news, is_kr, disclosu
                 ctx = _short_brief(stock_data.get("short_interest"))
                 if ctx:
                     lines.append("[공매도 — 보조 근거] " + ctx)
+            ectx = _earnings_brief(ticker, stock_data)
+            if ectx:
+                lines.append("[실적 — 보조 근거] " + ectx)
         if ask_val:
             lines.append("[DCF] " + _dcf_brief(dcf))
         if items:
@@ -5239,6 +5253,27 @@ def portfolio_analytics_api():
                                           fx_rates={c: v for c, v in fx_rates.items() if v})
     payload["as_of"] = datetime.utcnow().isoformat() + "Z"
     _PF_ANALYTICS[current_user.id] = (time.time(), sig, payload)
+    return jsonify(payload)
+
+
+_PF_EARNINGS = {}                 # user_id -> (ts, 보유 서명, payload)
+
+
+@app.route("/api/portfolio/earnings")
+def portfolio_earnings_api():
+    """보유 종목의 향후 60일 실적 발표 일정 (종목별 earnings 6시간 캐시 재사용, 동시 조회 최대 4 · 사용자별 5분 캐시)."""
+    if not current_user.is_authenticated:
+        return jsonify({"error": "로그인이 필요합니다"}), 401
+    holdings = Holding.query.filter_by(user_id=current_user.id).all()
+    names = {h.ticker.upper(): (h.name or h.ticker) for h in holdings}
+    sig = tuple(sorted(names))
+    hit = _PF_EARNINGS.get(current_user.id)
+    if hit and time.time() - hit[0] < _PF_ANALYTICS_TTL and hit[1] == sig:
+        return jsonify(hit[2])
+    res = earnings_mod.get_many(list(names), max_workers=4)
+    payload = {"days": 60, "upcoming": earnings_mod.upcoming(res, names, today=datetime.now(market_hours.TZ["KR"]).date(), days=60),
+               "checked": len(res)}
+    _PF_EARNINGS[current_user.id] = (time.time(), sig, payload)
     return jsonify(payload)
 
 
@@ -7614,6 +7649,17 @@ def ai_bots_detail(key):
 
 
 _BOT_SIG_RE = re.compile(r"신호 #(\d+)")
+
+
+@app.route("/api/stock/<path:ticker>/earnings")
+def stock_earnings(ticker):
+    """다음 실적 발표일 · 최근 4~8분기 어닝 서프라이즈 (yfinance, 6시간 캐시 · 실패 15분). 자료 없으면 {"available": false}."""
+    t = (ticker or "").strip().upper()
+    try:
+        return jsonify(earnings_mod.get_earnings(t))
+    except Exception as e:
+        app.logger.warning(f"[earnings] {t}: {str(e)[:80]}")
+        return jsonify({"available": False, "reason": "error"})
 
 
 @app.route("/api/stock/<path:ticker>/short")
