@@ -7068,3 +7068,32 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   /* 매매 이력: 접혀 있을 때는 서버 '더보기'(다음 20건)를 숨김 — 펼친 뒤에 보임 */
   #abPanel-trades:has(.ab-mlist.m-cut:not(.m-all)) #abMore { display: none; }
 }
+
+/* ── 미국 종목 공매도 (PR #98): 주요 지표 한 줄 셀 · 투자 판단 1줄 요약 ───────────────── */
+.metric-item.metric-short { grid-column: 1 / -1; }
+.metric-short.hidden { display: none; }
+.si-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.si-line .metric-value { font-weight: 800; font-variant-numeric: tabular-nums; }
+.si-sub { font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.si-badge { margin-left: auto; align-self: center; font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+.si-badge.si-high { color: #fb923c; background: rgba(251, 146, 60, .14); border-color: rgba(251, 146, 60, .4); }
+.si-badge.si-elev { color: #facc15; background: rgba(250, 204, 21, .12); border-color: rgba(250, 204, 21, .35); }
+.si-badge.si-norm { color: var(--text2); background: rgba(139, 148, 158, .12); }
+.si-info { color: var(--text2); cursor: help; font-size: 11px; margin-left: 2px; }
+.si-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.fj-short { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; background: var(--bg3); border-radius: 10px; padding: 9px 12px; font-size: 13px; }
+.fj-short-h { font-weight: 700; color: var(--text); white-space: nowrap; }
+.fj-short-v { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: var(--text2); font-variant-numeric: tabular-nums; min-width: 0; }
+.fj-short-v b { color: var(--text); font-weight: 700; }
+.fj-si { white-space: nowrap; }
+.fj-si + .fj-si::before { content: '·'; margin-right: 8px; opacity: .6; color: var(--text2); }
+.fj-short-v .si-up { color: var(--sem-down, #f87171); }      /* 공매도 증가 = 부담 */
+.fj-short-v .si-dn { color: var(--sem-up, #34d399); }
+.fj-short .si-badge { margin-left: auto; }
+@media (max-width: 767px) {
+  /* [공매도 현황 ⓘ · 배지] / 수치들 (구분점 없이 간격으로 → 줄 끝에 '·' 가 남지 않음) */
+  .fj-short { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; font-size: 12.5px; padding: 9px 11px; }
+  .fj-short .si-badge { grid-column: 2; grid-row: 1; }
+  .fj-short-v { grid-column: 1 / -1; gap: 4px 12px; }
+  .fj-si + .fj-si::before { content: none; }
+}

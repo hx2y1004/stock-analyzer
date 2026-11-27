@@ -66,6 +66,7 @@ from analysis.ai_analysis import analyze_signals
 from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf, ttm_from_quarters
 from analysis import macro as macro_mod
+from analysis.short_interest import short_interest as short_interest_from_info
 from models import AppliedStockSplit, DropHoldState, DisclosureEvent
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
@@ -3786,7 +3787,7 @@ def _portfolio_weight(holding, current_price, currency):
 # 현재가는 화면이 따로 폴링해 갱신하므로 5분 지연돼도 표시 가격은 최신이다.
 _ANALYZE_CACHE = {}                 # (ticker, interval) → (ts, body, ctx)
 _ANALYZE_TTL = 300
-_ANALYZE_VER = "v11"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
+_ANALYZE_VER = "v12"      # 응답 필드가 바뀌면 올린다 → 재시작 전 DB 에 남은 옛 형식 본문을 쓰지 않음
 _ANALYZE_CACHE_MAX_BYTES = 40 * 1024 * 1024
 _ANALYZE_LOCK = threading.Lock()
 
@@ -4832,6 +4833,8 @@ def analyze():
                          else safe_float(info.get("priceToBook"))),
             "eps": safe_float(info.get("trailingEps")),
             "dividend_yield": _calc_dividend_yield(info, current_price),
+            # 미국 종목 공매도 (info 그대로, 추가 호출 없음). 한국 종목·자료 없음이면 None
+            "short_interest": short_interest_from_info(info, ticker, info.get("currency", "USD")),
             "sector": info.get("sector"),
             "industry": info.get("industry"),
             "currency": info.get("currency", "USD"),

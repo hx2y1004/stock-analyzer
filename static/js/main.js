@@ -2007,6 +2007,7 @@ function renderMetrics(stock, analysis) {
 
   document.getElementById('dividendYield').textContent =
     stock.dividend_yield != null ? (stock.dividend_yield * 100).toFixed(2) + '%' : '—';
+  _renderShortCell(stock.short_interest);
 
   if (stock.volume != null && stock.avg_volume != null && stock.avg_volume > 0) {
     const ratio = (stock.volume / stock.avg_volume * 100).toFixed(0);
@@ -2611,6 +2612,38 @@ const _FS_SHORT = {
   no_dilute: '신주 발행 없음', d_gm: '마진 개선', d_turn: '자산회전율 개선',
 };
 
+// ── 미국 종목 공매도 (Short Interest): 주요 지표 셀 · 투자 판단 1줄 요약. 한국 종목·자료 없음이면 숨김 ──
+const _SI_BADGE = { high: 'si-high', elevated: 'si-elev', normal: 'si-norm' };
+function _siMom(v) { return v == null ? '' : `전월 대비 ${v > 0 ? '+' : ''}${v.toFixed(1)}%`; }
+function _renderShortCell(si) {
+  const cell = document.getElementById('shortCell');
+  if (!cell) return;
+  if (!si) { cell.classList.add('hidden'); return; }
+  cell.classList.remove('hidden');
+  document.getElementById('shortPct').textContent = si.short_pct != null ? `${si.short_pct.toFixed(1)}%` : '—';
+  const sub = [si.short_ratio != null ? `청산 ${si.short_ratio.toFixed(1)}일` : '', _siMom(si.mom_change_pct)].filter(Boolean).join(' · ');
+  document.getElementById('shortSub').textContent = sub;
+  const b = document.getElementById('shortBadge');
+  b.className = `si-badge ${_SI_BADGE[si.level] || 'si-norm'}`;
+  b.textContent = si.label;
+}
+function _fjShortRow(stock) {
+  const si = stock && stock.short_interest;
+  if (!si) return '';
+  const parts = [
+    si.short_pct != null ? `<span class="fj-si">유동주식 대비 <b>${si.short_pct.toFixed(1)}%</b></span>` : '',
+    si.short_ratio != null ? `<span class="fj-si">청산 <b>${si.short_ratio.toFixed(1)}일</b></span>` : '',
+    si.mom_change_pct != null ? `<span class="fj-si ${si.mom_change_pct > 0 ? 'si-up' : si.mom_change_pct < 0 ? 'si-dn' : ''}">${_siMom(si.mom_change_pct)}</span>` : '',
+  ].filter(Boolean);
+  const tip = '공매도 잔고가 유동주식의 15% 이상이거나 청산에 5거래일 이상 걸리면 숏 스퀴즈(공매도 상환 매수로 인한 급등) 가능성과 하락 베팅이 함께 큰 상태입니다. 8%·3일 이상은 높음. FINRA 반월 공시 기준이라 2주가량 늦습니다.';
+  return `
+      <div class="fj-short">
+        <span class="fj-short-h">공매도 현황 <span class="si-info" tabindex="0" title="${tip}" aria-label="${tip}">ⓘ</span></span>
+        <span class="fj-short-v">${parts.join('')}</span>
+        <span class="si-badge ${_SI_BADGE[si.level] || 'si-norm'}">${si.label}</span>
+      </div>`;
+}
+
 function _fjHealthCard(sc, stock) {
   const M = (sc && sc.metrics) || {};
   const fd = M.f_score_detail;
@@ -2649,6 +2682,7 @@ function _fjHealthCard(sc, stock) {
         }).join('')}</div>`
         : `<p class="fj-note">${fin ? '금융업은 유동비율·매출총이익률이 정의되지 않아 F-Score 를 계산하지 않습니다.' : '연간 재무제표가 2년치 이상 없어 계산하지 못했습니다.'}</p>`}
       <div class="fj-table">${rows.map(([k, v, n], i) => `<div class="fj-tr"><span>${k}</span><b class="${tone[i] || ''}">${v}</b><em>${n}</em></div>`).join('')}</div>
+      ${_fjShortRow(stock)}
     </section>`;
 }
 
