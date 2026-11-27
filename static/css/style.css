@@ -7062,6 +7062,7 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
 .si-badge.si-high { color: #fb923c; background: rgba(251, 146, 60, .14); border-color: rgba(251, 146, 60, .4); }
 .si-badge.si-elev { color: #facc15; background: rgba(250, 204, 21, .12); border-color: rgba(250, 204, 21, .35); }
 .si-badge.si-norm { color: var(--text2); background: rgba(139, 148, 158, .12); }
+.si-badge.si-low { color: #34d399; background: rgba(52, 211, 153, .1); border-color: rgba(52, 211, 153, .3); }
 .si-info { color: var(--text2); cursor: help; font-size: 11px; margin-left: 2px; }
 .si-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .fj-short { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; background: var(--bg3); border-radius: 10px; padding: 9px 12px; font-size: 13px; }

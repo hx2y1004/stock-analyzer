@@ -57,6 +57,18 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 국내 종목 공매도 잔고 비중 (PR #104)
+- `analysis/kr_short.py`: KRX `getJsonData.cmd` 의 외부용 조회(네이버 '공매도현황' 탭이 iframe 으로 띄우는 KRX `srtLoader` 화면이 쓰는 것).
+  KRX 웹 로그인·증권 계좌 없이 응답한다(2026-11-27 005930·000660·247540 실호출 확인). 일반 화면용 `MDCSTAT30502`(`_OUT` 없음)는 `LOGOUT` 400.
+  - 잔고 `MDCSTAT30502_OUT`(isuCd = ISIN, 단축코드로는 빈 응답): 잔고수량 ÷ 상장주식수 × 100, 직전일·5거래일 대비 %p. 보고 의무 발생일 기준 T+2.
+  - 거래 `MDCSTAT30102_OUT`: `TRDVAL_WT` = 공매도 거래대금 비중(KRX+NXT 합산). 실패해도 잔고만 표시.
+  - 단계: 0.5% 미만 낮음 · 0.5~2 보통 · 2~5 주의 · 5 이상 높음. 보통주만(우선주 제외), ETF 는 화면·프롬프트에서 제외(`quote_type`, `_ANALYZE_VER` v13).
+  - 캐시 2시간 · 실패 5분 · timeout 4초 · 300종목 LRU. API `/api/stock/<t>/short`.
+- 화면: 국내 종목은 `#shortCell` 라벨이 '공매도 잔고'(값 X.XX%, 보조 '거래 비중 · 기준 MM.DD'), 투자 판단 > 재무 건전성 '공매도 현황'은
+  '상장주식 대비 잔고 · 거래 비중 · 기준 MM.DD (T+2) · 전일/5일 %p'. 미국은 그대로 '유동주식 대비'. 실패·미지원이면 칸·줄 숨김.
+- AI 급등락 사유 프롬프트: 국내는 `[수급]` 줄 다음에 `[공매도 — 보조 근거]`(`_kr_short_brief`, 같은 캐시) 추가.
+- 버전: main.js v110, style.css v129, sa-v97.
+
 ### PR 1~3 마무리 정리 (PR #103)
 - 구버전 '한국 시장 시그널' 제거: `fetch_kr_short_interest`(dailyShort 404) · `fetch_kr_supply_demand`(frgn 302) · `fetch_kr_supplements` · `_KR_SUPPLEMENT_CACHE` · `_naver_request` ·
   analyze() 의 `kr_*` 지표 주입(점수 계산 뒤라 점수 영향 없음) · main.js 세부 지표 섹션·안내·도움말 · CSS `.sc-kr-*`. 한국 종목 세부 지표의 공매도 행도 제거(값 없음).
