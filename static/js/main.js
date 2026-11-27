@@ -2597,7 +2597,8 @@ function renderFundamental(details, stock) {
 
   // ── 2. 재무 건전성 | 분기 실적 (2단) ────────────────────────
   const sc = (window._lastAnalysis && window._lastAnalysis.scorecard) || null;
-  const top = `<div class="fj-grid">${_fjHealthCard(sc, stock)}${_fjQuarterCard(stock)}</div>`;
+  const top = `<div class="fj-grid">${_fjHealthCard(sc, stock)}${_fjQuarterCard(stock)}</div>`
+    + (/\.(KS|KQ)$/i.test((stock && stock.ticker) || '') ? '<div id="fjFlow" class="fj-flow-slot"></div>' : '');
 
   // ── 3. 세부 지표 · 항목별 판단 (기본 접힘) ─────────────────────
   const detailHTML = _scDetailHTML(sc, stock);
@@ -2608,6 +2609,7 @@ function renderFundamental(details, stock) {
     </details>` : '';
 
   el.innerHTML = top + html + more;
+  if (document.getElementById('fjFlow')) loadKrFlow(stock.ticker);
 }
 
 const _FS_SHORT = {
@@ -3786,5 +3788,77 @@ function renderPfRisk(d) {
     b.addEventListener('click', show);
     b.addEventListener('mouseenter', show);
     b.addEventListener('focus', show);
+  });
+}
+
+
+// ── 국내 종목 외국인 · 기관 수급 카드 (투자 판단 탭, /api/stock/<ticker>/flow · 서버 30분 캐시) ─────────
+const _flowMem = {};
+function _eok(v, sign = true) {
+  if (v == null) return '—';
+  const a = Math.abs(v), sg = v > 0 ? (sign ? '+' : '') : v < 0 ? '-' : '';
+  if (a >= 1e12) return `${sg}${(a / 1e12).toFixed(a >= 1e13 ? 1 : 2)}조`;
+  if (a >= 1e8) return `${sg}${Math.round(a / 1e8).toLocaleString('ko-KR')}억`;
+  if (a >= 1e4) return `${sg}${Math.round(a / 1e4).toLocaleString('ko-KR')}만`;
+  return `${sg}${Math.round(a).toLocaleString('ko-KR')}`;
+}
+async function loadKrFlow(ticker) {
+  const slot = document.getElementById('fjFlow');
+  if (!slot) return;
+  let d = _flowMem[ticker];
+  if (!d) {
+    slot.innerHTML = '<section class="fj-box kf-card"><div class="fj-box-h"><h4>외국인 · 기관 수급</h4></div><p class="fj-note">불러오는 중...</p></section>';
+    try { d = await (await fetch(`/api/stock/${encodeURIComponent(ticker)}/flow`)).json(); } catch (e) { d = null; }
+    if (d && d.available) _flowMem[ticker] = d;
+  }
+  const cur = document.getElementById('fjFlow');                    // 그새 다른 종목으로 바뀌었으면 그리지 않음
+  if (!cur || !window._lastStock || window._lastStock.ticker !== ticker) return;
+  if (!d || !d.available) { cur.innerHTML = ''; return; }
+  cur.innerHTML = _krFlowHTML(d);
+  _bindKrFlowChart(cur, d);
+}
+function _krFlowHTML(d) {
+  const tone = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
+  const kpi = (label, k) => `
+    <div class="kf-kpi">
+      <span class="kf-k">${label}${k === 'retail' && d.retail_estimated ? ' <em title="외국인·기관 순매수의 반대로 추정">추정</em>' : ''}</span>
+      <b class="kf-v ${tone(d.sum_5d[`${k}_krw`])}">${_eok(d.sum_5d[`${k}_krw`])}</b>
+      <span class="kf-s">최근 5일 · 20일 <span class="${tone(d.sum_20d[`${k}_krw`])}">${_eok(d.sum_20d[`${k}_krw`])}</span></span>
+    </div>`;
+  const mx = Math.max(1, ...d.daily.flatMap((x) => [Math.abs(x.foreign_krw), Math.abs(x.inst_krw)]));
+  const bar = (v, cls) => {
+    const h = v ? Math.max(2, Math.abs(v) / mx * 50) : 0;
+    return `<i class="kf-b ${cls} ${v >= 0 ? 'pos' : 'neg'}" style="height:${h}%;${v >= 0 ? 'bottom:50%' : 'top:50%'}"></i>`;
+  };
+  return `
+    <section class="fj-box kf-card" aria-label="외국인 · 기관 수급">
+      <div class="kf-head">
+        <h4>외국인 · 기관 수급</h4>
+        <div class="kf-badges">${d.badges.map((b) => `<span class="kf-badge ${b.tone}">${_esc(b.text)}</span>`).join('')}</div>
+        ${d.foreign_hold_ratio != null ? `<span class="kf-hold">외국인 보유율 <b>${d.foreign_hold_ratio.toFixed(1)}%</b></span>` : ''}
+      </div>
+      <div class="kf-kpis">${kpi('외국인 순매수', 'foreign')}${kpi('기관 순매수', 'inst')}${kpi('개인 순매수', 'retail')}</div>
+      <div class="kf-chart-wrap">
+        <div class="kf-chart-h"><span>최근 ${d.daily.length}거래일 수급 추이</span>
+          <span class="kf-legend"><i class="f"></i>외국인<i class="i"></i>기관</span></div>
+        <div class="kf-chart" role="list">${d.daily.map((x, i) => `
+          <button type="button" class="kf-col" role="listitem" data-i="${i}" aria-label="${x.label} 외국인 ${_eok(x.foreign_krw)}원, 기관 ${_eok(x.inst_krw)}원">
+            <span class="kf-bars">${bar(x.foreign_krw, 'f')}${bar(x.inst_krw, 'i')}</span>
+            <span class="kf-x">${x.label}</span></button>`).join('')}</div>
+        <p class="kf-tip" id="kfTip">막대를 누르면 그날 금액이 보여요.</p>
+      </div>
+      <p class="fj-note kf-note">순매수 주수 × 그날 종가로 계산한 추정 금액 · ${d.as_of.slice(5).replace('-', '.')} 기준 (네이버 증권)</p>
+    </section>`;
+}
+function _bindKrFlowChart(root, d) {
+  const tip = root.querySelector('#kfTip');
+  root.querySelectorAll('.kf-col').forEach((b) => {
+    const show = () => {
+      root.querySelectorAll('.kf-col.on').forEach((x) => x.classList.remove('on'));
+      b.classList.add('on');
+      const x = d.daily[+b.dataset.i];
+      if (tip) tip.innerHTML = `<b>${x.label}</b> 외국인 <span class="${x.foreign_krw >= 0 ? 'up' : 'down'}">${_eok(x.foreign_krw)}원</span> · 기관 <span class="${x.inst_krw >= 0 ? 'up' : 'down'}">${_eok(x.inst_krw)}원</span> · 종가 ${Math.round(x.close).toLocaleString('ko-KR')}원`;
+    };
+    b.addEventListener('click', show); b.addEventListener('mouseenter', show); b.addEventListener('focus', show);
   });
 }

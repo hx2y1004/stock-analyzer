@@ -68,6 +68,7 @@ from analysis.indicators import add_all_indicators
 from analysis.valuation import compute_dcf, ttm_from_quarters
 from analysis import macro as macro_mod
 from analysis.short_interest import short_interest as short_interest_from_info
+from analysis import kr_flow
 from models import AppliedStockSplit, DropHoldState, DisclosureEvent
 from models import (db, User, Holding, PaperHolding, Transaction, AssetSnapshot, UserBadge, AiCache, INITIAL_CAPITAL_KRW,
                     BotStrategy, AiStockAssessment, AiSignal, UserSignalSubscription, WatchlistItem, Notification,
@@ -7709,6 +7710,17 @@ def ai_bots_detail(key):
 
 
 _BOT_SIG_RE = re.compile(r"신호 #(\d+)")
+
+
+@app.route("/api/stock/<path:ticker>/flow")
+def stock_flow(ticker):
+    """국내 종목 외국인·기관·개인 수급 (최근 20거래일, 30분 캐시). 해외 종목은 {"available": false}."""
+    t = (ticker or "").strip().upper()
+    try:
+        return jsonify(kr_flow.get_flow(t))
+    except Exception as e:
+        app.logger.warning(f"[flow] {t}: {str(e)[:80]}")
+        return jsonify({"available": False, "reason": "error"})
 
 
 @app.route("/api/stock-bots/<path:ticker>")
