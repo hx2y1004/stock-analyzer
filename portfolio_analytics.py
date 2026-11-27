@@ -115,7 +115,7 @@ def compute(rows, fx, profiles, today=None, fx_rates=None):
     fx_rates = dict(fx_rates or {})
     fx_rates.setdefault("KRW", 1.0)
     fx_rates.setdefault("USD", fx)
-    holdings, total = [], 0.0
+    holdings, total, skipped = [], 0.0, []
     for r in rows or []:
         t = r.get("ticker")
         q = _f(r.get("quantity")) or 0
@@ -124,7 +124,10 @@ def compute(rows, fx, profiles, today=None, fx_rates=None):
         p = profiles.get(t) or {}
         cur = (r.get("currency") or "USD").upper()
         price = _f(r.get("current_price")) or _f(p.get("price")) or _f(r.get("purchase_price")) or 0
-        rate = fx_rates.get(cur, fx)
+        rate = fx_rates.get(cur)
+        if not rate:                                   # 환율을 모르는 통화(JPY·HKD·EUR…)를 USD 환율로 잘못 환산하지 않음 → 제외하고 알림
+            skipped.append({"ticker": t, "name": r.get("name") or t, "currency": cur})
+            continue
         v = price * q * rate
         holdings.append({"t": t, "name": r.get("name") or t, "cur": cur, "q": q, "price": price, "rate": rate, "v": v, "p": p})
         total += v
@@ -134,7 +137,7 @@ def compute(rows, fx, profiles, today=None, fx_rates=None):
     if not holdings or total <= 0:
         return {"count": len(holdings), "total_value_krw": round(total), "fx_usd_krw": round(fx, 2),
                 "sectors": [], "max_sector_name": None, "max_sector_pct": None, "concentrated": False,
-                "currencies": [], "krw_pct": None, "fx_exposure_pct": None, "dividends": empty_div}
+                "currencies": [], "krw_pct": None, "fx_exposure_pct": None, "dividends": empty_div, "skipped": skipped}
 
     # ① 섹터
     by_sec = {}
@@ -188,6 +191,7 @@ def compute(rows, fx, profiles, today=None, fx_rates=None):
         "count": len(holdings), "total_value_krw": round(total), "fx_usd_krw": round(fx, 2),
         "sectors": sectors, "max_sector_name": max_name, "max_sector_pct": max_pct, "concentrated": bool(max_pct and max_pct >= CONCENTRATED_PCT),
         "currencies": currencies, "krw_pct": krw_pct, "fx_exposure_pct": round(100 - krw_pct, 1),
+        "skipped": skipped,
         "dividends": {"annual_dividend_krw": annual_round, "monthly_avg_krw": round(annual_total / 12),
                       "portfolio_yield_pct": round(annual_total / total * 100, 2), "months": month_vals,
                       "payers": payers, "basis": basis, "upcoming": upcoming[:UPCOMING_MAX]},

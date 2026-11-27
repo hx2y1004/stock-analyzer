@@ -1044,27 +1044,6 @@ body {
   .sc-help-bubble { font-size: 13px; padding: 12px 14px; }
 }
 
-/* 한국 종목 알림 */
-.sc-kr-notice {
-  margin-top: 14px;
-  padding: 10px 14px;
-  background: rgba(216,166,87,0.08);
-  border: 1px solid rgba(216,166,87,0.3);
-  border-radius: 8px;
-  font-size: 12px;
-  color: var(--text2);
-  line-height: 1.6;
-}
-.sc-kr-notice strong { color: #d8a657; font-weight: 600; }
-
-/* 한국 시장 시그널 섹션 강조 */
-.sc-kr-section {
-  grid-column: 1 / -1;  /* 전체 너비 차지 */
-  background: linear-gradient(135deg, rgba(0,82,165,0.08), rgba(205,46,45,0.04));
-  border-color: rgba(0,82,165,0.3);
-}
-.sc-kr-section .sc-section-title { color: #4a90e2; }
-
 /* DART 링크 */
 .sc-link {
   color: var(--accent);
@@ -7253,4 +7232,16 @@ body.stock-mode .search-section { padding-top: var(--card-gap); padding-bottom: 
   .kf-x { overflow: visible; font-size: 10px; margin: 0 -6px; }   /* 좁은 칸에서도 옆(빈) 칸으로 넘쳐 잘리지 않게 */
   .kf-col.on .kf-x { visibility: visible; }
   .kf-col:has(+ .kf-col.on) .kf-x, .kf-col.on + .kf-col .kf-x { visibility: hidden; }   /* 누른 날짜의 이웃 날짜는 잠시 숨김 */
+}
+
+/* ── 소형 화면 미세 보완 (PR #103) ──────────────────────────────────────────── */
+.metric-label.si-head > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kf-kpi { overflow: hidden; }
+@media (max-width: 420px) {
+  .pr-months { gap: 2px; }
+  .pr-mlab { font-size: 9.5px; letter-spacing: -0.02em; }
+}
+@media (max-width: 390px) {
+  .kf-v { font-size: 13.5px; }
+  .kf-kpi { padding: 8px 7px; }
 }
