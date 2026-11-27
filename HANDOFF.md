@@ -57,6 +57,15 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### 미국 종목 공매도(Short Interest) 지표 (PR #98)
+- `analysis/short_interest.py`: yfinance `info` 만 사용(추가 호출 없음). `shortPercentOfFloat` 정규화(0<v≤1 → ×100, 1<v≤100 그대로, 그 밖 None) ·
+  `shortRatio`(청산일수) · `sharesShort`/`sharesShortPriorMonth` → 전월 대비 %. level: 15%·5일 이상 high '숏 스퀴즈 주의', 8%·3일 이상 elevated '공매도 높음', 그 외 normal.
+  한국 종목(.KS/.KQ · KRW)·비율과 청산일수 둘 다 없음 → None.
+- 응답 `stock.short_interest` (`_ANALYZE_VER` v12). 화면: 주요 지표 `#shortCell`(한 줄 전체 폭, 배지 high 주황 · elevated 노랑 · normal 회색, 없으면 숨김),
+  투자 판단 › 재무 건전성 카드 아래 `.fj-short`(bg3 10px, ⓘ 설명). 모바일은 [제목·배지]/수치 2줄(구분점 없이).
+- Yahoo 값은 FINRA 반월 공시 기준이라 2주가량 늦음(툴팁에 표기).
+- 캐시: main.js v104, style.css v123, sa-v91.
+
 ### 한·미 휴장일·미국 조기폐장 반영: `market_hours.py` (PR #97)
 - 새 모듈 `market_hours.py` (표준 라이브러리만): `holiday_name` · `session_window` · `is_trading_day` · `is_market_open` · `market_status` · `next/prev_trading_day`.
   - 미국: 연방 공휴일 규칙 + 토→금·일→월 대체, 1/1 이 토요일이면 대체 휴장 없음(NYSE). 조기폐장 13:00 ET(7/3·추수감사절 다음 날·12/24, 평일·휴장 아닐 때).
