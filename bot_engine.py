@@ -36,6 +36,8 @@ DEFAULT_STRATEGIES = [
             "horizon_days": 10,
             "entry": {"vol_ratio_min": 1.5, "rsi_min": 50, "rsi_max": 70, "require_catalyst": True},
             "ai_conf_min": 75,
+            # 매크로 Risk-Off(analysis/macro.py) 때 신규 진입만 강화: 신뢰도 커트라인 상향, 국면 점수 ≤ -5(극단적 경계)면 신규 보류
+            "macro": {"risk_off_conf_min": 85, "risk_off_block_score": -5},
             "exit": {"stop_pct": 4.0, "stop_atr_mult": 1.5, "target_pct_min": 8.0, "target_pct_max": 12.0,
                      "rr_min": 1.8, "trail_trigger_pct": 6.0, "trail_pct": 3.0, "time_stop_days": 10},
             "risk": {"max_weight": 0.15, "max_positions": 6, "max_new_per_day": 3, "daily_loss_limit_pct": 3.0},
@@ -50,6 +52,7 @@ DEFAULT_STRATEGIES = [
             "breakout": {"vol_ratio_min": 1.3, "rsi_min": 45, "rsi_max": 68},
             "rebound": {"fund_min": 70, "rsi_max": 30, "bb_max": 20, "vol_ratio_min": 1.0},
             "ai_conf_min": 75,
+            "macro": {"risk_off_conf_min": 82, "risk_off_fund_min": 75},     # Risk-Off 때 신뢰도 75→82 · 펀더멘탈 65→75 (기준선 정량엔 적용 안 함)
             "exit": {"stop_pct_min": 6.0, "stop_pct_max": 7.0, "stop_atr_mult": 2.0, "rr_min": 2.0, "target_rr": 2.5,
                      "trail_trigger_pct": 10.0, "trail_pct": 5.0, "time_stop_days": 25, "trend_exit": True},
             "risk": {"max_weight": 0.10, "max_positions": 10, "max_new_per_day": 3, "daily_loss_limit_pct": 3.0},
@@ -62,6 +65,7 @@ DEFAULT_STRATEGIES = [
             "horizon_days": 60,
             "fund_min": 80, "upside_min_pct": 15.0, "bb_max": 30, "vix_max": 30,
             "ai_conf_min": 80,
+            "macro": {"risk_off_ai_context": True},                          # VIX 30 보류 유지 + AI 검증에 Risk-Off 컨텍스트로 보수적 판단
             "exit": {"stop_pct": 10.0, "target_pct_min": 15.0, "target_pct_max": 25.0, "rr_min": 1.5,
                      "time_stop_days": 60},
             "risk": {"max_weight": 0.10, "max_positions": 10, "max_new_per_day": 2, "daily_loss_limit_pct": 2.0},
@@ -77,6 +81,8 @@ DEFAULT_STRATEGIES = [
 
 COMMON = {"vol_ratio_floor": 0.3, "earnings_block_days": 3, "cooldown_hours": 24,
           "max_fund_candidates": 40}
+# 순수 정량 대조군: 매크로 국면 · 한국 실적일(8단계) 연동을 적용하지 않아 효과를 비교할 수 있게 둔다
+CONTROL_KEYS = ("baseline_quant",)
 
 FINAL_STATUSES = ("TARGET_HIT", "STOP_LOSS", "TRAILING_STOP", "TIME_STOP", "TREND_EXIT", "AI_RISK_EXIT")
 
@@ -99,6 +105,8 @@ def seed_strategies():
     by_key = {s["key"]: s for s in DEFAULT_STRATEGIES}
     for s in DEFAULT_STRATEGIES:
         params = s["params"] or by_key["balanced_swing"]["params"]
+        if s["key"] in CONTROL_KEYS:                 # 대조군: 균형형 규칙 그대로, 매크로 연동 키는 빼고
+            params = {k: v for k, v in params.items() if k != "macro"}
         row = Model.query.filter_by(key=s["key"]).first()
         if row:
             # 새로 생긴 파라미터 키만 채운다 (이미 있는 값은 튜닝값일 수 있어 그대로 둠)
@@ -326,7 +334,7 @@ def fundamentals(ticker, df):
             out["dcf_reliability"] = dcf.get("reliability")
     except Exception:
         pass
-    if market_of(ticker) == "US":           # 국내 종목은 실적 발표일 출처가 없어 생략 (화면에 표시)
+    if market_of(ticker) == "US":
         try:
             for ev in D["fetch_upcoming_events"](stock, info, ticker) or []:
                 if "실적" in (ev.get("label") or "") and ev.get("date"):
@@ -334,10 +342,52 @@ def fundamentals(ticker, df):
                     break
         except Exception:
             pass
+    else:                                    # 한국: analysis/earnings.py 6시간 캐시 (자료 없는 중소형주는 None → 필터 통과)
+        out["earnings_date"] = kr_earnings_date(ticker)
     # 키를 늘리면 static/js/ai_bots.js 의 MISSING_LABELS(한국어 표시 이름)에도 추가한다
     out["missing"] = [k for k in ("fund_score", "dcf_fair", "analyst_target") if out.get(k) is None]
     out["info"] = info
     return out
+
+
+def kr_earnings_date(ticker):
+    """한국 종목 다음 실적 발표일(KST, 'YYYY-MM-DD') | None. available False · next_earnings 없음 · 실패는 모두 None."""
+    fn = D.get("earnings")
+    if not fn:
+        return None
+    try:
+        r = fn(ticker) or {}
+    except Exception:
+        return None
+    n = r.get("next_earnings") if r.get("available") else None
+    return (n.get("date_kst") or n.get("date")) if n else None
+
+
+# ── 매크로 국면 (6단계 analysis/macro.py) → 신규 진입 기준 (8단계) ─────────────────────────
+def macro_adjust(st, ctx):
+    """→ (유효 파라미터, 변경 메모 | None, 신규 보류 사유 | None). 대조군·AI 미사용·Risk-Off 아님이면 그대로.
+    청산(손절·익절·트레일링)은 여기서 건드리지 않는다 — 신규 진입 판정에만 쓴다."""
+    p = st["params"]
+    if st["key"] in CONTROL_KEYS or not st.get("use_ai") or not ctx or ctx.get("regime") != "risk_off":
+        return p, None, None
+    cfg = p.get("macro") or {}
+    q = json.loads(json.dumps(p))
+    notes = []
+    score = ctx.get("score")
+    if cfg.get("risk_off_block_score") is not None and score is not None and score <= cfg["risk_off_block_score"]:
+        return q, f"Risk-Off 극단(국면 점수 {score})", f"매크로 Risk-Off 극단(국면 점수 {score} ≤ {cfg['risk_off_block_score']}) → 신규 보류"
+    if cfg.get("risk_off_conf_min") and cfg["risk_off_conf_min"] > q["ai_conf_min"]:
+        notes.append(f"신뢰도 {q['ai_conf_min']}→{cfg['risk_off_conf_min']}")
+        q["ai_conf_min"] = cfg["risk_off_conf_min"]
+    if cfg.get("risk_off_fund_min") and q.get("fund_min") is not None and cfg["risk_off_fund_min"] > q["fund_min"]:
+        notes.append(f"펀더멘탈 {q['fund_min']}→{cfg['risk_off_fund_min']}")
+        q["fund_min"] = cfg["risk_off_fund_min"]
+        q["_base_fund"] = {"breakout": p.get("fund_min"), "rebound": (p.get("rebound") or {}).get("fund_min")}
+        if isinstance(q.get("rebound"), dict) and q["rebound"].get("fund_min", 0) < cfg["risk_off_fund_min"]:
+            q["rebound"]["fund_min"] = cfg["risk_off_fund_min"]
+    if cfg.get("risk_off_ai_context"):
+        notes.append("AI 검증에 Risk-Off 반영")
+    return q, ("Risk-Off: " + " · ".join(notes)) if notes else None, None
 
 
 def value_refs(fd):
@@ -401,7 +451,7 @@ def _ai_pace():
         _AI_LAST_CALL[0] = time.time()
 
 
-def get_or_create_assessment(ticker, name, as_of, x, fund, news):
+def get_or_create_assessment(ticker, name, as_of, x, fund, news, macro_line=None):
     """같은 종목·날짜 평가가 있으면 재사용. 없으면 예산 안에서 1회 생성. 예산 초과·실패면 None."""
     Model, db = D["AiStockAssessment"], D["db"]
     row = Model.query.filter_by(ticker=ticker, as_of=as_of).first()
@@ -423,8 +473,10 @@ def get_or_create_assessment(ticker, name, as_of, x, fund, news):
             "펀더멘탈점수": (fund or {}).get("fund_score"), "팩터": (fund or {}).get("factors"),
             "DCF적정가": (fund or {}).get("dcf_fair"), "애널리스트목표가": (fund or {}).get("analyst_target"),
         }
+        ctx_line = (f"[시장 국면 — 보조 컨텍스트] {macro_line}\n"
+                    "국면이 Risk-Off(경계)면 신규 매수 근거를 더 엄격하게 보고, 그 외에는 종목 자체 근거를 우선하세요.\n") if macro_line else ""
         user = (f"종목: {name} ({ticker})\n[정량 지표]\n{json.dumps(facts, ensure_ascii=False)}\n"
-                f"[최근 뉴스]\n{json.dumps(heads, ensure_ascii=False)}\n\n"
+                f"[최근 뉴스]\n{json.dumps(heads, ensure_ascii=False)}\n{ctx_line}\n"
                 "이 종목에 대해 앞으로 2~8주 매수 관점의 위험·호재를 평가하세요. 숫자를 새로 만들지 말고 주어진 정보만 쓰세요.\n"
                 '출력 JSON: {"confidence": 0~100 정수(매수 근거의 신뢰도), "verdict": "pass"|"caution"|"reject", '
                 '"catalyst": 단기 호재·모멘텀 근거가 뉴스에 있으면 true, "fatal_risk": 상장폐지·분식·대규모 소송·급격한 실적 붕괴 등 치명적 악재면 true, '
@@ -617,8 +669,8 @@ def apply_extra_exits(sig_rows, feats, strategies, assessments):
 
 
 # ── 배치 본체 ──────────────────────────────────────────────────────────────────
-def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
-    """한 시장의 하루치 배치. data/tickers/vix 를 넘기면 다운로드 대신 사용(테스트용)."""
+def run_market(market, dry_run=False, tickers=None, data=None, vix=None, macro=None):
+    """한 시장의 하루치 배치. data/tickers/vix/macro 를 넘기면 다운로드·조회 대신 사용(테스트용)."""
     if not _RUN_LOCK.acquire(blocking=False):
         return {"ok": False, "error": "이미 실행 중"}
     t0 = time.time()
@@ -639,11 +691,20 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                 vix = float(vdf["^VIX"]["Close"].iloc[-1]) if "^VIX" in vdf else None
             except Exception:
                 vix = None
+        # 매크로 국면 + 선행지표 요약: 배치당 1회만 (종목별 중복 조회 없음, 실패하면 국면 연동 없이 기존 규칙)
+        if macro is None and D.get("macro_ctx"):
+            try:
+                macro = D["macro_ctx"](market) or {}
+            except Exception as e:
+                log(f"매크로 국면 조회 실패: {e}")
+                macro = {}
+        macro = macro or {}
         data = _drop_unfinished_bar(market, data)
         feats = {}
         for t, df in data.items():
             try:
                 feats[t] = compute_features(df)
+                feats[t]["market"] = market_of(t)
             except Exception:
                 pass
         if D.get("on_features") and not dry_run:
@@ -653,6 +714,8 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                 log(f"스크리너 반영 실패: {e}")
         as_of = max((x["date"] for x in feats.values()), default=None)
         summary = {"market": market, "as_of": str(as_of), "tickers": len(feats), "vix": vix,
+                   "macro": {k: macro.get(k) for k in ("regime", "label", "score", "line")} if macro else None,
+                   "macro_adjust": {}, "holds": {"earnings": 0, "macro": 0},
                    "tracked": 0, "candidates": {}, "rejected": {}, "signals": {}, "ai_calls_used": 0}
 
         # 1.5) 액면분할 반영 (하루 1회, 추적 전): yfinance 일봉은 분할을 반영한 값이라 신호·계좌가 분할 전 그대로면
@@ -750,7 +813,7 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
             if dry_run:
                 continue
             news = _news_for(t)
-            a = get_or_create_assessment(t, names.get(t, t), as_of, feats[t], fund.get(t), news)
+            a = get_or_create_assessment(t, names.get(t, t), as_of, feats[t], fund.get(t), news, macro.get("line"))
             if a is not None:
                 assess[t] = a
         summary["ai_calls_used"] = _budget_used(datetime.now(_tz("KR")).date()) - before
@@ -763,12 +826,31 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
         for r in S.query.filter(S.status.in_(["PENDING", "ACTIVE"])).all():
             open_count[r.strategy_key] = open_count.get(r.strategy_key, 0) + 1
         proposals = {st["key"]: [] for st in strategies}
+        eff = {}                                        # 봇별 유효 파라미터 (매크로 Risk-Off 면 AI 봇만 상향)
+        for st in strategies:
+            q, note, block = macro_adjust(st, macro)
+            eff[st["key"]] = (dict(st, params=q), note, block)
+            if note or block:
+                summary["macro_adjust"][st["key"]] = block or note
+                log(f"run {market}: {st['key']} {block or note}")
+        blocked_logged = set()
         for t in ranked:
             x, fd = feats[t], fund.get(t) or {}
-            for st, path, qs, ev in cand[t]:
+            for st0, path, qs, ev in cand[t]:
+                st, note, block = eff[st0["key"]]
                 p = st["params"]
+                if block:
+                    summary["holds"]["macro"] += 1
+                    if st["key"] not in blocked_logged:
+                        blocked_logged.add(st["key"])
+                        summary["rejected"].setdefault(st["key"], []).append({"ticker": "*", "why": block})
+                    continue
                 why = _final_check(st, path, x, fd, assess.get(t), vix, as_of)
                 if why:
+                    if why.startswith("실적 발표"):
+                        summary["holds"]["earnings"] += 1
+                    elif note and "Risk-Off" in why:
+                        summary["holds"]["macro"] += 1
                     summary["rejected"].setdefault(st["key"], []).append({"ticker": t, "why": why})
                     continue
                 e, stop, target, rr, rej = plan_levels(st, path, x, fd)
@@ -778,7 +860,11 @@ def run_market(market, dry_run=False, tickers=None, data=None, vix=None):
                 a = assess.get(t)
                 conf = round(0.6 * a.confidence + 0.4 * qs) if (st["use_ai"] and a and a.confidence is not None) else qs
                 if st["use_ai"] and conf < p["ai_conf_min"]:
-                    summary["rejected"].setdefault(st["key"], []).append({"ticker": t, "why": f"신뢰도 {conf} < {p['ai_conf_min']}"})
+                    raised = p["ai_conf_min"] > st0["params"]["ai_conf_min"]
+                    if raised and conf >= st0["params"]["ai_conf_min"]:
+                        summary["holds"]["macro"] += 1          # 평소 기준이면 통과했을 신호
+                    summary["rejected"].setdefault(st["key"], []).append(
+                        {"ticker": t, "why": f"신뢰도 {conf} < {p['ai_conf_min']}" + (f" (Risk-Off 상향 {st0['params']['ai_conf_min']}→{p['ai_conf_min']})" if raised else "")})
                     continue
                 proposals[st["key"]].append(dict(t=t, st=st, path=path, qs=qs, ev=ev, x=x, fd=fd, a=a,
                                                  e=e, stop=stop, target=target, rr=rr, conf=conf))
@@ -932,18 +1018,22 @@ def _final_check(st, path, x, fd, a, vix, as_of):
     """펀더멘탈·실적일·VIX·AI 조건. 통과면 None, 아니면 사유."""
     p = st["params"]
     ed = fd.get("earnings_date")
-    if ed:
+    # 한국 종목 실적일(8단계)은 대조군(기준선 정량)에 적용하지 않음 — 미국 종목 실적일 필터는 예전처럼 모든 봇 공통
+    kr_control = st["key"] in CONTROL_KEYS and x.get("market", "") == "KR"
+    if ed and not kr_control:
         try:
-            days = (date.fromisoformat(ed) - as_of).days
+            days = (date.fromisoformat(str(ed)[:10]) - as_of).days
             if 0 <= days <= COMMON["earnings_block_days"]:
-                return f"실적 발표 D-{days}"
+                return f"실적 발표 D-{days} 임박 보류"
         except Exception:
             pass
     fs = fd.get("fund_score")
     if st["kind"] == "swing":
         need = p["rebound"]["fund_min"] if path == "rebound" else p["fund_min"]
         if fs is None or fs < need:
-            return f"펀더멘탈 {fs} < {need}"
+            base = (p.get("_base_fund") or {}).get(path)
+            # 평소 기준은 넘는데 Risk-Off 상향 때문에 걸린 경우만 표시 (실행 로그 '국면 보류' 집계에도 쓰임)
+            return f"펀더멘탈 {fs} < {need}" + (f" (Risk-Off 상향 {base}→{need})" if base is not None and fs is not None and base <= fs < need else "")
     if st["kind"] == "value":
         if fs is None or fs < p["fund_min"]:
             return f"펀더멘탈 {fs} < {p['fund_min']}"

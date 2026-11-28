@@ -57,6 +57,21 @@
   뉴스·애널리스트는 맥락과 무관하게 먼저 시작, 맥락이 정말 없으면 재분석은 백그라운드(8초만 대기, AI 는 보충 요청으로).
   응답에 `ai_pending` → 기다리는 중엔 실패 배너 안 띄움. 로그 `[extra] ticker=… total=… parts={…} ctx=yes|no problems=[…]`.
 
+### AI 봇 선행지표 연동 (8단계, PR #112)
+- 대조군 보호: `bot_engine.CONTROL_KEYS = ("baseline_quant",)`. 기준선 정량은 매크로 조정·한국 실적일 필터 모두 미적용
+  (시드 때 균형형 파라미터를 복사하면서 `macro` 키는 뺌). 미국 종목 실적일 필터는 예전처럼 4개 봇 공통.
+- 한국 실적일: `fundamentals()` 가 한국 종목이면 `kr_earnings_date()` → `analysis.earnings.get_earnings`(6시간 캐시) 다음 발표일(KST).
+  자료 없음·next_earnings 없음·실패는 None → 통과. 3일 이내면 사유 `실적 발표 D-N 임박 보류`.
+- 매크로: `run_market()` 시작 때 `D["macro_ctx"](market)` 1회 (= `app.bot_macro_context`: 홈 시황 캐시의 국면 + 선행지표 6시간 캐시 + 시장 폭 표, 외부 호출 없음).
+  조회 실패면 국면 연동 없이 기존 규칙. `macro_adjust(st, ctx)` 는 Risk-Off · AI 봇일 때만 복사본 파라미터를 상향 — 청산(손절·익절·트레일링)은 무관.
+  - 공격형: 신뢰도 75→85, 국면 점수 ≤ -5 면 신규 보류 (params.macro.risk_off_conf_min / risk_off_block_score)
+  - 균형형: 신뢰도 75→82, 펀더멘탈 65→75 (반등 경로 70→75)
+  - 안정형: 기준 그대로 (VIX 30 보류 유지) + AI 검증에 경계 국면 반영
+  - AI 평가 프롬프트에 `[시장 국면 — 보조 컨텍스트]` 1줄 (국면 자료 없으면 생략). 평가는 종목·날짜당 1회 공유.
+- 실행 요약(`bot_run`)에 `macro`·`macro_adjust`·`holds`{earnings, macro}. 거절 사유에 `(Risk-Off 상향 75→85)` 등 — 평소 기준이면 통과했을 때만 국면 보류로 집계.
+- `/ai-bots`: 진행 방식 문구(한국·미국 공통 실적일 필터, Risk-Off 강화), 봇별 규칙·상세 '전략 규칙'에 '국면' 줄, 최근 실행 줄에 '국면 Risk-Off · 실적 보류 N · 국면 보류 N'.
+  개요 API `kr_earnings_filter: "active"`. 버전 ai_bots.js v21, style.css v137, sa-v105.
+
 ### 발굴 스크리너 선행지표 프리셋 3종 (7단계, PR #110)
 - 원칙: 요청 중 외부 호출 0건. 새 표 `screener_signals`(create_all, 기존 `screener_snapshots` 는 ALTER 안 함)를 `/api/screener` 가 바깥 조인.
 - `screener_signals.py` 백그라운드(`screener-signals` 스레드, SCREENER_SCHEDULER=0 이면 꺼짐): 작업 9개씩 동시 3개, 3초 쉼, 할 일 없으면 10분.

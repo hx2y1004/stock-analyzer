@@ -45,7 +45,7 @@ API 키가 없으면 토스 시세는 yfinance로, AI 기능은 비활성 또는
 | `sector_map.py` | 메인 섹터맵: 전체 유니버스 시총가중 집계와 백그라운드 스냅샷. 분류는 `sector_universe.json` (`build_sector_universe.py` 로 생성). 갱신 때 상승·하락 수를 `market_breadth` 로 넘김 |
 | `market_breadth.py` | 시장 폭 일별 스냅샷 `market_breadth_daily`((market, trade_date) 유니크 UPSERT, 추가 외부 호출 0건 — 섹터맵 집계 + 홈 시황의 S&P 500·KOSPI 값). 5거래일 미만 '수집 중', 이후 최근 20거래일 누적 A/D 와 지수 비교로 고점·바닥 다이버전스 판정. 홈 시황 `breadth` |
 | `splits.py` | 액면분할 자동 반영 (yfinance splits 12시간 캐시 → 모의·봇 계좌·봇 신호·실제 포트폴리오 수량·단가·목표/손절 보정, `applied_stock_splits` 로 멱등). 봇 장 마감 배치 시작·장중 -40% 급락 방어·사용자 화면 하루 1회 |
-| `bot_engine.py`, `bot_trader.py`, `notifier.py` | AI 매매 신호 봇: 신호 생성·추적, 봇 가상 계좌 매매, 알림 |
+| `bot_engine.py`, `bot_trader.py`, `notifier.py` | AI 매매 신호 봇: 신호 생성·추적, 봇 가상 계좌 매매, 알림. 8단계: 배치 시작 때 매크로 국면(`app.bot_macro_context`, 1회)으로 AI 봇 신규 진입만 Risk-Off 강화(`macro_adjust`), 한국 실적일은 `earnings` 캐시(`kr_earnings_date`). `CONTROL_KEYS`(기준선 정량)는 둘 다 미적용 — 효과 비교용 대조군 |
 | `stock_alerts.py` | 내 보유·관심종목 맞춤 알림(5단계): 규칙 `stock_alert_rules`(목표가·손절가·RSI 30/70·공시/내부자 매수/실적 D-1), 이력 겸 중복 방지 `stock_alert_logs`((user_id, dedup_key) 유니크 — 이력을 먼저 커밋한 쪽만 발송). 봇 스케줄러 장중 5분 체크(`_RUN_LOCK` 안, 시장별 정규장)에서 가격·RSI, 루프 매 회차에서 30분 주기로 공시·내부자·실적. 목표·손절은 1회 후 자동 해제, RSI 24시간 쿨다운. API `/api/alerts/rules`·`/logs`·`/test`, 화면 `static/js/alerts.js` |
 | `webpush.py` | PWA 웹 푸시 (VAPID 키가 없으면 자동으로 꺼짐, pywebpush 는 보낼 때만 import) |
 | `screener.py` | 스크리너 스냅샷(`screener_snapshots`) 갱신·조회와 종목 비교. 가격은 섹터맵, 기술 지표는 봇 배치에서 받고 펀더멘탈은 7일 순환 |

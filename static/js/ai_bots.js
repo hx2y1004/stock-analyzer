@@ -56,16 +56,24 @@
     $('#abLog').innerHTML = `
       <div class="ab-log-grid">
         <section><h3 class="ab-h3">최근 실행</h3>
-          ${runs.length ? `<ul class="ab-log-list">${runs.map((x) => `<li><b>${esc(x.market)}</b> ${esc(x.as_of)} · ${x.skipped ? '휴장/장중 — 추적만' : `${x.tickers}종목 분석 · 신호 ${x.signals}건 · AI ${x.ai_calls ?? 0}회`}</li>`).join('')}</ul>`
+          ${runs.length ? `<ul class="ab-log-list">${runs.map((x) => `<li><b>${esc(x.market)}</b> ${esc(x.as_of)} · ${x.skipped ? '휴장/장중 — 추적만' : `${x.tickers}종목 분석 · 신호 ${x.signals}건 · AI ${x.ai_calls ?? 0}회`}${runMacro(x)}</li>`).join('')}</ul>`
             : '<p class="ab-muted">아직 실행된 배치가 없습니다.</p>'}</section>
         <section><h3 class="ab-h3">진행 방식</h3>
-          <p class="ab-log-p">장 마감 후 신호 → 다음 장 시가 체결 → 장중 5분마다 손절·익절 확인 · AI 평가 하루 최대 ${OV.ai_budget_limit}회 · 한국 종목 실적일 필터는 데이터가 없어 생략 · 수수료 매수·매도 각 0.15%</p></section>
+          <p class="ab-log-p">장 마감 후 신호 → 다음 장 시가 체결 → 장중 5분마다 손절·익절 확인 · AI 평가 하루 최대 ${OV.ai_budget_limit}회 · 실적 발표 3일 이내 신규 진입 보류(한국·미국 공통, 실적 일정이 없는 종목만 생략) · 매크로 국면이 Risk-Off(경계)면 AI 봇 신규 진입 기준 강화(보유 종목 손절·익절은 그대로) · 수수료 매수·매도 각 0.15%</p></section>
       </div>
       <h3 class="ab-h3">봇별 규칙</h3>
       <div class="ab-log-rules">${OV.bots.map((b) => `
         <div class="ab-log-rule"><b>${esc(b.emoji)} ${esc(b.name)}</b>
           <div><span>진입</span>${esc(b.summary.rule)}</div><div><span>청산</span>${esc(b.summary.exit)}</div>
-          <div><span>한도</span>${esc(b.summary.limits)}</div></div>`).join('')}</div>`;
+          <div><span>한도</span>${esc(b.summary.limits)}</div>
+          ${b.summary.macro ? `<div><span>국면</span>${esc(b.summary.macro)}</div>` : ''}</div>`).join('')}</div>`;
+  }
+  // 최근 실행 줄 끝: 국면 · 보류 집계 (8단계)
+  function runMacro(x) {
+    if (x.skipped || !x.macro) return '';
+    const h = x.holds || {}, lab = { risk_on: 'Risk-On', neutral: '중립', risk_off: 'Risk-Off' }[x.macro] || x.macro;
+    const extra = [h.earnings ? `실적 보류 ${h.earnings}` : '', h.macro ? `국면 보류 ${h.macro}` : ''].filter(Boolean).join(' · ');
+    return ` · <span class="ab-rg rg-${esc(x.macro)}" title="${esc(Object.values(x.macro_adjust || {}).join(' / '))}">국면 ${esc(lab)}</span>${extra ? ` · ${esc(extra)}` : ''}`;
   }
 
   // 전략 성격 키워드 칩 (긴 규칙 문장은 'ⓘ 실행 로그 · 규칙'과 상세 패널에서)
@@ -341,6 +349,7 @@
       <div class="ab-rules" id="abRules" hidden>
         <div><span>진입</span>${esc(b.summary.rule)}</div><div><span>청산</span>${esc(b.summary.exit)}</div>
         <div><span>한도</span>${esc(b.summary.limits)} · ${esc(b.summary.fee)}</div>
+        ${b.summary.macro ? `<div><span>국면</span>${esc(b.summary.macro)}</div>` : ''}
         <div><span>성적</span>평균 수익 ${pct(s.avg_win_pct)} / 손실 ${pct(s.avg_loss_pct)} · 청산 ${s.trades || 0}회${s.skipped ? ` · 계좌 사정으로 건너뜀 ${s.skipped}` : ''}</div></div>
       <div class="ab-tabbar">
         <div class="ab-tabs" role="tablist" aria-label="봇 상세">

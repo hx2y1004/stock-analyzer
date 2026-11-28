@@ -818,6 +818,34 @@ def _save_breadth(market, payload):
             app.logger.warning(f"[breadth] {market} {dd} 저장 실패: {e}")
 
 
+_REGIME_EN = {"risk_on": "Risk-On", "neutral": "중립", "risk_off": "Risk-Off"}
+
+
+def bot_macro_context(market):
+    """AI 봇 배치용 매크로 국면 + 선행지표 1줄 (배치 시작 때 1회). 홈 시황 캐시·선행지표 6시간 캐시·시장 폭 표만 읽는다.
+    → {"regime", "label", "score", "line", "leading"} — 자료가 없으면 regime neutral (봇은 기존 규칙 그대로)."""
+    snap = get_macro_snapshot(is_korean=(market == "KR"))
+    reg = snap.get("regime") or {}
+    regime = reg.get("regime") or "neutral"
+    parts = [f"매크로 {reg.get('label') or '중립'}({_REGIME_EN.get(regime, '중립')}, 점수 {int(reg.get('score') or 0):+d})"]
+    lead = macro_mod.leading_snapshot() or {}
+    yc, hy, cg = lead.get("t10y2y"), lead.get("hy"), lead.get("copper_gold")
+    if yc:
+        parts.append(f"10Y-2Y {yc['badge']} {yc['value']:+.2f}%p")
+    if hy:
+        parts.append(f"하이일드 {hy['badge']}" + (f" {hy['value']:.2f}%" if hy.get("value") is not None else ""))
+    if cg:
+        parts.append(f"구리/금 {cg['badge']} {cg['change_20d']:+.1f}%")
+    try:
+        br = market_breadth.trend(market)
+        if br.get("state") != "collecting":
+            parts.append(f"시장 폭 {br['label']}")
+    except Exception:
+        db.session.rollback()
+    return {"regime": regime, "label": reg.get("label") or "중립", "score": reg.get("score"),
+            "line": " · ".join(parts), "leading": reg.get("leading_indicators") or {}}
+
+
 _MACRO_FAIL = {"ts": 0.0}
 _MACRO_MAX_AGE = 15 * 60          # 종목 분석은 15분 안의 홈 시황 캐시를 그대로 쓴다 (없으면 한 번 받아 채움)
 
@@ -7033,6 +7061,8 @@ bot_engine.init({
     "ai_json": _ai_json, "last_model": lambda: getattr(_AI_LAST_MODEL, "v", None),
     "compute_dcf": compute_dcf, "get_financials": _get_financials, "get_risk_free_rate": _get_risk_free_rate,
     "fetch_upcoming_events": fetch_upcoming_events, "fetch_kr_news": fetch_kr_news, "fetch_news": fetch_news,
+    "earnings": earnings_mod.get_earnings,                       # 한국 종목 실적일 (6시간 캐시, 8단계)
+    "macro_ctx": lambda m: bot_macro_context(m),                 # 매크로 국면 + 선행지표 (배치당 1회, 8단계)
     "notify": notifier.dispatch,
     "sync": bot_trader.sync, "snapshot": bot_trader.snapshot_all, "day_change": bot_trader.day_change_pct,
 })
@@ -7595,21 +7625,33 @@ def _bot_summary(st, p):
     ex, r = p.get("exit", {}), p.get("risk", {})
     lim = (f"종목당 최대 {int(r.get('max_weight', 0) * 100)}% · 최대 {r.get('max_positions')}종목 · "
            f"하루 신규 {r.get('max_new_per_day')}건 · 하루 손실 -{r.get('daily_loss_limit_pct')}%면 신규 중단")
+    mc = p.get("macro") or {}
+    macro_txt = ""
     if st.key == "aggressive_momentum":
         rule = (f"단기 상승 돌파: 5일선>20일선, 구름대 위, 거래량 평균의 {p['entry']['vol_ratio_min']}배 이상, MACD 상승, "
                 f"RSI {p['entry']['rsi_min']}~{p['entry']['rsi_max']} + AI 단기 호재 확인(신뢰도 {p['ai_conf_min']}↑)")
+        if mc:
+            macro_txt = (f"매크로 Risk-Off면 신뢰도 {mc.get('risk_off_conf_min', p['ai_conf_min'])}↑로 강화"
+                         + (f", 국면 점수 {mc['risk_off_block_score']} 이하면 신규 보류" if mc.get("risk_off_block_score") is not None else ""))
         exit_ = (f"손절 -{ex['stop_pct']:g}% 또는 1.5ATR 중 가까운 쪽 · 목표 +{ex['target_pct_min']:g}~{ex['target_pct_max']:g}% · "
                  f"+{ex['trail_trigger_pct']:g}% 이후 고점 대비 -{ex['trail_pct']:g}% 트레일링 · 최대 {ex['time_stop_days']}거래일")
     elif st.kind == "swing":
         ai = f" + AI 검증(신뢰도 {p['ai_conf_min']}↑)" if st.use_ai else " (AI 검증 없음 · 균형형과 같은 규칙의 대조군)"
         rule = f"추세 돌파 또는 과매도 반등 + 펀더멘탈 {p['fund_min']}점↑{ai}"
+        if st.use_ai and mc:
+            macro_txt = f"매크로 Risk-Off면 신뢰도 {mc.get('risk_off_conf_min', p['ai_conf_min'])}↑ · 펀더멘탈 {mc.get('risk_off_fund_min', p['fund_min'])}점↑로 강화"
+        elif not st.use_ai:
+            macro_txt = "매크로 국면·한국 실적일 연동 미적용 (효과 비교용 대조군)"
         exit_ = (f"손절 {ex['stop_pct_min']:g}~{ex['stop_pct_max']:g}% · 목표 {ex.get('target_rr', ex['rr_min']):g}R(저항선 우선) · "
                  f"+{ex['trail_trigger_pct']:g}% 이후 -{ex['trail_pct']:g}% 트레일링 · 추세 이탈 · 최대 {ex['time_stop_days']}거래일")
     else:
         rule = (f"펀더멘탈 {p['fund_min']}점↑ + 적정가·목표가 대비 {p['upside_min_pct']:g}%↑ 저평가 + 하단 반등 확인 + "
                 f"AI 구조적 악재 없음(신뢰도 {p['ai_conf_min']}↑) · VIX {p['vix_max']} 이상이면 신규 보류")
+        if mc:
+            macro_txt = "매크로 Risk-Off면 AI 검증에 경계 국면을 반영해 보수적으로 판단"
         exit_ = f"손절 -{ex['stop_pct']:g}% · 목표 +{ex['target_pct_min']:g}~{ex['target_pct_max']:g}% · 최대 {ex['time_stop_days']}거래일"
-    return {"rule": rule, "exit": exit_, "limits": lim, "fee": f"매수·매도 수수료 각 {p.get('fee_pct', 0.15)}%"}
+    return {"rule": rule, "exit": exit_, "limits": lim, "fee": f"매수·매도 수수료 각 {p.get('fee_pct', 0.15)}%",
+            "macro": macro_txt or None}
 
 
 _BOT_ACCT_CACHE = {}                 # user_id -> (시각, 계좌 dict). 개요·상세·차트 마지막 점이 같은 평가를 쓰도록
@@ -7670,12 +7712,14 @@ def ai_bots_overview():
             d = json.loads(r.payload_json)
             runs.append({"market": d.get("market"), "as_of": d.get("as_of"), "tickers": d.get("tickers"),
                          "signals": sum(len(v) for v in (d.get("signals") or {}).values()),
-                         "ai_calls": d.get("ai_calls_used"), "skipped": d.get("skipped")})
+                         "ai_calls": d.get("ai_calls_used"), "skipped": d.get("skipped"),
+                         "macro": (d.get("macro") or {}).get("regime"), "macro_label": (d.get("macro") or {}).get("label"),
+                         "holds": d.get("holds"), "macro_adjust": d.get("macro_adjust")})
         except Exception:
             pass
     return jsonify({"bots": bots, "comparison": cmp_, "next_batch": bot_engine.next_batch_times(),
                     "initial_capital": bot_trader.INITIAL, "recent_runs": runs,
-                    "ai_budget_limit": bot_engine.ai_budget_limit(), "kr_earnings_filter": "skipped",
+                    "ai_budget_limit": bot_engine.ai_budget_limit(), "kr_earnings_filter": "active",
                     "disclaimer": BOT_DISCLAIMER})
 
 
