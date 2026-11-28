@@ -7463,3 +7463,9 @@ body.al-lock { overflow: hidden; }
   .sc-pchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 @media (max-width: 340px) { .sc-preset { padding: 8px 8px; font-size: 11.5px; letter-spacing: -0.02em; } }
+
+/* ── AI 봇 매크로 국면 연동 (8단계) ─────────────────────────────────────────── */
+.ab-rg { font-weight: 700; white-space: nowrap; }
+.ab-rg.rg-risk_off { color: #f87171; }
+.ab-rg.rg-risk_on { color: #34d399; }
+.ab-rg.rg-neutral { color: var(--text2); }
