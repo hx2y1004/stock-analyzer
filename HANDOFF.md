@@ -71,6 +71,8 @@
 - 실행 요약(`bot_run`)에 `macro`·`macro_adjust`·`holds`{earnings, macro}. 거절 사유에 `(Risk-Off 상향 75→85)` 등 — 평소 기준이면 통과했을 때만 국면 보류로 집계.
 - `/ai-bots`: 진행 방식 문구(한국·미국 공통 실적일 필터, Risk-Off 강화), 봇별 규칙·상세 '전략 규칙'에 '국면' 줄, 최근 실행 줄에 '국면 Risk-Off · 실적 보류 N · 국면 보류 N'.
   개요 API `kr_earnings_filter: "active"`. 버전 ai_bots.js v21, style.css v137, sa-v105.
+- 후속(PR #113): PC 상세 패널의 `.ab-detail > #abRules { max-height: 140px; overflow-y: auto }` 때문에 '국면' 줄이 길어 2줄이 되는 봇(공격형·안정형)은
+  '성적' 줄 아래가 9~13px 잘렸다 → `max-height: none; overflow: visible` (내용 높이대로, 아래 탭 영역이 남은 높이를 씀) + 하단 여백 4px. style.css v138, sa-v106.
 
 ### 발굴 스크리너 선행지표 프리셋 3종 (7단계, PR #110)
 - 원칙: 요청 중 외부 호출 0건. 새 표 `screener_signals`(create_all, 기존 `screener_snapshots` 는 ALTER 안 함)를 `/api/screener` 가 바깥 조인.
